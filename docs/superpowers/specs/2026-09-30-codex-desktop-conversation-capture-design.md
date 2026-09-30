@@ -27,7 +27,7 @@
 
 1. 用户在 Sydney 隐私设置中主动打开“Codex 对话采集”；此设置默认关闭。
 2. 用户明确开始 Sydney 记录后，Codex 适配器才开始观察会话文件的新增内容。
-3. 开始监听时为已有会话文件建立文件偏移检查点，只接收此刻之后追加的数据；不读取或导入现有文件内容。
+3. 开始监听时为已有会话文件建立文件偏移检查点；最多读取第一条 session metadata 记录判断来源，跳过其余已有字节，只接收此刻之后追加的数据。
 4. 适配器解析出用户提示词时建立一条 pending 事件；随后只将同一会话中对应的最终答复附加到该事件。
 5. 用户可以在 Sydney 待确认列表中查看、修改、确认、忽略或删除事件。
 6. 暂停或停止 Sydney 记录时立即停止读取文件。恢复记录时从当前文件末尾重新建立检查点，期间追加内容不回填。
@@ -38,7 +38,8 @@
 - 观察 `%USERPROFILE%\\.codex\\sessions` 下活动 JSONL 会话文件的增量；不监视 `archived_sessions`。
 - 适配器按文件字节偏移增量读取，以换行分割完整 JSONL 记录，保留未完成尾行到下一次读取。
 - 使用稳定会话 ID 和记录 ID/偏移实现去重；在 SQLite 中保存检查点或消息来源元数据。每次重新启用监听时将既有活动文件偏移初始化到 EOF。
-- 从结构化事件类型中只映射用户消息和 phase 为 final 的 assistant 消息。忽略工具调用、工具输出和其他消息类型。
+- 仅接受会话 metadata 中 `originator: Codex Desktop` 的记录；不以工作目录猜测桌面端来源。
+- 只映射 JSONL `response_item` 中的用户 `message`（`input_text` 块）和 Codex Desktop 的 assistant `message`（`phase: final_answer`、`output_text` 块）。忽略 `analysis`、`commentary`、工具调用/输出和其他消息类型。
 - 在本地 SQLite 事件中保存原文和来源信息；不得复制、移动、修改或清理 Codex 原始会话文件。
 - Codex 会话事件不进入云同步载荷，即使用户确认该事件也不上传。
 - 未配置 Codex 会话目录、JSONL 行不完整或格式未知时保持采集安全失败，不读取正文、不破坏原始文件，并向界面报告适配器错误。
@@ -56,8 +57,8 @@
 
 1. 默认配置下 Codex 文件不会被打开或读取。
 2. 只有设置开启且 Sydney 处于记录状态时才会消费新增会话记录。
-3. 启动监听时已有文件内容不会进入事件库；监听后的新提示词会产生一条待确认事件。
-4. 仅与提示词对应的 assistant final 答复会写入事件；analysis、commentary、tool call、tool output 均被忽略。
+3. 启动监听时除用于判断 originator 的第一条 session metadata 外，已有对话内容不解析、不进入事件库；监听后的新提示词会产生一条待确认事件。
+4. 仅 Codex Desktop 的新 user input_text 和 assistant final_answer output_text 会进入事件；analysis、commentary、tool call、tool output 均被忽略。
 5. 多次扫描相同文件偏移不会重复生成消息或事件；不完整 JSONL 尾行可在追加完整后被正确解析。
 6. 暂停、停止或关闭采集开关后不再消费新字节；之后重新开始时不会补录暂停期间内容。
 7. Codex 事件只进入本地列表，不出现在云同步载荷和 Obsidian 自动写入中。

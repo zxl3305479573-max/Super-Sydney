@@ -1,0 +1,10 @@
+{
+  "input_dirs": ["01-输入"],
+  "include_root_notes": true,
+  "exclude_dirs": [".obsidian", "00-系统", "02-每日总结", "03-进化记录", "scripts"],
+  "summary_dir": "02-每日总结",
+  "evolution_dir": "03-进化记录",
+  "workflow_dir": "04-工作流",
+  "max_note_chars": 12000,
+  "max_context_chars": 50000
+}
