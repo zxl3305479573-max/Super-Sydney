@@ -1,5 +1,16 @@
 export type EventStatus = 'pending' | 'approved' | 'rejected';
 export type EventKind = 'manual' | 'activity' | 'codex';
+export type EventDraft = {
+  what_done: string;
+  why: string;
+  tools: string;
+  problems: string;
+  solution: string;
+  result: string;
+  reuse: string;
+  category: string;
+  content_candidate: boolean;
+};
 export type WorkEvent = {
   id: number;
   created_at: string;
@@ -17,11 +28,15 @@ export type WorkEvent = {
   source_message_id: string;
   codex_prompt: string;
   codex_response: string;
+  ai_draft_json: string;
+  ai_draft_model: string;
+  ai_drafted_at: string;
 };
 export type Settings = {
   captureEnabled: boolean;
   capturePaused: boolean;
   codexCaptureEnabled: boolean;
+  llmEnabled: boolean;
   allowedApps: string[];
   blockedApps: string[];
   captureIntervalSeconds: number;
@@ -39,5 +54,8 @@ export interface SydneyApi {
   saveSettings(settings: Partial<Settings>): Promise<Settings>;
   chooseVault(): Promise<string | null>;
   generateDailySummary(): Promise<string>;
+  draftEvent(id: number): Promise<EventDraft>;
+  applyDraft(id: number): Promise<void>;
+  clearDraft(id: number): Promise<void>;
   onChanged(callback: () => void): () => void;
 }

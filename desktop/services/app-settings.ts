@@ -6,6 +6,7 @@ export function defaultSettings(defaultVaultPath: string, projectPath: string): 
     captureEnabled: false,
     capturePaused: false,
     codexCaptureEnabled: false,
+    llmEnabled: false,
     allowedApps: ['Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'],
     blockedApps: ['1Password', 'KeePass', '微信', 'WhatsApp', 'Telegram'],
     captureIntervalSeconds: 30,

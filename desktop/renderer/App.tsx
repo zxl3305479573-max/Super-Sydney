@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AppState, EventStatus, WorkEvent } from '../shared';
 
 type View = 'today' | 'review' | 'settings';
-const empty: AppState = { settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, vaultPath: '' }, stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' } };
+const empty: AppState = { settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, vaultPath: '' }, stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' } };
 const statusText: Record<EventStatus, string> = { pending: '待确认', approved: '已确认', rejected: '已忽略' };
 const durationText = (seconds: number) => { const mins = Math.round(seconds / 60); return mins < 60 ? `${mins} 分钟` : `${Math.floor(mins / 60)} 小时 ${mins % 60} 分钟`; };
 

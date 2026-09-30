@@ -10,6 +10,9 @@ const api: SydneyApi = {
   saveSettings: settings => ipcRenderer.invoke('settings:save', settings),
   chooseVault: () => ipcRenderer.invoke('vault:choose'),
   generateDailySummary: () => ipcRenderer.invoke('summary:daily'),
+  draftEvent: id => ipcRenderer.invoke('event:draft', id),
+  applyDraft: id => ipcRenderer.invoke('event:draft:apply', id),
+  clearDraft: id => ipcRenderer.invoke('event:draft:clear', id),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); }
 };
 
