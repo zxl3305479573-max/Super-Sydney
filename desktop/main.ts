@@ -6,7 +6,9 @@ import { resolveVaultPath } from './services/vault-path';
 import { defaultSettings, mergeSettings } from './services/app-settings';
 import { CodexSessionAdapter, shouldRunCodexCapture } from './services/codex-session-adapter';
 import { migrateCodexEventColumns, persistCodexMessage } from './services/codex-event-store';
-import { migrateAiDraftColumns } from './services/ai-draft-store';
+import { applyAiDraft, clearAiDraft, migrateAiDraftColumns, saveAiDraft } from './services/ai-draft-store';
+import { buildDeepSeekInput } from './services/ai-draft-input';
+import { requestEventDraft } from './services/deepseek';
 import type { CodexCaptureStatus, Settings, WorkEvent } from './shared';
 
 const projectPath = path.resolve(__dirname, '../..');
@@ -108,6 +110,23 @@ function registerIpc() {
     broadcast();
   });
   ipcMain.handle('event:delete', (_event, id: number) => { db.prepare('DELETE FROM events WHERE id=?').run(id); broadcast(); });
+  ipcMain.handle('event:draft', async (_event, id: number) => {
+    const config = currentSettings();
+    if (!config.llmEnabled) throw new Error('请先在设置中开启允许发送到 DeepSeek');
+    const event = db.prepare('SELECT * FROM events WHERE id=?').get(id) as WorkEvent | undefined;
+    if (!event) throw new Error('事件不存在或已被删除');
+    if (event.status !== 'pending') throw new Error('只有待确认事件可以生成 AI 草稿');
+    const draft = await requestEventDraft(buildDeepSeekInput(event), {
+      apiKey: process.env.SYDNEY_LLM_API_KEY || '',
+      baseUrl: process.env.SYDNEY_LLM_BASE_URL || 'https://api.deepseek.com/v1',
+      model: process.env.SYDNEY_LLM_MODEL || 'deepseek-chat'
+    });
+    saveAiDraft(db, id, draft, process.env.SYDNEY_LLM_MODEL || 'deepseek-chat', new Date().toISOString());
+    broadcast();
+    return draft;
+  });
+  ipcMain.handle('event:draft:apply', (_event, id: number) => { applyAiDraft(db, id); broadcast(); });
+  ipcMain.handle('event:draft:clear', (_event, id: number) => { clearAiDraft(db, id); broadcast(); });
   ipcMain.handle('capture:set', (_event, mode: 'start' | 'pause' | 'stop') => setCapture(mode));
   ipcMain.handle('settings:save', (_event, patch: Partial<Settings>) => {
     const previous = currentSettings();
