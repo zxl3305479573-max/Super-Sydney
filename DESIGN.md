@@ -27,3 +27,7 @@ Use a persistent left navigation, a compact top status bar, full-width work surf
 ## Interaction
 
 Primary controls have a clear verb and object. Every capture state has a visible status and a pause control. Lists support keyboard focus. Motion is limited to short opacity/translate transitions and respects `prefers-reduced-motion`.
+
+## AI Draft Review
+
+The DeepSeek control is opt-in and appears as a single-event action. The review surface keeps the generated nine-field draft inside the event row, labels the model and generation time, and exposes separate actions for applying the summary or deleting the draft. Applying a draft never changes the event status automatically.
