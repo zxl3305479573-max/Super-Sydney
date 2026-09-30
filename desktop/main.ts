@@ -6,6 +6,7 @@ import { resolveVaultPath } from './services/vault-path';
 import { defaultSettings, mergeSettings } from './services/app-settings';
 import { CodexSessionAdapter, shouldRunCodexCapture } from './services/codex-session-adapter';
 import { migrateCodexEventColumns, persistCodexMessage } from './services/codex-event-store';
+import { migrateAiDraftColumns } from './services/ai-draft-store';
 import type { CodexCaptureStatus, Settings, WorkEvent } from './shared';
 
 const projectPath = path.resolve(__dirname, '../..');
@@ -136,6 +137,7 @@ app.whenReady().then(() => {
   db = new DatabaseSync(path.join(dataDir, 'sydney.db'));
   db.exec(`CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, app_name TEXT NOT NULL DEFAULT '', window_title TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'manual', note TEXT NOT NULL DEFAULT '', duration_seconds INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', value_score INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '个人成长'); CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);`);
   migrateCodexEventColumns(db);
+  migrateAiDraftColumns(db);
   const startupSettings = currentSettings();
   fs.writeFileSync(settingsPath, JSON.stringify({ ...startupSettings, captureEnabled: false, capturePaused: false }, null, 2));
   refreshCodexAdapter();
