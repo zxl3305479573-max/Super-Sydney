@@ -13,6 +13,9 @@ const api: SydneyApi = {
   draftEvent: id => ipcRenderer.invoke('event:draft', id),
   applyDraft: id => ipcRenderer.invoke('event:draft:apply', id),
   clearDraft: id => ipcRenderer.invoke('event:draft:clear', id),
+  getLlmKeyStatus: () => ipcRenderer.invoke('llm-key:status'),
+  saveLlmKey: value => ipcRenderer.invoke('llm-key:save', value),
+  deleteLlmKey: () => ipcRenderer.invoke('llm-key:delete'),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); }
 };
 

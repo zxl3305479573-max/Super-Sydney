@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
@@ -9,6 +9,7 @@ import { migrateCodexEventColumns, persistCodexMessage } from './services/codex-
 import { applyAiDraft, clearAiDraft, migrateAiDraftColumns, saveAiDraft } from './services/ai-draft-store';
 import { buildDeepSeekInput } from './services/ai-draft-input';
 import { requestEventDraft } from './services/deepseek';
+import { resolveLlmApiKey, SecretStore } from './services/secret-store';
 import type { CodexCaptureStatus, Settings, WorkEvent } from './shared';
 
 const projectPath = path.resolve(__dirname, '../..');
@@ -22,6 +23,7 @@ let activeStartedAt = 0;
 let activeApp = '';
 let codexAdapter: CodexSessionAdapter | undefined;
 let codexCapture: CodexCaptureStatus = { state: 'disabled', error: '' };
+let secretStore!: SecretStore;
 
 function currentSettings(): Settings {
   try { return mergeSettings(JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as Partial<Settings>, defaultVaultPath, projectPath); }
@@ -117,7 +119,7 @@ function registerIpc() {
     if (!event) throw new Error('事件不存在或已被删除');
     if (event.status !== 'pending') throw new Error('只有待确认事件可以生成 AI 草稿');
     const draft = await requestEventDraft(buildDeepSeekInput(event), {
-      apiKey: process.env.SYDNEY_LLM_API_KEY || '',
+      apiKey: resolveLlmApiKey(secretStore.read(), process.env.SYDNEY_LLM_API_KEY || ''),
       baseUrl: process.env.SYDNEY_LLM_BASE_URL || 'https://api.deepseek.com/v1',
       model: process.env.SYDNEY_LLM_MODEL || 'deepseek-chat'
     });
@@ -125,6 +127,9 @@ function registerIpc() {
     broadcast();
     return draft;
   });
+  ipcMain.handle('llm-key:status', () => secretStore.getStatus());
+  ipcMain.handle('llm-key:save', (_event, value: string) => { secretStore.save(value); return secretStore.getStatus(); });
+  ipcMain.handle('llm-key:delete', () => { secretStore.remove(); return secretStore.getStatus(); });
   ipcMain.handle('event:draft:apply', (_event, id: number) => { applyAiDraft(db, id); broadcast(); });
   ipcMain.handle('event:draft:clear', (_event, id: number) => { clearAiDraft(db, id); broadcast(); });
   ipcMain.handle('capture:set', (_event, mode: 'start' | 'pause' | 'stop') => setCapture(mode));
@@ -153,6 +158,7 @@ function createWindow() {
 }
 app.whenReady().then(() => {
   dataDir = app.getPath('userData'); settingsPath = path.join(dataDir, 'settings.json'); fs.mkdirSync(dataDir, { recursive: true });
+  secretStore = new SecretStore(dataDir, safeStorage);
   db = new DatabaseSync(path.join(dataDir, 'sydney.db'));
   db.exec(`CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, app_name TEXT NOT NULL DEFAULT '', window_title TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'manual', note TEXT NOT NULL DEFAULT '', duration_seconds INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', value_score INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '个人成长'); CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);`);
   migrateCodexEventColumns(db);

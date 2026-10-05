@@ -43,6 +43,7 @@ export type Settings = {
   vaultPath: string;
 };
 export type CodexCaptureStatus = { state: 'disabled' | 'stopped' | 'listening' | 'error'; error: string };
+export type LlmKeyStatus = { configured: boolean; masked: string; encryptionAvailable: boolean };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus };
 
 export interface SydneyApi {
@@ -57,5 +58,8 @@ export interface SydneyApi {
   draftEvent(id: number): Promise<EventDraft>;
   applyDraft(id: number): Promise<void>;
   clearDraft(id: number): Promise<void>;
+  getLlmKeyStatus(): Promise<LlmKeyStatus>;
+  saveLlmKey(value: string): Promise<LlmKeyStatus>;
+  deleteLlmKey(): Promise<LlmKeyStatus>;
   onChanged(callback: () => void): () => void;
 }
