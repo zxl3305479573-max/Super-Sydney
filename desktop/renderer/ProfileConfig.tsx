@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ContentDirectionInput, ContentProfileFields, ContentTaxonomy, DirectionNoteRequest, DirectionNoteSuggestion, ImageStyleRequest } from '../shared';
 import { ARTICLE_THEMES } from '../services/article-html';
-import { DEFAULT_IMAGE_STYLE } from '../services/image-style';
+import { DEFAULT_IMAGE_STYLE, IMAGE_STYLE_PRESETS } from '../services/image-style';
 import WeWriteOverviewPanel from './WeWriteOverview';
 import { ConfirmButton, readableError } from './ui';
 
@@ -107,6 +107,15 @@ function ImagePromptField({ value, inherited, collapsible, onChange, busy, disab
       <small>封面和正文配图都会用这段描述画风与禁忌；文章主题、段落内容由程序自动拼在前面。可用 {'{读者}'} 代入「读者定位」。</small>
       {!custom && <button className="button button-quiet button-small" onClick={() => onChange(inherited || DEFAULT_IMAGE_STYLE)}>在{inherited ? '资料模板' : '默认模板'}基础上修改</button>}
       {custom && <button className="button button-quiet button-small" onClick={() => onChange('')}>{inherited ? '改回沿用资料模板' : '恢复默认'}</button>}
+      <select className="cd-preset" value="" aria-label="套用配图风格预设" title="把预设填进上面的模板，可以继续改；保存后才生效" onChange={event => {
+        const preset = IMAGE_STYLE_PRESETS.find(item => item.key === event.target.value);
+        if (!preset) return;
+        if (custom && value.trim() !== preset.template && !window.confirm(`用「${preset.label}」预设替换当前已写的配图模板？`)) return;
+        onChange(preset.template);
+      }}>
+        <option value="">套用预设…</option>
+        {IMAGE_STYLE_PRESETS.map(item => <option key={item.key} value={item.key} title={item.hint}>{item.label}</option>)}
+      </select>
     </div>
   </>;
   const status = custom ? '已自定义' : inherited ? '沿用资料模板' : '使用默认模板';

@@ -574,6 +574,7 @@ button.chip { cursor: pointer; }
 .cd-image-prompt .input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.6; resize: vertical; }
 .cd-image-prompt-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .cd-image-prompt-foot small { color: var(--faint); font-size: 11px; line-height: 1.6; }
+.cd-preset { padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
 
 
 /* ── 公众号创作流水线 ── */

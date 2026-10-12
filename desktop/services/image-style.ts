@@ -36,3 +36,29 @@ export function renderImageStyle(template: string, audience: string): string {
   const text = who ? template : template.replace(/面向\{读者\}[：:，,]\s*/g, '');
   return text.replace(/\{读者\}/g, who || '读者').trim();
 }
+
+/**
+ * 可一键套用的配图风格预设。套用只是把文字填进模板输入框，用户可以继续改，保存后才生效。
+ * 每个预设都保留「不要出现任何文字」这一行：生图模型画字会出错，这条与风格无关。
+ */
+export const IMAGE_STYLE_PRESETS: Array<{ key: string; label: string; hint: string; template: string }> = [
+  {
+    key: 'whiteboard',
+    label: '手绘白板（适老）',
+    hint: '马克笔手绘白板图解：暖白底、粗线条、少颜色、具体的人和日常动作、大留白，适合中老年科普',
+    template: [
+      '面向{读者}：手绘白板图解，像用粗马克笔在白板上画的生活小漫画（clear whiteboard hand-drawn illustration, thick marker doodle style, warm minimalism, rough sketchy lines, cheerful and trustworthy atmosphere）。',
+      '背景用暖白纸张质感或微米黄白板底（#FFFDF9），光线柔和均匀；不要纯黑背景、霓虹夜景或复杂纹理。',
+      '粗黑或深灰马克笔轮廓；除黑白灰外重点色不超过 2 种，从暖阳光橙（#E67E22）、柔和健康绿（#27AE60）、警示正红（#E74C3C）里选。',
+      '画与这段内容直接相关的具体现实人物（例如提菜篮的阿姨、戴老花镜的长辈），表情直观（微笑点头、疑惑挠头、坚决摆手），动作和吃饭、吃药、揉膝盖、看水壶这类日常动作绑定。',
+      '2D 平面、高对比、一眼看懂，一张图只讲一件事；在上方或右侧留出至少 35% 的干净留白，不要拥挤。',
+      '画面里不要出现任何文字、字母、数字、水印或 logo；不要英文艺术字、复杂折线图、抽象齿轮或雷达图。'
+    ].join('\n')
+  },
+  {
+    key: 'default',
+    label: '通用写实',
+    hint: '内置默认：写实、自然光、画面干净',
+    template: DEFAULT_IMAGE_STYLE
+  }
+];
