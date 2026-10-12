@@ -87,15 +87,20 @@ export function planImageSlots(markdown: string, maxImages = 3): ImageSlot[] {
   return [...picked.values()];
 }
 
-/** 正文配图提示词：贴合段落内容，同时守住健康科普的合规底线。 */
-export function buildImagePrompt(input: { articleTitle: string; heading: string; excerpt: string }): string {
+/**
+ * 正文配图提示词：贴合段落内容，画风与红线来自内容方向与账号读者定位，不写死某个领域。
+ * direction.note 由用户在「内容方向」里自己维护，所以换方向就等于换一套约束。
+ */
+export function buildImagePrompt(input: { articleTitle: string; heading: string; excerpt: string; direction?: { name: string; note: string } | null; audience?: string }): string {
+  const audience = (input.audience ?? '').trim();
   return [
     '公众号正文配图，横构图。',
-    `文章主题：${input.articleTitle || '健康科普'}；配图位置：${input.heading}。`,
+    input.direction?.name.trim() ? `内容方向：${input.direction.name.trim()}${input.direction.note.trim() ? `（${input.direction.note.trim()}）` : ''}。` : '',
+    `文章主题：${input.articleTitle || '这篇文章'}；配图位置：${input.heading}。`,
     `配合这段内容：${input.excerpt}`,
-    '面向中老年读者：温暖写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。',
-    '画面里不要出现任何文字、字母、数字、水印、logo、医疗符号或器械；不要夸大疗效，不要痛苦表情。'
-  ].join('\n');
+    audience ? `面向${audience}：温暖写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。` : '写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。',
+    '画面里不要出现任何文字、字母、数字、水印、logo、器械或医疗符号；不要夸张，不要令人不适的画面，不要用画面暗示任何效果承诺。'
+  ].filter(Boolean).join('\n');
 }
 
 /**

@@ -84,7 +84,8 @@ export function exportContentArticle(vault: string, task: ContentTask, options: 
       const name = image ? renamed.get(image.source) : undefined;
       return name ? `![${image!.caption}](<assets/${name}>)` : line;
     }).join('\n');
-    const body = `---\ntype: wechat-article\nsource: sydney-desktop\ncontent_task_id: ${task.id}\ncategory: ${JSON.stringify(task.category)}\nstatus: ${JSON.stringify(task.status)}\nreviewed: ${reviewed}\nexported_at: ${JSON.stringify(new Date().toISOString())}\n---\n\n# ${title}\n\n${cover}${articleForExport}\n\n## 来源记录\n\n${sourceText}\n\n## 合规说明\n\n${DEFAULT_AIGC_FOOTER}\n`;
+    // 导出的元数据带上两级内容方向，方便在知识库里按方向检索。
+    const body = `---\ntype: wechat-article\nsource: sydney-desktop\ncontent_task_id: ${task.id}\ndirection: ${JSON.stringify(task.directionName)}\nsubdirection: ${JSON.stringify(task.subdirectionName)}\nstatus: ${JSON.stringify(task.status)}\nreviewed: ${reviewed}\nexported_at: ${JSON.stringify(new Date().toISOString())}\n---\n\n# ${title}\n\n${cover}${articleForExport}\n\n## 来源记录\n\n${sourceText}\n\n## 合规说明\n\n${DEFAULT_AIGC_FOOTER}\n`;
     fs.writeFileSync(target, body, { encoding: 'utf8', flag: 'wx' });
     return target;
   } catch (error) {

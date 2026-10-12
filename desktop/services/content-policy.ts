@@ -2,11 +2,18 @@ import type { ContentStage, ContentTask } from '../shared.ts';
 
 export function prepareContentEdit(task: ContentTask, input: Partial<ContentTask>): Partial<ContentTask> {
   const patch: Partial<ContentTask> = {};
-  for (const key of ['category', 'topic', 'title', 'draft', 'sourcesJson'] as const) {
+  for (const key of ['topic', 'title', 'draft', 'sourcesJson'] as const) {
     if (input[key] !== undefined) {
       if (typeof input[key] !== 'string') throw new Error('文章字段必须是文本');
       Object.assign(patch, { [key]: input[key] });
     }
+  }
+  // 分类只影响写作方向，同样会让已有审稿结论失效（换了方向就该重新审）。
+  for (const key of ['directionId', 'subdirectionId'] as const) {
+    if (input[key] === undefined) continue;
+    const value = input[key];
+    if (value !== null && (!Number.isInteger(value) || value <= 0)) throw new Error('内容方向取值不正确');
+    Object.assign(patch, { [key]: value });
   }
   const changed = Object.entries(patch).some(([key, value]) => task[key as keyof ContentTask] !== value);
   if (changed) Object.assign(patch, { finalArticle: '', reviewJson: '', status: task.draft || patch.draft ? 'draft' : 'idea' });

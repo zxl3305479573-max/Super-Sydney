@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ContentAssetBundle, ContentAssetView, ContentCategory, ContentStage, ContentTask } from '../shared';
+import type { ContentAssetBundle, ContentAssetView, ContentStage, ContentTask, ContentTaxonomy } from '../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html';
 import { countInlineImages } from '../services/content-images';
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStep, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
-import { CONTENT_CATEGORIES as categories, categoryLabel, categoryValueOf } from './content-categories';
+import { defaultSelection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
 
 const stageLabels: Record<ContentStage, string> = { topics: '生成选题', brief: '生成任务书', claims: '生成证据计划', draft: '生成初稿', review: 'AI 审稿', revise: '按审稿意见修改' };
 const statusNames: Record<string, string> = { idea: '选题', brief: '任务书', draft: '初稿', review: '待修改', ready: '已通过', published: '已推送草稿' };
@@ -51,7 +51,9 @@ function shortTime(value: string): string { return value ? new Date(value).toLoc
 export default function NativeContentPanel({ notify }: { notify: (message: string) => void }) {
   const [tasks, setTasks] = useState<ContentTask[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [category, setCategory] = useState<ContentCategory>('nutrition');
+  const [taxonomy, setTaxonomy] = useState<ContentTaxonomy | null>(null);
+  const [directionId, setDirectionId] = useState<number | null>(null);
+  const [subdirectionId, setSubdirectionId] = useState<number | null>(null);
   const [topicSeed, setTopicSeed] = useState('');
   const [busy, setBusy] = useState('');
   const [busySince, setBusySince] = useState(0);
@@ -60,7 +62,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   const [mode, setMode] = useState<'pipeline' | 'board'>('pipeline');
   const [step, setStep] = useState<PipelineStepKey>('topic');
   const [dirty, setDirty] = useState(false);
-  /** 用户手动选过类别后，就不再让默认类别覆盖他的选择。 */
+  /** 用户手动选过方向后，就不再让默认方向覆盖他的选择。 */
   const categoryPicked = useRef(false);
   const selected = tasks.find(item => item.id === selectedId) ?? null;
   const pipeline = useMemo(() => selected ? buildPipeline(selected, env) : [], [selected, env]);
@@ -74,10 +76,14 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   useEffect(() => { void refresh().catch(error => notify(readableError(error))); }, [refresh, notify]);
   /** 创作设置里的默认类别与微信凭证都来自 ~/.wewrite，保存后要立即反映到新建任务那一行。 */
   const refreshEnvironment = useCallback(async () => {
-    const next = await window.sydney.getWeWriteEnvironment();
+    const [next, tree] = await Promise.all([window.sydney.getWeWriteEnvironment(), window.sydney.getContentTaxonomy()]);
     setEnv({ wechatConfigured: next.wechatConfigured });
-    const preferred = categoryValueOf(next.defaultTopic);
-    if (preferred && !categoryPicked.current) setCategory(preferred);
+    setTaxonomy(tree);
+    if (!categoryPicked.current) {
+      const preferred = defaultSelection(tree);
+      setDirectionId(preferred.directionId);
+      setSubdirectionId(preferred.subdirectionId);
+    }
   }, []);
   useEffect(() => { void refreshEnvironment().catch(() => undefined); }, [refreshEnvironment]);
   useEffect(() => window.sydney.onWeWriteChanged(() => { void refreshEnvironment().catch(() => undefined); }), [refreshEnvironment]);
@@ -95,7 +101,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   const replaceTask = (task: ContentTask) => setTasks(current => current.map(item => item.id === task.id ? task : item));
   const persistSelected = async () => {
     if (!selected) throw new Error('请先选择文章任务');
-    const task = await window.sydney.updateContentTask(selected.id, { category: selected.category, topic: selected.topic, title: selected.title, draft: selected.draft, sourcesJson: selected.sourcesJson });
+    const task = await window.sydney.updateContentTask(selected.id, { directionId: selected.directionId, subdirectionId: selected.subdirectionId, topic: selected.topic, title: selected.title, draft: selected.draft, sourcesJson: selected.sourcesJson });
     setDirty(false);
     return task;
   };
@@ -127,7 +133,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   };
 
   const create = () => guarded('create', async () => {
-    const task = await window.sydney.createContentTask(category, topicSeed);
+    const task = await window.sydney.createContentTask(directionId, subdirectionId, topicSeed);
     setTasks(current => [task, ...current]);
     setSelectedId(task.id);
     setDirty(false);
@@ -259,7 +265,23 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
       onSaved={() => { categoryPicked.current = false; void refreshEnvironment().catch(() => undefined); }}
     />
     <div className="native-create">
-      <label><span>内容类别</span><select value={category} onChange={event => { categoryPicked.current = true; setCategory(event.target.value as ContentCategory); }}>{categories.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label><span>内容方向</span>
+        <select value={directionId ?? ''} onChange={event => {
+          categoryPicked.current = true;
+          const next = Number(event.target.value) || null;
+          setDirectionId(next);
+          // 换一级方向时把具体方向落到它的第一个可选项，避免出现"方向A + 方向B的具体方向"。
+          setSubdirectionId(subdirectionsOf(taxonomy?.directions ?? [], next)[0]?.id ?? null);
+        }}>
+          {(taxonomy?.directions ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      <label><span>具体方向</span>
+        <select value={subdirectionId ?? ''} onChange={event => { categoryPicked.current = true; setSubdirectionId(Number(event.target.value) || null); }}>
+          <option value="">未指定</option>
+          {subdirectionsOf(taxonomy?.directions ?? [], directionId).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
       <label className="native-topic-seed"><span>已有选题或方向（可选）</span><input value={topicSeed} onChange={event => setTopicSeed(event.target.value)} placeholder="例如：柚子和常用药物的相互作用" /></label>
       <button className="button button-primary" disabled={locked} onClick={() => void create()}>新建文章任务</button>
       <div className="flow-mode" role="tablist" aria-label="视图">
@@ -275,8 +297,8 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
           const steps = buildPipeline(task, env);
           const current = steps.find(item => item.key === currentStepKey(task, env));
           return <button key={task.id} className={`native-task ${selectedId === task.id ? 'is-selected' : ''}`} onClick={() => openTask(task)}>
-            <strong>{task.title || task.topic || categoryLabel(task.category)}</strong>
-            <span>{categoryLabel(task.category)} · {steps.every(item => item.state === 'done') ? '已完成' : `第 ${current?.index} 步 ${current?.label}`}</span>
+            <strong>{task.title || task.topic || taskScopeLabel(task)}</strong>
+            <span>{taskScopeLabel(task)} · {steps.every(item => item.state === 'done') ? '已完成' : `第 ${current?.index} 步 ${current?.label}`}</span>
             <div className="flow-mini" aria-hidden="true">{steps.map(item => <i key={item.key} className={`flow-mini-${item.state}`} />)}</div>
             <small>{shortTime(task.updatedAt)}</small>
           </button>;
@@ -286,7 +308,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
       <div className="native-editor">
         {selected && activeStep ? <>
           <div className="native-editor-head">
-            <div><p className="eyebrow">{categoryLabel(selected.category)} · {statusNames[selected.status] ?? selected.status} · 进度 {pipelineProgress(selected, env).done}/{pipeline.length}</p><h2>{selected.title || selected.topic || '新文章'}</h2></div>
+            <div><p className="eyebrow">{taskScopeLabel(selected)} · {statusNames[selected.status] ?? selected.status} · 进度 {pipelineProgress(selected, env).done}/{pipeline.length}</p><h2>{selected.title || selected.topic || '新文章'}</h2></div>
             <div className="native-editor-actions">
               {dirty && <span className="flow-dirty">有未保存修改</span>}
               <label className="flow-theme"><span>排版主题</span>
@@ -315,7 +337,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
               {imageJob && <button className="button button-quiet button-small" onClick={() => void cancelImages()}>取消生成</button>}
             </p>}
 
-            {step === 'topic' && <TopicStep task={selected} locked={locked} busy={busy} onEdit={editSelected} onRun={() => void runStage('topics')} />}
+            {step === 'topic' && <TopicStep task={selected} taxonomy={taxonomy} locked={locked} busy={busy} onEdit={editSelected} onRun={() => void runStage('topics')} />}
             {step === 'brief' && <JsonStep value={selected.briefJson} empty="还没有任务书。任务书会给出目标读者、读者问题、核心主张、章节和边界，初稿严格按它展开。"
               labels={{ target_reader: '目标读者', reader_problem: '读者问题', promise: '文章承诺', core_claim: '核心主张', sections: '章节结构', evidence_needed: '需要的证据', boundaries: '写作边界', framework: '框架' }} />}
             {step === 'evidence' && <EvidenceStep task={selected} locked={locked} onSources={items => editSelected({ sourcesJson: JSON.stringify({ sources: items }) })} />}
@@ -379,7 +401,7 @@ function Board({ tasks, env, onOpen }: { tasks: ContentTask[]; env: Env; onOpen:
         const attention = steps.find(item => item.state === 'attention');
         return <button key={task.id} className="flow-card" onClick={() => onOpen(task, column.key === 'finished' ? 'publish' : column.key as PipelineStepKey)}>
           <strong>{task.title || task.topic || '未命名选题'}</strong>
-          <small>{categoryLabel(task.category)}</small>
+          <small>{taskScopeLabel(task)}</small>
           {attention && <em>{attention.reason}</em>}
           <div className="flow-mini" aria-hidden="true">{steps.map(item => <i key={item.key} className={`flow-mini-${item.state}`} />)}</div>
         </button>;
@@ -388,12 +410,25 @@ function Board({ tasks, env, onOpen }: { tasks: ContentTask[]; env: Env; onOpen:
   })}</div>;
 }
 
-function TopicStep({ task, locked, busy, onEdit, onRun }: { task: ContentTask; locked: boolean; busy: string; onEdit: (patch: Partial<ContentTask>) => void; onRun: () => void }) {
+function TopicStep({ task, taxonomy, locked, busy, onEdit, onRun }: { task: ContentTask; taxonomy: ContentTaxonomy | null; locked: boolean; busy: string; onEdit: (patch: Partial<ContentTask>) => void; onRun: () => void }) {
   const suggestions = topicSuggestions(task.topicsJson);
+  const directions = taxonomy?.directions ?? [];
+  // 分类只在选题这一步可改：换了方向就等于换了一篇要写的东西，后续步骤跟着走。
+  const changeDirection = (next: number | null) => onEdit({ directionId: next, subdirectionId: subdirectionsOf(directions, next)[0]?.id ?? null });
   return <div className="flow-body">
     <div className="native-task-fields">
       <label><span>选题标题</span><input disabled={locked} value={task.title} onChange={event => onEdit({ title: event.target.value })} placeholder="选题标题" /></label>
-      <label><span>内容类别</span><select disabled={locked} value={task.category} onChange={event => onEdit({ category: event.target.value as ContentCategory })}>{categories.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label><span>内容方向</span>
+        <select disabled={locked} value={task.directionId ?? ''} onChange={event => changeDirection(Number(event.target.value) || null)}>
+          {directions.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
+      <label><span>具体方向</span>
+        <select disabled={locked} value={task.subdirectionId ?? ''} onChange={event => onEdit({ subdirectionId: Number(event.target.value) || null })}>
+          <option value="">未指定</option>
+          {subdirectionsOf(directions, task.directionId).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+      </label>
       <label className="native-field-wide"><span>选题方向 / 读者问题</span><input disabled={locked} value={task.topic} onChange={event => onEdit({ topic: event.target.value })} placeholder="描述读者的问题或想解决的需求" /></label>
     </div>
     <div className="flow-inline-actions"><button className="button button-secondary" disabled={locked} onClick={onRun}>{busy === 'topics' ? '生成中…' : suggestions.length ? '换一批 AI 选题' : 'AI 生成 5 个候选选题'}</button><small>点选候选会填入标题和方向；选好标题后点右上角「自动生成」，可一次跑完任务书 → 证据计划 → 初稿 → AI 审稿。</small></div>

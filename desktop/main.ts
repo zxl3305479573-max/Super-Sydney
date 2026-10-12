@@ -35,14 +35,12 @@ import { InputFileWatcher } from './services/input-file-watcher';
 import { classifyApplication } from './services/application-adapters';
 import { describeCaptureObservation } from './services/capture-status';
 import { writeConfirmedEvent, writeDailySummary as writeObsidianDailySummary, writeWeeklySummary as writeObsidianWeeklySummary, writeWorkflowCandidate } from './services/obsidian-output';
-import { runWeWrite, runWeWriteJson, weWriteHome, resolveWeWriteBinary } from './services/wewrite-cli';
-import { describeRun, parseThemes, pickArticlePath, summarizeRun } from './services/wewrite-runs';
-import { countRuns, parseChecks, parseDiagnoseFiles, parseDiagnoseFlags, parseImageConfig, parseRecommendations, parseStyleSummary, parseSummary, parseWechatAuthor, normalizeWeWriteDraft, normalizeImageCost, serializeCliConfig, serializeStyleConfig, maskSecret, yamlBlock, yamlScalar } from './services/wewrite-config';
+import { parseChecks, parseDiagnoseFiles, parseDiagnoseFlags, parseImageConfig, parseRecommendations, parseStyleSummary, parseSummary, parseWechatAuthor, normalizeWeWriteDraft, normalizeImageCost, serializeCliConfig, serializeStyleConfig, maskSecret, weWriteHome, yamlBlock, yamlScalar } from './services/wewrite-config';
 import { assertVideoExportable, assertVideoStage, parseVideoShots, prepareVideoEdit, VIDEO_PLATFORMS } from './services/video-pipeline';
 import { requestVideoStage } from './services/video-workflow';
 import { exportVideoPackage } from './services/video-export';
 import type { ContentApiConfig } from './services/content-workflow';
-import type { AiReviewResult, CardExtractResult, ClaudeCaptureStatus, CodexCaptureStatus, EvolutionState, ContentStage, ContentTask, Settings, VideoAssetBundle, VideoPlatform, VideoProject, VideoStage, WeWriteActionResult, WeWriteConfigDraft, WeWriteEnvironment, WeWriteOverview, WeWriteRunDetail, WeWriteRunSummary, WorkEvent } from './shared';
+import type { AiReviewResult, CardExtractResult, ClaudeCaptureStatus, CodexCaptureStatus, EvolutionState, ContentStage, ContentTask, Settings, VideoAssetBundle, VideoPlatform, VideoProject, VideoStage, WeWriteConfigDraft, WeWriteEnvironment, WeWriteOverview, WorkEvent } from './shared';
 import type { CaptureStatus } from './shared';
 
 const projectPath = path.resolve(__dirname, '../..');
@@ -66,8 +64,6 @@ let screenFrameStore!: ScreenFrameStore;
 let fileWatcher!: InputFileWatcher;
 let screenCapture = { state: 'disabled' as 'disabled' | 'stopped' | 'capturing' | 'error', saved: 0, error: '' };
 let screenCaptureInFlight = false;
-let weWriteWatchTimer: NodeJS.Timeout | undefined;
-let weWriteWatcher: fs.FSWatcher | undefined;
 let captureStatus: CaptureStatus = { state: 'idle', appName: '', windowTitle: '', sampledAt: '', message: '尚未采样' };
 
 function currentSettings(): Settings {
@@ -596,16 +592,27 @@ function syncStyleTopics(topics: string[], defaultTopic: string): void {
  * 内容 API 配置：公众号与视频两条流水线共用同一份 writer 配置与密钥开关。
  * 关掉开关时两条流水线一起停，避免「我在公众号里关了模型调用，视频还在偷偷花钱」。
  */
-function contentApiConfig(): ContentApiConfig {
+function contentApiConfig(task?: ContentTask): ContentApiConfig {
   const { configText, styleText } = weWriteFiles();
   const writer = yamlBlock(configText, 'writer');
   const enabled = yamlScalar(writer, 'enabled');
   if (enabled ? enabled !== 'true' : !currentSettings().llmEnabled) throw new Error('请先在公众号配置中允许内容 API 调用');
+  const taxonomy = readTaxonomy();
+  const found = task ? findSubdirection(taxonomy.directions, task.subdirectionId) : null;
+  const style = parseStyleSummary(styleText);
   return {
     apiKey: resolveLlmApiKey(secretStore.read(), process.env.SYDNEY_LLM_API_KEY || ''),
     baseUrl: yamlScalar(writer, 'base_url') || process.env.SYDNEY_LLM_BASE_URL || 'https://api.deepseek.com/v1',
     model: yamlScalar(writer, 'model') || process.env.SYDNEY_LLM_MODEL || 'deepseek-chat',
-    style: parseStyleSummary(styleText)
+    // 只带账号表达相关的字段：topics/default_topic 属于分类范畴，已经由内容方向表达，重复注入只会互相干扰。
+    style: {
+      targetAudience: style.targetAudience, tone: style.tone, voice: style.voice, wordCount: style.wordCount,
+      blacklistWords: style.blacklistWords, blacklistTopics: style.blacklistTopics
+    },
+    ...(found ? {
+      direction: { name: found.direction.name, note: found.direction.note },
+      subdirection: { name: found.subdirection.name, note: found.subdirection.note }
+    } : {})
   };
 }
 
@@ -623,7 +630,8 @@ function registerNativeContentIpc(): void {
     const direction = subdirection?.direction ?? findDirection(taxonomy.directions, optionalId(directionId));
     if (directionId && !direction) throw new Error('选择的内容方向已经不存在，请刷新后重试');
     const now = new Date().toISOString();
-    const result = db.prepare('INSERT INTO content_tasks (direction_id, subdirection_id, topic, status, created_at, updated_at) VALUES (?, ?, ?, \'idea\', ?, ?)')
+    // category 是旧版本的列（NOT NULL 且老库没有默认值），这里显式写空串，保证老库升级后也能插入。
+    const result = db.prepare('INSERT INTO content_tasks (category, direction_id, subdirection_id, topic, status, created_at, updated_at) VALUES (\'\', ?, ?, ?, \'idea\', ?, ?)')
       .run(direction?.id ?? null, subdirection?.subdirection.id ?? null, topic.trim(), now, now);
     broadcast();
     return getContentTask(Number(result.lastInsertRowid));
@@ -646,7 +654,7 @@ function registerNativeContentIpc(): void {
   ipcMain.handle('content:generate', async (_event, id: number, stage: ContentStage) => withContentRequest(id, async () => {
     const task = getContentTask(id);
     assertContentStage(task, stage);
-    const generated = await requestContentStage(task, stage, contentApiConfig());
+    const generated = await requestContentStage(task, stage, contentApiConfig(task));
     const patch: Partial<ContentTask> = { ...generated, finalArticle: '', reviewJson: '' };
     if (stage === 'topics') patch.status = 'idea';
     if (stage === 'brief' || stage === 'claims') patch.status = 'brief';
@@ -849,9 +857,31 @@ function contentAssetDirectory(id: number): string {
   return directory;
 }
 
-/** 封面提示词：面向中老年读者，并且明确禁止文字与医疗符号。 */
+/** 提示词里要用的内容方向（含用户自己写的约束）与账号读者定位。 */
+function imagePromptScope(task: ContentTask): { direction: { name: string; note: string } | null; audience: string } {
+  const taxonomy = readTaxonomy();
+  const found = findSubdirection(taxonomy.directions, task.subdirectionId);
+  const audience = parseStyleSummary(weWriteFiles().styleText).targetAudience;
+  if (!found) return { direction: null, audience };
+  return {
+    direction: {
+      name: found.subdirection.name ? `${found.direction.name} / ${found.subdirection.name}` : found.direction.name,
+      note: [found.direction.note, found.subdirection.note].map(item => item.trim()).filter(Boolean).join(' ')
+    },
+    audience
+  };
+}
+
+/** 封面提示词：主题 + 内容方向约束 + 读者定位，禁止文字与效果承诺。 */
 function coverImagePrompt(task: ContentTask): string {
-  return `公众号封面图，主题：${task.title || task.topic}。面向中老年读者，温暖写实、自然光、简洁清晰；不要文字、不要医疗符号、不要夸大疗效。`;
+  const scope = imagePromptScope(task);
+  return [
+    '公众号封面图，横构图。',
+    scope.direction ? `内容方向：${scope.direction.name}${scope.direction.note ? `（${scope.direction.note}）` : ''}。` : '',
+    `主题：${task.title || task.topic}。`,
+    scope.audience ? `面向${scope.audience}：温暖写实、自然光、简洁清晰。` : '写实、自然光、简洁清晰。',
+    '不要文字、不要水印、不要器械或医疗符号、不要夸张效果或效果承诺。'
+  ].filter(Boolean).join('\n');
 }
 
 /** 生成封面并落盘，返回文件路径。 */
@@ -867,12 +897,15 @@ async function generateCoverImage(task: ContentTask, signal?: AbortSignal): Prom
  */
 async function generateInlineImages(task: ContentTask, slots: ImageSlot[], stamp: number, signal?: AbortSignal): Promise<{ paths: Array<string | null>; failures: string[] }> {
   const directory = contentAssetDirectory(task.id);
+  const scope = imagePromptScope(task);
   const failures: string[] = [];
   const settled = await Promise.allSettled(slots.map((slot, index) => (async () => {
     const bytes = await requestGeneratedImage(buildImagePrompt({
       articleTitle: task.title || task.topic,
       heading: slot.heading,
-      excerpt: slot.excerpt
+      excerpt: slot.excerpt,
+      direction: scope.direction,
+      audience: scope.audience
     }), '1792x1024', signal);
     const target = path.join(directory, `inline-${stamp}-${index + 1}.png`);
     fs.writeFileSync(target, bytes);
@@ -1116,9 +1149,9 @@ function registerVideoIpc(): void {
   });
 }
 
-/* ── WeWrite 兼容视图（非桌面端原生工作流依赖） ──────────────────
- * 只做两件事：读取 ~/.wewrite 下由 CLI 产生的运行状态，以及触发确定性 CLI 命令。
- * 选题/写作/审稿属于 WeWrite 的提示词层，必须由 agent 执行，应用不代跑。
+/* ── 公众号配置（~/.wewrite） ──────────────────────────────────
+ * style.yaml / config.yaml 是原生管道与 agent 侧 skill 共用的配置；
+ * 应用只读写这两份文件，不再调用 WeWrite CLI。
  */
 
 function readTextFile(target: string): string | null {
@@ -1132,63 +1165,9 @@ function weWriteFiles(): { styleText: string | null; configText: string | null }
   return { styleText: readTextFile(path.join(home, 'style.yaml')), configText: readTextFile(path.join(home, 'config.yaml')) };
 }
 
-/** artifacts 里存的是相对 ~/.wewrite 的路径（如 runs/<id>/article.md），传给 CLI 前必须转成绝对路径。 */
-function absoluteArtifact(value: string): string {
-  return path.isAbsolute(value) ? value : path.join(weWriteHome(), value);
-}
-
-/** 从 images.json 里尽力找一张封面。上游未固定该清单的形状，所以只做保守的字符串扫描。 */
-function detectCover(runId: string): string {
-  const manifest = readTextFile(path.join(weWriteHome(), 'runs', runId, 'images.json'));
-  if (!manifest) return '';
-  try {
-    const found: string[] = [];
-    const walk = (value: unknown): void => {
-      if (typeof value === 'string') {
-        if (/\.(png|jpe?g|webp|gif)$/i.test(value)) found.push(value);
-        return;
-      }
-      if (Array.isArray(value)) { value.forEach(walk); return; }
-      if (value && typeof value === 'object') Object.values(value).forEach(walk);
-    };
-    walk(JSON.parse(manifest));
-    for (const candidate of found) {
-      const resolved = absoluteArtifact(candidate);
-      if (fs.existsSync(resolved)) return resolved;
-    }
-  } catch { /* 清单损坏时退回手动选择封面 */ }
-  return '';
-}
-
 /** 面板默认主题取 style.yaml 的 theme，而不是 CLI 硬编码的 professional-clean。 */
 function defaultWeWriteTheme(): string {
   return yamlScalar(weWriteFiles().styleText, 'theme') || 'professional-clean';
-}
-
-async function rawRun(runId: string): Promise<Record<string, unknown> | null> {
-  const result = await runWeWriteJson<Record<string, unknown>>(['run', 'show', runId]);
-  return result.ok ? result.data : null;
-}
-
-function requireRun(state: Record<string, unknown> | null): Record<string, unknown> {
-  if (!state) throw new Error('任务不存在或已被删除');
-  return state;
-}
-
-async function renderRunPreview(runId: string, theme?: string): Promise<{ ok: true; html: string; target: string; stdout: string } | { ok: false; error: string; detail: string }> {
-  const state = requireRun(await rawRun(runId));
-  const article = pickArticlePath(state.artifacts);
-  if (!article) return { ok: false, error: '这个任务还没有可排版的正文', detail: '需要先完成写作与审稿，产出 article.md 或 draft.md' };
-  const target = path.join(weWriteHome(), 'runs', runId, 'preview.html');
-  // --no-open 必须带：否则 CLI 会弹出系统浏览器窗口。
-  const result = await runWeWrite(['preview', absoluteArtifact(article), '-t', theme?.trim() || defaultWeWriteTheme(), '-o', target, '--no-open']);
-  if (!result.ok) return { ok: false, error: result.error, detail: result.detail };
-  return { ok: true, html: readTextFile(target) ?? '', target, stdout: result.stdout.trim() };
-}
-
-/** 列出 ~/.agents/skills 下的 skill 名称（junction 与普通目录都算）。 */
-function readSkillNames(directory: string): string[] {
-  try { return fs.readdirSync(directory); } catch { return []; }
 }
 
 function writeWeWriteFile(target: string, content: string): void {
@@ -1235,13 +1214,7 @@ function collectWeWriteOverview(): Promise<WeWriteOverview> {
       },
       flags: { skip_publish: !(yamlScalar(configText, 'appid') && yamlScalar(configText, 'secret')), skip_image_gen: !yamlScalar(configText, 'api_key'), needs_onboard: !styleText }
     };
-    const runs = (db.prepare('SELECT status FROM content_tasks').all() as Array<{ status: string }>).map(item => ({ status: ['ready', 'published'].includes(item.status) ? 'completed' : 'active' }));
-    const skillDirectory = path.join(app.getPath('home'), '.agents', 'skills');
-    const skillNames = readSkillNames(skillDirectory);
     return {
-      cliAvailable: fs.existsSync(resolveWeWriteBinary()),
-      cliError: '',
-      cliVersion: '可选兼容工具',
       writer: {
         baseUrl: yamlScalar(yamlBlock(configText, 'writer'), 'base_url') || process.env.SYDNEY_LLM_BASE_URL || 'https://api.deepseek.com/v1',
         model: yamlScalar(yamlBlock(configText, 'writer'), 'model') || process.env.SYDNEY_LLM_MODEL || 'deepseek-chat',
@@ -1257,14 +1230,7 @@ function collectWeWriteOverview(): Promise<WeWriteOverview> {
       image: parseImageConfig(configText),
       wechat: { author: parseWechatAuthor(configText) },
       style: parseStyleSummary(styleText),
-      themes,
-      skills: {
-        total: skillNames.filter(name => name.startsWith('wewrite')).length,
-        elderHealth: skillNames.includes('wewrite-elder-health'),
-        complianceReference: fs.existsSync(path.join(skillDirectory, 'wewrite-elder-health', 'references', 'health-compliance.md')),
-        topicReference: fs.existsSync(path.join(skillDirectory, 'wewrite-elder-health', 'references', 'topic-sources.md'))
-      },
-      counts: countRuns(runs)
+      themes
     };
   })();
 }
@@ -1275,6 +1241,9 @@ function registerWeWriteIpc(): void {
   ipcMain.handle('wewrite:config:save', async (_event, draft: WeWriteConfigDraft): Promise<WeWriteOverview> => {
     const current = weWriteFiles();
     const normalized = normalizeWeWriteDraft(draft, current);
+    // topics / default_topic 已经由「内容方向」统一维护，这里不拿表单里的旧值覆盖它。
+    const taxonomy = readTaxonomy();
+    normalized.style = { ...normalized.style, topics: subdirectionNames(taxonomy.directions), defaultTopic: resolveDefaultSubdirection(taxonomy).name };
     // 先落盘配置文件，再写入密钥：密钥保存失败不该让用户填的整套配置一起丢掉。
     writeWeWriteFile(path.join(weWriteHome(), 'style.yaml'), serializeStyleConfig(normalized.style));
     writeWeWriteFile(path.join(weWriteHome(), 'config.yaml'), serializeCliConfig(normalized));
@@ -1295,8 +1264,6 @@ function registerWeWriteIpc(): void {
     const { styleText, configText } = weWriteFiles();
     const themes = listLocalWeWriteThemes();
     return {
-      cliAvailable: fs.existsSync(resolveWeWriteBinary()),
-      cliError: fs.existsSync(resolveWeWriteBinary()) ? '' : '未安装可选 WeWrite CLI',
       home,
       theme: defaultWeWriteTheme(),
       themes,
@@ -1308,98 +1275,6 @@ function registerWeWriteIpc(): void {
       imageConfigured: Boolean(yamlScalar(configText, 'api_key'))
     };
   });
-
-  ipcMain.handle('wewrite:runs', async (_event, includeCompleted = true): Promise<WeWriteRunSummary[]> => {
-    const result = await runWeWriteJson<unknown[]>(['run', 'list', ...(includeCompleted ? ['--all'] : [])]);
-    if (!result.ok) throw new Error(result.error);
-    return (Array.isArray(result.data) ? result.data : []).map(summarizeRun).filter(run => run.id);
-  });
-
-  ipcMain.handle('wewrite:run', async (_event, runId: string): Promise<WeWriteRunDetail> => describeRun(requireRun(await rawRun(runId))));
-
-  ipcMain.handle('wewrite:preview', async (_event, runId: string, theme?: string): Promise<WeWriteActionResult> => {
-    const rendered = await renderRunPreview(runId, theme);
-    return rendered.ok ? { ok: true, output: rendered.stdout, html: rendered.html, target: rendered.target } : rendered;
-  });
-
-  ipcMain.handle('wewrite:validate', async (_event, runId: string): Promise<WeWriteActionResult> => {
-    const rendered = await renderRunPreview(runId);
-    if (!rendered.ok) return rendered;
-    const result = await runWeWrite(['validate', rendered.target]);
-    return result.ok
-      ? { ok: true, output: result.stdout.trim(), target: rendered.target }
-      : { ok: false, error: result.error, detail: result.detail };
-  });
-
-  ipcMain.handle('wewrite:score', async (_event, runId: string): Promise<WeWriteActionResult> => {
-    const state = requireRun(await rawRun(runId));
-    const article = pickArticlePath(state.artifacts);
-    if (!article) return { ok: false, error: '这个任务还没有可评分的正文', detail: '需要先完成写作与审稿' };
-    const result = await runWeWrite(['score', absoluteArtifact(article)]);
-    return result.ok ? { ok: true, output: result.stdout.trim() } : { ok: false, error: result.error, detail: result.detail };
-  });
-
-  ipcMain.handle('wewrite:hotspots', async (_event, limit = 20): Promise<WeWriteActionResult> => {
-    const result = await runWeWrite(['hotspots', '--limit', String(Math.min(Math.max(1, limit), 50))], 90_000);
-    return result.ok ? { ok: true, output: result.stdout.trim() } : { ok: false, error: result.error, detail: result.detail };
-  });
-
-  ipcMain.handle('wewrite:search-articles', async (_event, query: string, days = 2): Promise<WeWriteActionResult> => {
-    const keyword = query.trim();
-    if (!keyword) return { ok: false, error: '请先输入搜索关键词', detail: '' };
-    const window = [1, 2, 3, 4].includes(days) ? days : 2;
-    const result = await runWeWrite(['search-articles', keyword, '-n', '15', '-t', String(window)], 90_000);
-    return result.ok ? { ok: true, output: result.stdout.trim() } : { ok: false, error: result.error, detail: result.detail };
-  });
-
-  ipcMain.handle('wewrite:open-run', async (_event, runId: string): Promise<WeWriteActionResult> => {
-    const target = path.join(weWriteHome(), 'runs', runId);
-    if (!fs.existsSync(target)) return { ok: false, error: '任务目录不存在', detail: target };
-    await shell.openPath(target);
-    return { ok: true, output: target, target };
-  });
-
-  ipcMain.handle('wewrite:cover', async (_event, runId: string): Promise<WeWriteActionResult> => {
-    const cover = detectCover(runId);
-    return cover ? { ok: true, output: cover, target: cover } : { ok: true, output: '' };
-  });
-
-  /**
-   * 推送草稿箱：对真实公众号创建一篇草稿（不会群发）。
-   * 两个前置条件都是硬性的：微信凭证已配置，以及存在封面图——
-   * 因为上游 create_draft 在缺少 thumb_media_id 时会直接抛错。
-   * 授权按“本次点击”授予，推送后立即收回，使每次推送都需要一次新的人工确认。
-   */
-  ipcMain.handle('wewrite:publish', async (_event, runId: string, theme?: string, coverPath?: string): Promise<WeWriteActionResult> => {
-    const { configText } = weWriteFiles();
-    if (!(yamlScalar(configText, 'appid') && yamlScalar(configText, 'secret'))) {
-      return { ok: false, error: '未配置微信凭证', detail: '请先在 ~/.wewrite/config.yaml 填写 wechat.appid 与 wechat.secret' };
-    }
-    const state = requireRun(await rawRun(runId));
-    const article = pickArticlePath(state.artifacts);
-    if (!article) return { ok: false, error: '这个任务还没有成稿', detail: '需要先完成写作与审稿，产出 article.md' };
-    const cover = coverPath?.trim() || detectCover(runId);
-    if (!cover) return { ok: false, error: '缺少封面图', detail: '推送草稿箱必须提供封面。请先让 agent 生成配图，或在面板里选择一张图片。' };
-    if (!fs.existsSync(cover)) return { ok: false, error: '封面图文件不存在', detail: cover };
-
-    await runWeWrite(['run', 'permission', 'publish', 'allow', '--run-id', runId]);
-    const result = await runWeWrite(['publish', absoluteArtifact(article), '-t', theme?.trim() || defaultWeWriteTheme(), '--cover', cover], 180_000);
-    await runWeWrite(['run', 'permission', 'publish', 'deny', '--run-id', runId]);
-    return result.ok
-      ? { ok: true, output: result.stdout.trim(), target: cover }
-      : { ok: false, error: result.error, detail: result.detail };
-  });
-}
-
-function watchWeWriteRuns(): void {
-  const runsDir = path.join(weWriteHome(), 'runs');
-  if (!fs.existsSync(runsDir)) return;
-  try {
-    weWriteWatcher = fs.watch(runsDir, { recursive: true }, () => {
-      if (weWriteWatchTimer) clearTimeout(weWriteWatchTimer);
-      weWriteWatchTimer = setTimeout(() => windowRef?.webContents.send('wewrite:changed'), 600);
-    });
-  } catch { /* 某些文件系统不支持递归监听，面板仍可手动刷新 */ }
 }
 
 function createWindow() {
@@ -1426,12 +1301,23 @@ app.whenReady().then(() => {
   screenCapture = { ...screenCapture, saved: Number((db.prepare('SELECT COUNT(*) AS count FROM screen_frames').get() as { count: number }).count) };
   db.exec(`CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, app_name TEXT NOT NULL DEFAULT '', window_title TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'manual', note TEXT NOT NULL DEFAULT '', duration_seconds INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'pending', value_score INTEGER NOT NULL DEFAULT 0, summary TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '个人成长'); CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at);`);
   db.exec(`CREATE TABLE IF NOT EXISTS content_tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, topic TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+    id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL DEFAULT '', direction_id INTEGER, subdirection_id INTEGER,
+    topic TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'idea', brief_json TEXT NOT NULL DEFAULT '', claims_json TEXT NOT NULL DEFAULT '', sources_json TEXT NOT NULL DEFAULT '', topics_json TEXT NOT NULL DEFAULT '',
     draft TEXT NOT NULL DEFAULT '', final_article TEXT NOT NULL DEFAULT '', review_json TEXT NOT NULL DEFAULT '', cover_path TEXT NOT NULL DEFAULT '',
     theme TEXT NOT NULL DEFAULT '', publish_json TEXT NOT NULL DEFAULT '', export_path TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );`);
+  // 内容方向是用户自维护的两级分类；旧版写死的 4 个类目在 seedContentTaxonomy 里迁移成默认方向的二级方向。
+  db.exec(`CREATE TABLE IF NOT EXISTS content_directions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );`);
+  db.exec(`CREATE TABLE IF NOT EXISTS content_subdirections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, direction_id INTEGER NOT NULL, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+    sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_content_subdirections_direction ON content_subdirections(direction_id);');
   db.exec(`CREATE TABLE IF NOT EXISTS video_projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT, platform TEXT NOT NULL DEFAULT 'general', topic TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
     audience TEXT NOT NULL DEFAULT '', duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'idea',
@@ -1448,6 +1334,9 @@ app.whenReady().then(() => {
   if (!contentColumns.has('sources_json')) db.exec("ALTER TABLE content_tasks ADD COLUMN sources_json TEXT NOT NULL DEFAULT ''");
   if (!contentColumns.has('export_path')) db.exec("ALTER TABLE content_tasks ADD COLUMN export_path TEXT NOT NULL DEFAULT ''");
   if (!contentColumns.has('theme')) db.exec("ALTER TABLE content_tasks ADD COLUMN theme TEXT NOT NULL DEFAULT ''");
+  if (!contentColumns.has('direction_id')) db.exec('ALTER TABLE content_tasks ADD COLUMN direction_id INTEGER');
+  if (!contentColumns.has('subdirection_id')) db.exec('ALTER TABLE content_tasks ADD COLUMN subdirection_id INTEGER');
+  seedContentTaxonomy();
   const eventColumns = new Set((db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>).map(column => column.name));
   for (const [name, definition] of [['related_path', "TEXT NOT NULL DEFAULT ''"], ['adapter', "TEXT NOT NULL DEFAULT ''"], ['change_type', "TEXT NOT NULL DEFAULT ''"]] as const) {
     if (!eventColumns.has(name)) db.exec(`ALTER TABLE events ADD COLUMN ${name} ${definition}`);
@@ -1458,6 +1347,6 @@ app.whenReady().then(() => {
   refreshClaudeAdapter();
   retentionTimer = setInterval(cleanupScreenFrames, 60 * 60 * 1000);
   cleanupScreenFrames();
-  registerIpc(); createWindow(); watchWeWriteRuns(); app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
+  registerIpc(); createWindow(); app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
-app.on('window-all-closed', () => { codexAdapter?.stop(); claudeAdapter?.stop(); fileWatcher?.stop(); weWriteWatcher?.close(); if (weWriteWatchTimer) clearTimeout(weWriteWatchTimer); if (captureTimer) clearInterval(captureTimer); if (screenTimer) clearInterval(screenTimer); if (retentionTimer) clearInterval(retentionTimer); if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { codexAdapter?.stop(); claudeAdapter?.stop(); fileWatcher?.stop(); if (captureTimer) clearInterval(captureTimer); if (screenTimer) clearInterval(screenTimer); if (retentionTimer) clearInterval(retentionTimer); if (process.platform !== 'darwin') app.quit(); });

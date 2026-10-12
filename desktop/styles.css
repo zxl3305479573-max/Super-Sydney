@@ -609,6 +609,22 @@ button.chip { cursor: pointer; }
 .ww-savebar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 16px; border: 1px solid oklch(0.86 0.04 263); border-radius: 7px; background: oklch(0.985 0.008 263); }
 .ww-savebar p { margin: 0; color: var(--muted); font-size: 12px; }
 
+/* 内容方向编辑器：两级分类，默认收起，只在需要时展开 */
+.cd-summary { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.cd-summary span { display: flex; gap: 8px; align-items: baseline; }
+.cd-summary b { color: var(--ink); font-weight: 650; }
+.cd-editor { display: grid; gap: 12px; }
+.cd-direction { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-raised, var(--surface)); }
+.cd-row { display: flex; gap: 8px; align-items: center; }
+.cd-row .input { flex: 1; }
+.cd-note { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.6; resize: vertical; }
+.cd-subs { display: grid; gap: 6px; padding-left: 10px; border-left: 2px solid var(--line); }
+.cd-sub { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto; gap: 6px; align-items: center; }
+.cd-sub .input { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
+.cd-default { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.cd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cd-actions .ww-muted { margin: 0; }
+
 
 /* ── 公众号创作流水线 ── */
 .flow-mode { display: inline-flex; gap: 3px; padding: 3px; margin-left: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-raised); }

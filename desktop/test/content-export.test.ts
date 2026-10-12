@@ -8,7 +8,7 @@ import { exportContentArticle, parseContentSources } from '../services/content-e
 import { prepareContentEdit } from '../services/content-policy.ts';
 
 function article(overrides: Partial<ContentTask> = {}): ContentTask {
-  return { id: 17, category: 'nutrition', topic: '蔬菜', title: '蔬菜怎么吃', status: 'ready', briefJson: '', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '已经审稿的正文', finalArticle: '已经审稿的正文', reviewJson: '{"decision":"pass"}', coverPath: '', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...overrides };
+  return { id: 17, directionId: 1, subdirectionId: 2, directionName: '中老年健康科普', subdirectionName: '饮食营养与蔬果利弊', topic: '蔬菜', title: '蔬菜怎么吃', status: 'ready', briefJson: '', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '已经审稿的正文', finalArticle: '已经审稿的正文', reviewJson: '{"decision":"pass"}', coverPath: '', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...overrides };
 }
 
 test('source records stay user-provided rather than automatically verified', () => {

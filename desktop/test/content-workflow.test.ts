@@ -7,7 +7,7 @@ import { normalizeImageCost, serializeCliConfig, yamlBlock, yamlScalar } from '.
 import type { WeWriteConfigDraft } from '../shared.ts';
 
 function task(patch: Partial<ContentTask> = {}): ContentTask {
-  return { id: 1, category: 'nutrition', topic: '蔬果', title: '菠菜的营养', status: 'ready', briefJson: '{"sections":["营养"]}', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '当前正文', finalArticle: '当前正文', reviewJson: '{"decision":"pass"}', coverPath: 'cover.png', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch };
+  return { id: 1, directionId: 1, subdirectionId: 2, directionName: '中老年健康科普', subdirectionName: '饮食营养与蔬果利弊', topic: '蔬果', title: '菠菜的营养', status: 'ready', briefJson: '{"sections":["营养"]}', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '当前正文', finalArticle: '当前正文', reviewJson: '{"decision":"pass"}', coverPath: 'cover.png', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch };
 }
 
 test('changing reviewed content invalidates the final article and review', () => {
@@ -85,6 +85,51 @@ test('API call uses account style, a timeout and the persisted task', async () =
   assert.equal(sent.model, 'writer');
   assert.match(JSON.stringify(sent.messages), /800-1200/);
   assert.match(JSON.stringify(sent.messages), /没有联网核实能力/);
+});
+
+test('写作提示词用内容方向的约束，换方向就不再带健康红线', async () => {
+  const capture = async (config: Parameters<typeof requestContentStage>[2], overrides: Partial<ContentTask> = {}) => {
+    let sent: { messages?: unknown } = {};
+    const fetcher = (async (_url, init) => {
+      sent = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: '# 正文' } }] }));
+    }) as typeof fetch;
+    await requestContentStage(task(overrides), 'draft', config, fetcher);
+    return JSON.stringify(sent.messages);
+  };
+
+  const health = await capture({
+    apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer',
+    direction: { name: '中老年健康科普', note: '不宣称根治、抗癌、排毒，不提供剂量疗程。' },
+    subdirection: { name: '饮食营养与蔬果利弊', note: '' }
+  });
+  assert.match(health, /中老年健康科普/);
+  assert.match(health, /不宣称根治/);
+
+  const tech = await capture({
+    apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer',
+    direction: { name: '科技与数码', note: '只评测可复现的参数，不吹捧品牌。' },
+    subdirection: { name: 'AI 硬件', note: '避免出现品牌 logo 的特写。' }
+  }, { directionName: '科技与数码', subdirectionName: 'AI 硬件' });
+  assert.match(tech, /科技与数码/);
+  assert.match(tech, /AI 硬件/);
+  assert.doesNotMatch(tech, /中老年|健康科普|剂量疗程/);
+  // 通用底线与联网限制仍然保留
+  assert.match(tech, /没有联网核实能力/);
+});
+
+test('没有归类时提示词不写死领域', async () => {
+  let sent: { messages?: unknown } = {};
+  const fetcher = (async (_url, init) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ choices: [{ message: { content: '# 正文' } }] }));
+  }) as typeof fetch;
+  const bare = { ...task(), directionId: null, subdirectionId: null, directionName: '', subdirectionName: '' };
+  await requestContentStage(bare, 'draft', { apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer' }, fetcher);
+  const messages = JSON.stringify(sent.messages);
+  assert.doesNotMatch(messages, /类别：/);
+  assert.doesNotMatch(messages, /中老年|健康科普/);
+  assert.match(messages, /不编造亲身经历/);
 });
 
 test('missing key or invalid stage never calls the provider', async () => {

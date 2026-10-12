@@ -66,12 +66,27 @@ test('inserting images keeps paragraph order and normalises captions', () => {
   assert.match(updated, /不要用它替代药物和正规治疗/);
 });
 
-test('prompt keeps the health-compliance guards', () => {
-  const prompt = buildImagePrompt({ articleTitle: '柚子怎么吃', heading: '常见误区', excerpt: '柚子不能抗癌' });
-  assert.match(prompt, /柚子怎么吃/);
-  assert.match(prompt, /常见误区/);
-  assert.match(prompt, /不要出现任何文字/);
-  assert.match(prompt, /不要夸大疗效/);
+test('配图提示词跟着内容方向与读者定位走，不写死领域', () => {
+  const health = buildImagePrompt({
+    articleTitle: '柚子怎么吃', heading: '常见误区', excerpt: '柚子不能抗癌',
+    direction: { name: '中老年健康科普 / 饮食营养与蔬果利弊', note: '不宣称根治、抗癌、排毒' },
+    audience: '55-75岁关注自身健康的中老年读者'
+  });
+  assert.match(health, /柚子怎么吃/);
+  assert.match(health, /常见误区/);
+  assert.match(health, /中老年健康科普/);
+  assert.match(health, /不宣称根治/);
+  assert.match(health, /面向55-75岁/);
+  assert.match(health, /不要出现任何文字/);
+
+  // 换成科技方向时，健康类约束不应该再出现
+  const tech = buildImagePrompt({
+    articleTitle: '显卡怎么选', heading: '算力', excerpt: '同价位显卡的算力差别',
+    direction: { name: '科技与数码 / AI 硬件', note: '画面干净，避免品牌 logo' }
+  });
+  assert.match(tech, /科技与数码/);
+  assert.match(tech, /避免品牌 logo/);
+  assert.doesNotMatch(tech, /健康|中老年|疗效/);
 });
 
 test('task assets expose the cover plus every inline image for the UI', () => {

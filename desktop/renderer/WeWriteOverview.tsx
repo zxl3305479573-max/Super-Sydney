@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WeWriteConfigDraft, WeWriteOverview } from '../shared';
-import { CONTENT_CATEGORY_LABELS } from './content-categories';
+import ContentDirections from './ContentDirections';
 import { emptyWeWriteDraft, splitLines, weWriteDraftFromOverview } from './config-draft';
 
 const STATUS_TEXT: Record<string, string> = { PASS: '通过', WARN: '警告', FAIL: '失败', SKIP: '跳过' };
 const STATUS_CLASS: Record<string, string> = { PASS: 'approved', WARN: 'pending', FAIL: 'rejected', SKIP: 'rejected' };
 
-const CATEGORIES = CONTENT_CATEGORY_LABELS;
 const PROVIDERS = ['openai', 'doubao', 'dashscope', 'jimeng', 'minimax', 'gemini', 'openrouter', 'replicate', 'azure_openai', 'sub2api'];
 
 function readableError(error: unknown): string {
@@ -95,17 +94,11 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
       </div>
     </div>
 
+    <ContentDirections notify={notify} />
+
     <div className="ww-group">
-      <div className="ww-group-head"><h3>内容类别</h3><small>新建文章时的默认类别</small></div>
+      <div className="ww-group-head"><h3>模板与排版</h3><small>写作人格与默认排版主题</small></div>
       <div className="ww-grid">
-        <label className="ww-input"><span>默认类别（下拉选择）</span>
-          <select value={draft.style.defaultTopic} onChange={event => patchStyle({ defaultTopic: event.target.value })}>
-            <option value="">未指定</option>
-            {CATEGORIES.map(item => <option key={item} value={item}>{item}</option>)}
-            {draft.style.defaultTopic && !CATEGORIES.includes(draft.style.defaultTopic) && <option value={draft.style.defaultTopic}>{draft.style.defaultTopic}</option>}
-          </select>
-          <small>来自 style.yaml 的 default_topic，并会排到内容方向第一位</small>
-        </label>
         <label className="ww-input"><span>写作人格</span><input value={draft.style.persona} onChange={event => patchStyle({ persona: event.target.value })} placeholder="elder-health-guide" /><small>{files.persona ? `当前生效：${files.persona}` : '未检测到自定义人格'}</small></label>
         <label className="ww-input"><span>默认排版主题</span>
           <select value={draft.style.theme} onChange={event => patchStyle({ theme: event.target.value })}>
@@ -114,7 +107,6 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
             {draft.style.theme && !overview.themes.some(item => item.name === draft.style.theme) && <option value={draft.style.theme}>{draft.style.theme}</option>}
           </select>
         </label>
-        <label className="ww-input"><span>内容方向（每行一个）</span><textarea value={listText.topics} onChange={event => setListText(current => ({ ...current, topics: event.target.value }))} /></label>
       </div>
     </div>
 

@@ -122,36 +122,6 @@ export type ContentTask = {
   createdAt: string;
   updatedAt: string;
 };
-export type WeWriteRunStatus = 'active' | 'failed' | 'completed';
-export type WeWriteStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
-export type WeWriteStep = { name: string; label: string; status: WeWriteStepStatus; updated: string };
-export type WeWriteRunSummary = {
-  id: string;
-  title: string;
-  status: WeWriteRunStatus;
-  mode: string;
-  createdAt: string;
-  updatedAt: string;
-  steps: Record<string, WeWriteStepStatus>;
-  completedSteps: number;
-  totalSteps: number;
-  verifiedSourceCount: number;
-  sourceCount: number;
-  publishAllowed: boolean;
-  lastError: string;
-  hasArticle: boolean;
-  hasPreview: boolean;
-};
-export type WeWriteRunDetail = WeWriteRunSummary & {
-  keywords: string[];
-  framework: string;
-  persona: string;
-  enhanceStrategy: string;
-  wordCount: number;
-  stepList: WeWriteStep[];
-  artifacts: Record<string, string>;
-  runDirectory: string;
-};
 export type WeWriteTheme = { name: string; description: string };
 export type WeWriteCheck = { group: string; name: string; status: string; detail: string };
 export type WeWriteSummary = {
@@ -192,9 +162,6 @@ export type WeWriteConfigDraft = {
   image: { provider: string; model: string; baseUrl: string; apiKey: string; estimatedCost: string };
 };
 export type WeWriteOverview = {
-  cliAvailable: boolean;
-  cliError: string;
-  cliVersion: string;
   writer: { baseUrl: string; model: string; apiKeyMasked: string; enabled: boolean };
   home: string;
   checks: WeWriteCheck[];
@@ -211,12 +178,8 @@ export type WeWriteOverview = {
     topics: string[]; blacklistWords: string[]; blacklistTopics: string[];
   };
   themes: WeWriteTheme[];
-  skills: { total: number; elderHealth: boolean; complianceReference: boolean; topicReference: boolean };
-  counts: { total: number; active: number; completed: number; failed: number };
 };
 export type WeWriteEnvironment = {
-  cliAvailable: boolean;
-  cliError: string;
   home: string;
   theme: string;
   themes: WeWriteTheme[];
@@ -227,10 +190,6 @@ export type WeWriteEnvironment = {
   imageConfigured: boolean;
   defaultTopic: string;
 };
-export type WeWriteActionResult =
-  | { ok: true; output: string; html?: string; target?: string }
-  | { ok: false; error: string; detail: string };
-
 /* ── 视频模块 ────────────────────────────────────────────────────
  * 面向中老年健康科普账号的短视频流水线：选题 → 口播脚本 → 分镜 →
  * 字幕 → 封面 → 制作包。
@@ -320,16 +279,6 @@ export interface SydneyApi {
   getWeWriteEnvironment(): Promise<WeWriteEnvironment>;
   getWeWriteOverview(): Promise<WeWriteOverview>;
   saveWeWriteConfig(config: WeWriteConfigDraft): Promise<WeWriteOverview>;
-  listWeWriteRuns(includeCompleted?: boolean): Promise<WeWriteRunSummary[]>;
-  getWeWriteRun(runId: string): Promise<WeWriteRunDetail>;
-  renderWeWritePreview(runId: string, theme?: string): Promise<WeWriteActionResult>;
-  validateWeWritePreview(runId: string): Promise<WeWriteActionResult>;
-  scoreWeWriteArticle(runId: string): Promise<WeWriteActionResult>;
-  fetchWeWriteHotspots(limit?: number): Promise<WeWriteActionResult>;
-  searchWeChatArticles(query: string, days?: number): Promise<WeWriteActionResult>;
-  openWeWriteRunDirectory(runId: string): Promise<WeWriteActionResult>;
-  getWeWriteCover(runId: string): Promise<WeWriteActionResult>;
-  publishWeWriteDraft(runId: string, theme?: string, coverPath?: string): Promise<WeWriteActionResult>;
   listVideoProjects(): Promise<VideoProject[]>;
   createVideoProject(platform: VideoPlatform, topic?: string): Promise<VideoProject>;
   updateVideoProject(id: number, patch: Partial<VideoProject>): Promise<VideoProject>;

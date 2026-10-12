@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { WeWriteOverview } from '../shared.ts';
 import { normalizeWeWriteDraft, parseStyleSummary, parseWechatAuthor, serializeCliConfig, serializeStyleConfig, yamlBlock, yamlScalar } from '../services/wewrite-config.ts';
-import { CONTENT_CATEGORIES, categoryLabel, categoryValueOf } from '../renderer/content-categories.ts';
+import { taskScopeLabel } from '../renderer/content-taxonomy.ts';
 import { splitLines, weWriteDraftFromOverview } from '../renderer/config-draft.ts';
 
 function overview(): WeWriteOverview {
@@ -124,9 +124,8 @@ test('多行文本按行解析，空行与首尾空格被忽略', () => {
   assert.deepEqual(splitLines('   '), []);
 });
 
-test('内容类别的中文名与存储值可以互相反查', () => {
-  assert.equal(categoryValueOf('长辈晚辈关系处理'), 'family');
-  assert.equal(categoryValueOf('不存在的类别'), null);
-  assert.equal(categoryLabel('general'), '综合健康科普');
-  assert.equal(CONTENT_CATEGORIES.length, 4);
+test('任务展示的分类名优先用具体方向，其次一级方向，最后是未归类', () => {
+  assert.equal(taskScopeLabel({ directionName: '中老年健康科普', subdirectionName: '饮食营养与蔬果利弊' }), '饮食营养与蔬果利弊');
+  assert.equal(taskScopeLabel({ directionName: '科技与数码', subdirectionName: '' }), '科技与数码');
+  assert.equal(taskScopeLabel({ directionName: '', subdirectionName: '' }), '未归类');
 });

@@ -4,7 +4,7 @@ import type { ContentTask } from '../shared.ts';
 import { AUTO_GENERATE_STAGES, PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, publishChecklist, reviewOutstanding } from '../services/content-pipeline.ts';
 
 function task(patch: Partial<ContentTask> = {}): ContentTask {
-  return { id: 1, category: 'nutrition', topic: '', title: '', status: 'idea', briefJson: '', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '', finalArticle: '', reviewJson: '', coverPath: '', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch };
+  return { id: 1, directionId: 1, subdirectionId: 2, directionName: '中老年健康科普', subdirectionName: '饮食营养与蔬果利弊', topic: '', title: '', status: 'idea', briefJson: '', claimsJson: '', sourcesJson: '', topicsJson: '', draft: '', finalArticle: '', reviewJson: '', coverPath: '', theme: '', publishJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch };
 }
 const env = { wechatConfigured: true };
 const states = (t: ContentTask) => Object.fromEntries(buildPipeline(t, env).map(step => [step.key, step.state]));

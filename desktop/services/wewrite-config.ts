@@ -1,3 +1,5 @@
+import os from 'node:os';
+import path from 'node:path';
 import type { WeWriteCheck, WeWriteConfigDraft, WeWriteSummary } from '../shared.ts';
 
 /**
@@ -7,6 +9,11 @@ import type { WeWriteCheck, WeWriteConfigDraft, WeWriteSummary } from '../shared
  * 简单结构（标量键、缩进列表、缩进块），遇到任何不符合预期的形状都返回空值，
  * 不会抛错，也不会误读成别的值。
  */
+
+/** 公众号配置目录：style.yaml / config.yaml / themes 都在这里，原生管道与 agent 侧 skill 共用。 */
+export function weWriteHome(): string {
+  return process.env.WEWRITE_HOME?.trim() || path.join(os.homedir(), '.wewrite');
+}
 
 const SCALAR_KEYS = '[A-Za-z_][A-Za-z0-9_]*';
 
@@ -186,19 +193,6 @@ export function parseDiagnoseFlags(value: unknown): { skipPublish: boolean; skip
 
 export function parseRecommendations(value: unknown): string[] {
   return list(value).map(text).filter(Boolean);
-}
-
-/** 统计任务状态。 */
-export function countRuns(states: unknown[]): { total: number; active: number; completed: number; failed: number } {
-  const counts = { total: 0, active: 0, completed: 0, failed: 0 };
-  for (const entry of states) {
-    const status = text(record(entry).status);
-    counts.total += 1;
-    if (status === 'completed') counts.completed += 1;
-    else if (status === 'failed') counts.failed += 1;
-    else counts.active += 1;
-  }
-  return counts;
 }
 
 /** 从 style.yaml / config.yaml 组装风格与图片服务摘要。 */

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  countRuns, maskSecret, normalizeWeWriteDraft, parseChecks, parseDiagnoseFiles, parseDiagnoseFlags, parseImageConfig,
+  maskSecret, normalizeWeWriteDraft, parseChecks, parseDiagnoseFiles, parseDiagnoseFlags, parseImageConfig,
   parseRecommendations, parseStyleSummary, parseSummary, parseWechatAuthor, serializeCliConfig, serializeStyleConfig,
   stripScalar, yamlBlock, yamlList, yamlScalar
 } from '../services/wewrite-config.ts';
@@ -153,13 +153,6 @@ test('parsers tolerate missing or malformed diagnose fields', () => {
   assert.deepEqual(parseRecommendations('not-a-list'), []);
   assert.equal(parseDiagnoseFiles(undefined).configYaml, false);
   assert.equal(parseDiagnoseFlags(undefined).skipPublish, false);
-});
-
-test('countRuns groups runs by status', () => {
-  assert.deepEqual(countRuns([{ status: 'active' }, { status: 'completed' }, { status: 'failed' }, { status: 'weird' }]), {
-    total: 4, active: 2, completed: 1, failed: 1
-  });
-  assert.deepEqual(countRuns([]), { total: 0, active: 0, completed: 0, failed: 0 });
 });
 
 function draft(): WeWriteConfigDraft {

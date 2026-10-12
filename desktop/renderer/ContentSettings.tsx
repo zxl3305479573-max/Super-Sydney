@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WeWriteConfigDraft, WeWriteOverview } from '../shared';
-import { CONTENT_CATEGORY_LABELS } from './content-categories';
-import { splitLines, weWriteDraftFromOverview } from './config-draft';
+import ContentDirections from './ContentDirections';
+import { weWriteDraftFromOverview } from './config-draft';
 
 function readableError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -21,7 +21,6 @@ export default function ContentSettingsPanel({ notify, onSaved }: {
 }) {
   const [overview, setOverview] = useState<WeWriteOverview | null>(null);
   const [draft, setDraft] = useState<WeWriteConfigDraft | null>(null);
-  const [topicsText, setTopicsText] = useState('');
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState('');
@@ -33,7 +32,6 @@ export default function ContentSettingsPanel({ notify, onSaved }: {
   const apply = useCallback((next: WeWriteOverview) => {
     setOverview(next);
     setDraft(weWriteDraftFromOverview(next));
-    setTopicsText(next.style.topics.join('\n'));
     setDirty(false);
     return next;
   }, []);
@@ -63,7 +61,7 @@ export default function ContentSettingsPanel({ notify, onSaved }: {
     if (!draft) return;
     setSaving(true);
     try {
-      const next = await window.sydney.saveWeWriteConfig({ ...draft, style: { ...draft.style, topics: splitLines(topicsText) } });
+      const next = await window.sydney.saveWeWriteConfig(draft);
       apply(next);
       setSavedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
       onSaved?.(next);
@@ -141,20 +139,7 @@ export default function ContentSettingsPanel({ notify, onSaved }: {
         </div>
       </div>
 
-      <div className="ww-group">
-        <div className="ww-group-head"><h3>内容类别</h3><small>新建文章任务时的默认类别与内容方向</small></div>
-        <div className="ww-grid">
-          <label className="ww-input"><span>默认类别</span>
-            <select value={style.defaultTopic} onChange={event => patchStyle({ defaultTopic: event.target.value })}>
-              <option value="">未指定</option>
-              {CONTENT_CATEGORY_LABELS.map(item => <option key={item} value={item}>{item}</option>)}
-              {style.defaultTopic && !CONTENT_CATEGORY_LABELS.includes(style.defaultTopic) && <option value={style.defaultTopic}>{style.defaultTopic}</option>}
-            </select>
-            <small>写入 style.yaml 的 default_topic，并排在内容方向第一位；「新建文章任务」的类别下拉框以此为默认。</small>
-          </label>
-          <label className="ww-input"><span>内容方向（每行一个）</span><textarea value={topicsText} onChange={event => { setDirty(true); setTopicsText(event.target.value); }} /></label>
-        </div>
-      </div>
+      <ContentDirections notify={notify} />
 
       <div className="ww-savebar">
         <p>{savedAt ? `已保存于 ${savedAt}` : '修改后点保存，写入本机 ~/.wewrite/style.yaml（与「环境与配置」是同一份）'}</p>
