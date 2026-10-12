@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import type { WeWriteEnvironment } from '../shared';
 import WeWriteOverviewPanel from './WeWriteOverview';
 import NativeContentPanel from './NativeContentPanel';
+import WeWriteStats from './WeWriteStats';
 
 export default function WeWritePanel({ notify }: { notify: (message: string) => void }) {
   const [environment, setEnvironment] = useState<WeWriteEnvironment | null>(null);
-  const [tab, setTab] = useState<'native' | 'config'>('native');
+  const [tab, setTab] = useState<'native' | 'stats' | 'config'>('native');
 
   useEffect(() => {
     let alive = true;
@@ -28,8 +29,9 @@ export default function WeWritePanel({ notify }: { notify: (message: string) => 
     </header>
     <div className="ww-tabs">
       <button className={`ww-tab ${tab === 'native' ? 'is-active' : ''}`} onClick={() => setTab('native')}>创作流水线</button>
+      <button className={`ww-tab ${tab === 'stats' ? 'is-active' : ''}`} onClick={() => setTab('stats')}>文章数据</button>
       <button className={`ww-tab ${tab === 'config' ? 'is-active' : ''}`} onClick={() => setTab('config')}>环境与配置</button>
     </div>
-    {tab === 'native' ? <NativeContentPanel notify={notify} /> : <WeWriteOverviewPanel notify={notify} />}
+    {tab === 'native' ? <NativeContentPanel notify={notify} /> : tab === 'stats' ? <WeWriteStats notify={notify} /> : <WeWriteOverviewPanel notify={notify} />}
   </section>;
 }

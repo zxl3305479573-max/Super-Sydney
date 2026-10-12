@@ -190,6 +190,39 @@ export type WeWriteEnvironment = {
   imageConfigured: boolean;
   defaultTopic: string;
 };
+/* ── 公众号文章数据 ──────────────────────────────────────────────
+ * 账号未认证、调不了 datacube 接口，数据来自用户从后台导出的表格。
+ * 指标都可空：不同导出包含的列不同，null 表示"这份数据里没有"，不是 0。
+ */
+export type ArticleMetricKey = 'readUsers' | 'reads' | 'shareUsers' | 'shares' | 'likes' | 'wows' | 'favorites' | 'comments' | 'delivered' | 'follows';
+export type ArticleMetrics = Record<ArticleMetricKey, number | null>;
+export type ArticleStatRecord = {
+  id: number;
+  title: string;
+  publishDate: string;
+  metrics: ArticleMetrics;
+  source: string;
+  importedAt: string;
+  /** 按标题匹配到的创作任务；null 表示不是在本应用里写的，或标题被改过。 */
+  taskId: number | null;
+  directionName: string;
+  subdirectionName: string;
+  /** 分享 / 阅读，优先用人数。 */
+  shareRate: number | null;
+  /** (点赞 + 在看 + 收藏) / 阅读。 */
+  engageRate: number | null;
+  /** 阅读人数 / 送达人数，只有导出里带送达人数时才有。 */
+  openRate: number | null;
+};
+export type ArticleStatGroup = { name: string; count: number; medianReads: number | null; meanShareRate: number | null; meanEngageRate: number | null };
+export type ArticleStatsView = {
+  records: ArticleStatRecord[];
+  groups: ArticleStatGroup[];
+  overview: { articles: number; matched: number; medianReads: number | null; totalReads: number | null; meanShareRate: number | null };
+  availableMetrics: ArticleMetricKey[];
+  lastImportedAt: string;
+};
+export type ArticleStatsImportResult = { file: string; added: number; updated: number; view: ArticleStatsView };
 /* ── 视频模块 ────────────────────────────────────────────────────
  * 面向中老年健康科普账号的短视频流水线：选题 → 口播脚本 → 分镜 →
  * 字幕 → 封面 → 制作包。
@@ -279,6 +312,10 @@ export interface SydneyApi {
   getWeWriteEnvironment(): Promise<WeWriteEnvironment>;
   getWeWriteOverview(): Promise<WeWriteOverview>;
   saveWeWriteConfig(config: WeWriteConfigDraft): Promise<WeWriteOverview>;
+  getArticleStats(): Promise<ArticleStatsView>;
+  /** 弹出文件选择框导入后台导出的数据表；用户取消时返回 null。 */
+  importArticleStats(): Promise<ArticleStatsImportResult | null>;
+  deleteArticleStat(id: number): Promise<ArticleStatsView>;
   listVideoProjects(): Promise<VideoProject[]>;
   createVideoProject(platform: VideoPlatform, topic?: string): Promise<VideoProject>;
   updateVideoProject(id: number, patch: Partial<VideoProject>): Promise<VideoProject>;

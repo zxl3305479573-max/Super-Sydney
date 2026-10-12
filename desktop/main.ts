@@ -8,6 +8,8 @@ import { registerCoreIpc } from './ipc/core';
 import { registerContentIpc } from './ipc/content';
 import { registerVideoIpc } from './ipc/video';
 import { registerWeWriteIpc } from './ipc/wewrite';
+import { registerArticleStatsIpc } from './ipc/article-stats';
+import { migrateArticleStatTables } from './services/article-stats-store';
 import { SettingsFile } from './services/app-settings';
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from './services/content-api-config';
 import { migrateCodexEventColumns } from './services/codex-event-store';
@@ -32,6 +34,7 @@ function openDatabase(file: string): DatabaseSync {
   migrateEventTables(db);
   migrateContentTables(db);
   migrateVideoTables(db);
+  migrateArticleStatTables(db);
   migrateCodexEventColumns(db);
   migrateAiDraftColumns(db);
   migrateRuleTables(db);
@@ -80,6 +83,7 @@ app.whenReady().then(() => {
   registerContentIpc(ctx);
   registerVideoIpc(ctx);
   registerWeWriteIpc(ctx);
+  registerArticleStatsIpc(ctx);
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
