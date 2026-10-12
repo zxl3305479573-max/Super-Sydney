@@ -80,15 +80,30 @@ export type LlmKeyStatus = { configured: boolean; masked: string; encryptionAvai
  * 以及触发确定性 CLI 命令。选题/写作/审稿属于 WeWrite 的提示词层，
  * 必须由 agent 执行，应用不代跑。
  */
-export type ContentCategory = 'nutrition' | 'wellbeing' | 'family' | 'general';
 export type ContentStage = 'topics' | 'brief' | 'claims' | 'draft' | 'review' | 'revise';
+/**
+ * 内容方向是两级、由用户自己维护的分类：
+ * 一级「内容方向」（如 中老年健康科普 / 科技与数码），二级「具体方向」（如 饮食营养与蔬果利弊）。
+ * 写作与配图的提示词都从这里的 name/note 取，不再写死某个领域。
+ */
+export type ContentSubdirection = { id: number; name: string; note: string };
+export type ContentDirection = { id: number; name: string; note: string; subdirections: ContentSubdirection[] };
+export type ContentTaxonomy = { directions: ContentDirection[]; defaultSubdirectionId: number | null };
+/** 保存时用：没有 id 表示新增，缺失的 id 表示删除。 */
+export type ContentSubdirectionInput = { id?: number; name: string; note?: string };
+export type ContentDirectionInput = { id?: number; name: string; note?: string; subdirections: ContentSubdirectionInput[] };
 /** 前端可视化用的图片：thumbnail 是小尺寸 data URI，path 只作标识与排错。 */
 export type ContentAssetView = { path: string; caption: string; thumbnail: string };
 export type ContentAssetBundle = { cover: ContentAssetView | null; images: ContentAssetView[] };
 export type ContentTaskStatus = 'idea' | 'brief' | 'draft' | 'review' | 'ready' | 'published';
 export type ContentTask = {
   id: number;
-  category: ContentCategory;
+  /** 内容方向与具体方向：允许为空（老任务或还没归类），提示词会退化成只按选题写。 */
+  directionId: number | null;
+  subdirectionId: number | null;
+  /** 由分类表 join 出来的展示名，界面直接渲染，不必再查表。 */
+  directionName: string;
+  subdirectionName: string;
   topic: string;
   title: string;
   status: ContentTaskStatus;
@@ -285,7 +300,10 @@ export interface SydneyApi {
   saveLlmKey(value: string): Promise<LlmKeyStatus>;
   deleteLlmKey(): Promise<LlmKeyStatus>;
   listContentTasks(): Promise<ContentTask[]>;
-  createContentTask(category: ContentCategory, topic?: string): Promise<ContentTask>;
+  getContentTaxonomy(): Promise<ContentTaxonomy>;
+  /** 保存两级内容方向；返回归一化后的结果（含新分配的 id 与默认具体方向）。 */
+  saveContentTaxonomy(directions: ContentDirectionInput[], defaultSubdirectionId?: number | null): Promise<ContentTaxonomy>;
+  createContentTask(directionId: number | null, subdirectionId: number | null, topic?: string): Promise<ContentTask>;
   updateContentTask(id: number, patch: Partial<ContentTask>): Promise<ContentTask>;
   generateContentStage(id: number, stage: ContentStage): Promise<ContentTask>;
   generateContentCover(id: number): Promise<ContentTask>;

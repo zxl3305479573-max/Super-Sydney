@@ -23,6 +23,8 @@ import { assertContentDeliverable, assertContentStage, deliverableArticle, isCon
 import { WeChatClient, contentTypeFor } from './services/wechat-publisher';
 import { DEFAULT_AIGC_FOOTER, makeDigest, normalizeTitle, renderWeChatHtml, toPlainText } from './services/article-html';
 import { applyGeneratedImages, buildImagePrompt, collectTaskAssets, listInlineImages, planCoverAndInlineImages, planImageSlots } from './services/content-images';
+import { DEFAULT_DIRECTION_NAME, DEFAULT_DIRECTION_NOTE, DEFAULT_SUBDIRECTIONS, LEGACY_CATEGORY_NAMES, describeDirection, findDirection, findSubdirection, normalizeTaxonomyInput, resolveDefaultSubdirection, subdirectionNames } from './services/content-taxonomy';
+import type { ContentDirection, ContentDirectionInput, ContentSubdirection, ContentTaxonomy } from './shared';
 import type { ImageSlot } from './services/content-images';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
 import { writeFileAtomic } from './services/atomic-file';
@@ -40,7 +42,7 @@ import { assertVideoExportable, assertVideoStage, parseVideoShots, prepareVideoE
 import { requestVideoStage } from './services/video-workflow';
 import { exportVideoPackage } from './services/video-export';
 import type { ContentApiConfig } from './services/content-workflow';
-import type { AiReviewResult, CardExtractResult, ClaudeCaptureStatus, CodexCaptureStatus, ContentCategory, EvolutionState, ContentStage, ContentTask, Settings, VideoAssetBundle, VideoPlatform, VideoProject, VideoStage, WeWriteActionResult, WeWriteConfigDraft, WeWriteEnvironment, WeWriteOverview, WeWriteRunDetail, WeWriteRunSummary, WorkEvent } from './shared';
+import type { AiReviewResult, CardExtractResult, ClaudeCaptureStatus, CodexCaptureStatus, EvolutionState, ContentStage, ContentTask, Settings, VideoAssetBundle, VideoPlatform, VideoProject, VideoStage, WeWriteActionResult, WeWriteConfigDraft, WeWriteEnvironment, WeWriteOverview, WeWriteRunDetail, WeWriteRunSummary, WorkEvent } from './shared';
 import type { CaptureStatus } from './shared';
 
 const projectPath = path.resolve(__dirname, '../..');
@@ -440,7 +442,6 @@ function registerIpc() {
 }
 /* ── 桌面端原生公众号内容管道 ───────────────────────────────────── */
 
-const contentCategories = new Set<ContentCategory>(['nutrition', 'wellbeing', 'family', 'general']);
 const contentRequests = new Set<number>();
 /** 生图的取消句柄：按任务记，界面上「取消生成」就是把它 abort 掉。 */
 const imageAborts = new Map<number, AbortController>();
@@ -452,10 +453,24 @@ async function withContentRequest<T>(id: number, operation: () => Promise<T>): P
   try { return await operation(); } finally { contentRequests.delete(id); }
 }
 
+/** 任务查询统一带出分类名，界面不必再自己去查分类表。 */
+const CONTENT_TASK_SELECT = `SELECT t.*, d.name AS direction_name, s.name AS subdirection_name
+  FROM content_tasks t
+  LEFT JOIN content_directions d ON d.id = t.direction_id
+  LEFT JOIN content_subdirections s ON s.id = t.subdirection_id`;
+
+function optionalId(value: unknown): number | null {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 function contentTaskFromRow(row: Record<string, unknown>): ContentTask {
   return {
     id: Number(row.id),
-    category: contentCategories.has(row.category as ContentCategory) ? row.category as ContentCategory : 'general',
+    directionId: optionalId(row.direction_id),
+    subdirectionId: optionalId(row.subdirection_id),
+    directionName: String(row.direction_name ?? ''),
+    subdirectionName: String(row.subdirection_name ?? ''),
     topic: String(row.topic ?? ''), title: String(row.title ?? ''), status: String(row.status ?? 'idea') as ContentTask['status'],
     briefJson: String(row.brief_json ?? ''), claimsJson: String(row.claims_json ?? ''), sourcesJson: String(row.sources_json ?? ''), topicsJson: String(row.topics_json ?? ''),
     draft: String(row.draft ?? ''), finalArticle: String(row.final_article ?? ''), reviewJson: String(row.review_json ?? ''),
@@ -464,9 +479,117 @@ function contentTaskFromRow(row: Record<string, unknown>): ContentTask {
 }
 
 function getContentTask(id: number): ContentTask {
-  const row = db.prepare('SELECT * FROM content_tasks WHERE id=?').get(id) as Record<string, unknown> | undefined;
+  const row = db.prepare(`${CONTENT_TASK_SELECT} WHERE t.id=?`).get(id) as Record<string, unknown> | undefined;
   if (!row) throw new Error('文章任务不存在');
   return contentTaskFromRow(row);
+}
+
+/* ── 内容方向（两级，用户自维护） ─────────────────────────────── */
+
+function readTaxonomy(): ContentTaxonomy {
+  const directions = (db.prepare('SELECT * FROM content_directions ORDER BY sort_order, id').all() as Array<Record<string, unknown>>).map(row => ({
+    id: Number(row.id),
+    name: String(row.name ?? ''),
+    note: String(row.note ?? ''),
+    subdirections: [] as ContentSubdirection[]
+  })) as ContentDirection[];
+  const byId = new Map(directions.map(item => [item.id, item]));
+  for (const row of db.prepare('SELECT * FROM content_subdirections ORDER BY sort_order, id').all() as Array<Record<string, unknown>>) {
+    const parent = byId.get(Number(row.direction_id));
+    if (parent) parent.subdirections.push({ id: Number(row.id), name: String(row.name ?? ''), note: String(row.note ?? '') });
+  }
+  const preferred = parseStyleSummary(weWriteFiles().styleText).defaultTopic;
+  const fallback = resolveDefaultSubdirection({ directions, defaultSubdirectionId: null }, preferred);
+  return { directions, defaultSubdirectionId: fallback.subdirectionId };
+}
+
+/** 首次启动写入默认方向，并把旧的 category 值映射到对应的二级方向。 */
+function seedContentTaxonomy(): void {
+  const now = new Date().toISOString();
+  const count = Number((db.prepare('SELECT COUNT(*) AS count FROM content_directions').get() as { count: number }).count);
+  if (!count) {
+    const direction = db.prepare('INSERT INTO content_directions (name, note, sort_order, created_at, updated_at) VALUES (?, ?, 0, ?, ?)')
+      .run(DEFAULT_DIRECTION_NAME, DEFAULT_DIRECTION_NOTE, now, now);
+    DEFAULT_SUBDIRECTIONS.forEach((name, index) => {
+      db.prepare('INSERT INTO content_subdirections (direction_id, name, note, sort_order, created_at, updated_at) VALUES (?, ?, \'\', ?, ?, ?)')
+        .run(Number(direction.lastInsertRowid), name, index, now, now);
+    });
+  }
+  const subdirections = db.prepare('SELECT id, name FROM content_subdirections').all() as Array<{ id: number; name: string }>;
+  for (const [legacy, name] of Object.entries(LEGACY_CATEGORY_NAMES)) {
+    const target = subdirections.find(item => item.name === name);
+    if (!target) continue;
+    const parent = db.prepare('SELECT direction_id FROM content_subdirections WHERE id=?').get(target.id) as { direction_id: number } | undefined;
+    if (!parent) continue;
+    db.prepare('UPDATE content_tasks SET direction_id=?, subdirection_id=? WHERE subdirection_id IS NULL AND category=?')
+      .run(Number(parent.direction_id), target.id, legacy);
+  }
+}
+
+/**
+ * 保存分类树：按 id 增改删。
+ * 有任务引用的方向不允许删除——否则历史文章会突然没有归属，界面上也解释不清。
+ */
+function saveTaxonomy(input: unknown, defaultSubdirectionId?: number | null): ContentTaxonomy {
+  const normalized = normalizeTaxonomyInput(input);
+  const now = new Date().toISOString();
+  const keepDirectionIds = new Set(normalized.map(item => item.id).filter((id): id is number => Boolean(id)));
+  const keepSubIds = new Set(normalized.flatMap(item => item.subdirections.map(sub => sub.id)).filter((id): id is number => Boolean(id)));
+
+  for (const direction of db.prepare('SELECT id, name FROM content_directions').all() as Array<{ id: number; name: string }>) {
+    if (keepDirectionIds.has(direction.id)) continue;
+    const used = Number((db.prepare('SELECT COUNT(*) AS count FROM content_tasks WHERE direction_id=?').get(direction.id) as { count: number }).count);
+    if (used) throw new Error(`「${direction.name}」下还有 ${used} 篇文章，先改掉它们的分类再删除这个方向`);
+    db.prepare('DELETE FROM content_subdirections WHERE direction_id=?').run(direction.id);
+    db.prepare('DELETE FROM content_directions WHERE id=?').run(direction.id);
+  }
+  for (const subdirection of db.prepare('SELECT id, name FROM content_subdirections').all() as Array<{ id: number; name: string }>) {
+    if (keepSubIds.has(subdirection.id)) continue;
+    const used = Number((db.prepare('SELECT COUNT(*) AS count FROM content_tasks WHERE subdirection_id=?').get(subdirection.id) as { count: number }).count);
+    if (used) throw new Error(`「${subdirection.name}」下还有 ${used} 篇文章，先把它们改成别的具体方向再删除`);
+    db.prepare('DELETE FROM content_subdirections WHERE id=?').run(subdirection.id);
+  }
+
+  normalized.forEach((direction, index) => {
+    const directionId = direction.id
+      ? (db.prepare('UPDATE content_directions SET name=?, note=?, sort_order=?, updated_at=? WHERE id=?').run(direction.name, direction.note, index, now, direction.id), direction.id)
+      : Number(db.prepare('INSERT INTO content_directions (name, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(direction.name, direction.note, index, now, now).lastInsertRowid);
+    direction.subdirections.forEach((subdirection, subIndex) => {
+      if (subdirection.id) {
+        db.prepare('UPDATE content_subdirections SET direction_id=?, name=?, note=?, sort_order=?, updated_at=? WHERE id=?')
+          .run(directionId, subdirection.name, subdirection.note, subIndex, now, subdirection.id);
+      } else {
+        db.prepare('INSERT INTO content_subdirections (direction_id, name, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .run(directionId, subdirection.name, subdirection.note, subIndex, now, now);
+      }
+    });
+  });
+
+  const taxonomy = readTaxonomy();
+  const wanted = findSubdirection(taxonomy.directions, defaultSubdirectionId ?? null);
+  const resolved = wanted ?? (() => {
+    const fallback = resolveDefaultSubdirection({ directions: taxonomy.directions, defaultSubdirectionId: null });
+    return fallback.subdirectionId ? findSubdirection(taxonomy.directions, fallback.subdirectionId) : null;
+  })();
+  syncStyleTopics(subdirectionNames(taxonomy.directions), resolved?.subdirection.name ?? '');
+  broadcast();
+  return readTaxonomy();
+}
+
+/**
+ * 内容方向是 style.yaml 里 topics / default_topic 的唯一来源：
+ * 两份配置各写一份必然漂移，这里在保存分类时统一回写，agent 侧的 WeWrite 流程也能读到。
+ */
+function syncStyleTopics(topics: string[], defaultTopic: string): void {
+  try {
+    const { styleText } = weWriteFiles();
+    if (styleText === null) return;
+    // 其余字段原样带回去，只替换 topics / default_topic，绝不动用户填过的内容。
+    const style = parseStyleSummary(styleText);
+    writeWeWriteFile(path.join(weWriteHome(), 'style.yaml'), serializeStyleConfig({ ...style, topics, defaultTopic }));
+  } catch {
+    // style.yaml 缺失或不可写时不影响分类本身落库。
+  }
 }
 
 /**
@@ -487,17 +610,33 @@ function contentApiConfig(): ContentApiConfig {
 }
 
 function registerNativeContentIpc(): void {
-  ipcMain.handle('content:list', () => (db.prepare('SELECT * FROM content_tasks ORDER BY updated_at DESC').all() as Array<Record<string, unknown>>).map(contentTaskFromRow));
-  ipcMain.handle('content:create', (_event, category: ContentCategory, topic = '') => {
-    if (!contentCategories.has(category)) throw new Error('未知的公众号内容类别');
+  ipcMain.handle('content:list', () => (db.prepare(`${CONTENT_TASK_SELECT} ORDER BY t.updated_at DESC`).all() as Array<Record<string, unknown>>).map(contentTaskFromRow));
+  ipcMain.handle('content:taxonomy', () => readTaxonomy());
+  ipcMain.handle('content:taxonomy:save', (_event, directions: ContentDirectionInput[], defaultSubdirectionId?: number | null) => saveTaxonomy(directions, defaultSubdirectionId));
+  /**
+   * 新建任务：只传二级方向时自动带出一级方向；两者都空也允许，任务会以"未归类"存在。
+   */
+  ipcMain.handle('content:create', (_event, directionId: number | null, subdirectionId: number | null, topic = '') => {
+    const taxonomy = readTaxonomy();
+    const subdirection = findSubdirection(taxonomy.directions, optionalId(subdirectionId));
+    if (subdirectionId && !subdirection) throw new Error('选择的具体方向已经不存在，请刷新后重试');
+    const direction = subdirection?.direction ?? findDirection(taxonomy.directions, optionalId(directionId));
+    if (directionId && !direction) throw new Error('选择的内容方向已经不存在，请刷新后重试');
     const now = new Date().toISOString();
-    const result = db.prepare('INSERT INTO content_tasks (category, topic, status, created_at, updated_at) VALUES (?, ?, \'idea\', ?, ?)').run(category, topic.trim(), now, now);
+    const result = db.prepare('INSERT INTO content_tasks (direction_id, subdirection_id, topic, status, created_at, updated_at) VALUES (?, ?, ?, \'idea\', ?, ?)')
+      .run(direction?.id ?? null, subdirection?.subdirection.id ?? null, topic.trim(), now, now);
     broadcast();
     return getContentTask(Number(result.lastInsertRowid));
   });
   ipcMain.handle('content:update', (_event, id: number, patch: Partial<ContentTask>) => {
     if (contentRequests.has(id)) throw new Error('文章正在处理，请稍后保存');
-    if (patch.category && !contentCategories.has(patch.category)) throw new Error('未知的公众号内容类别');
+    if (patch.subdirectionId !== undefined) {
+      const taxonomy = readTaxonomy();
+      const found = findSubdirection(taxonomy.directions, optionalId(patch.subdirectionId));
+      if (patch.subdirectionId && !found) throw new Error('选择的具体方向已经不存在，请刷新后重试');
+      // 一级方向永远由二级方向推导，避免两边指向不同的树。
+      patch.directionId = found?.direction.id ?? optionalId(patch.directionId);
+    }
     if (patch.sourcesJson !== undefined) {
       const canonical = JSON.stringify({ sources: parseContentSources(patch.sourcesJson) });
       patch.sourcesJson = getContentTask(id).sourcesJson === '' && canonical === '{"sources":[]}' ? '' : canonical;
@@ -829,7 +968,8 @@ function previewImageSource(source: string): string {
 
 function updateContentTask(id: number, patch: Partial<ContentTask>): ContentTask {
   const columns: Record<string, string> = {
-    category: 'category', topic: 'topic', title: 'title', status: 'status', briefJson: 'brief_json', claimsJson: 'claims_json', sourcesJson: 'sources_json',
+    directionId: 'direction_id', subdirectionId: 'subdirection_id',
+    topic: 'topic', title: 'title', status: 'status', briefJson: 'brief_json', claimsJson: 'claims_json', sourcesJson: 'sources_json',
     topicsJson: 'topics_json', draft: 'draft', finalArticle: 'final_article', reviewJson: 'review_json', coverPath: 'cover_path',
     theme: 'theme', publishJson: 'publish_json', exportPath: 'export_path'
   };
