@@ -1,4 +1,5 @@
 import zlib from 'node:zlib';
+import { isCfb, readXls } from './xls-biff.ts';
 
 /**
  * 把用户导出的表格文件读成二维字符串数组。
@@ -6,16 +7,21 @@ import zlib from 'node:zlib';
  * 有意不引入表格库：只支持公众号后台导出会出现的几种形状——
  *   - CSV / TSV（可能带 UTF-8 BOM，也可能是 GBK 编码）
  *   - .xlsx（zip 包 + sheet XML）
+ *   - 旧版二进制 .xls（公众号后台导出就是这种），见 xls-biff.ts
  *   - 扩展名是 .xls、实际内容是 HTML 表格的"伪 xls"（网页导出常见）
- * 真正的二进制 .xls（BIFF）无法解析，明确报错让用户另存为 xlsx/csv，而不是读出乱码。
  */
 
 export type Table = string[][];
 
 export function readTableFile(bytes: Buffer, filename = ''): Table {
   if (bytes.length >= 4 && bytes.readUInt32LE(0) === 0x04034b50) return readXlsx(bytes);
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))) {
-    throw new Error(`${filename || '该文件'} 是旧版二进制 .xls，暂不支持。请用 Excel/WPS 打开后另存为 .xlsx 或 .csv 再导入`);
+  if (isCfb(bytes)) {
+    try {
+      return readXls(bytes);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`${filename || '该文件'} 读取失败（${detail}）。可以用 Excel/WPS 打开后另存为 .xlsx 或 .csv 再导入`);
+    }
   }
   const text = decodeText(bytes);
   if (/<table[\s>]/i.test(text)) return readHtmlTable(text);

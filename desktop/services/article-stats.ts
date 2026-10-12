@@ -16,6 +16,7 @@ export type ArticleStatInput = { title: string; publishDate: string; metrics: Ar
  */
 const TITLE_ALIASES = ['文章标题', '内容标题', '标题'];
 const DATE_ALIASES = ['发表时间', '发布时间', '群发时间', '发表日期', '发布日期', '日期', '时间'];
+const CHANNEL_ALIASES = ['传播渠道', '渠道'];
 export const METRIC_ALIASES: Record<ArticleMetricKey, string[]> = {
   readUsers: ['阅读人数', '图文阅读人数', '总阅读人数'],
   reads: ['阅读次数', '图文阅读次数', '总阅读次数', '阅读量', '阅读数'],
@@ -47,10 +48,25 @@ function findColumn(headers: string[], aliases: string[], taken: Set<number>): n
     if (exact >= 0) return exact;
   }
   for (const alias of aliases) {
-    const partial = normalized.findIndex((header, index) => !taken.has(index) && header.includes(alias));
+    // 比例列（"阅读人数占比"、"完读率"）不是计数，宽泛匹配时排除，免得被当成阅读人数。
+    const partial = normalized.findIndex((header, index) => !taken.has(index) && header.includes(alias) && !/占比|率/.test(header));
     if (partial >= 0) return partial;
   }
   return -1;
+}
+
+/**
+ * 后台的「数据趋势」导出把几张表左右并排放在同一个工作表里，中间隔一列空表头。
+ * 只在标题列所在的那张表里找其他列，否则会把账号级趋势表的"阅读人数"错配给单篇。
+ */
+function columnsOutsideBlock(headers: string[], column: number): Set<number> {
+  let start = column;
+  let end = column;
+  while (start > 0 && headers[start - 1]?.trim()) start -= 1;
+  while (end + 1 < headers.length && headers[end + 1]?.trim()) end += 1;
+  const outside = new Set<number>();
+  for (let index = 0; index < headers.length; index += 1) if (index < start || index > end) outside.add(index);
+  return outside;
 }
 
 /** 后台导出常有标题行、说明行在表头之上：取前 10 行里第一行能找到"标题"列的作为表头。 */
@@ -103,11 +119,14 @@ export function tableToStatInputs(table: Table): ArticleStatInput[] {
     throw new Error(`没有找到"标题"列。文件首行是：${preview}。请导出「内容分析」里的单篇文章数据明细`);
   }
   const headers = table[headerIndex];
-  const taken = new Set<number>();
-  const titleColumn = findColumn(headers, TITLE_ALIASES, taken);
+  const titleColumn = findColumn(headers, TITLE_ALIASES, new Set());
+  const taken = columnsOutsideBlock(headers, titleColumn);
   taken.add(titleColumn);
+  const block = headers.filter((_, index) => !taken.has(index) || index === titleColumn);
   const dateColumn = findColumn(headers, DATE_ALIASES, taken);
   if (dateColumn >= 0) taken.add(dateColumn);
+  const channelColumn = findColumn(headers, CHANNEL_ALIASES, taken);
+  if (channelColumn >= 0) taken.add(channelColumn);
   const metricColumns = {} as Record<ArticleMetricKey, number>;
   for (const key of METRIC_KEYS) {
     const column = findColumn(headers, METRIC_ALIASES[key], taken);
@@ -117,26 +136,36 @@ export function tableToStatInputs(table: Table): ArticleStatInput[] {
   const found = METRIC_KEYS.filter(key => metricColumns[key] >= 0);
   if (dateColumn < 0 || !found.length) {
     const missing = [dateColumn < 0 ? '发表时间' : '', found.length ? '' : '阅读/分享等数据列'].filter(Boolean).join('、');
-    throw new Error(`缺少${missing}列。文件里的列是：${headers.filter(Boolean).join('、')}`);
+    throw new Error(`缺少${missing}列。标题所在的表里的列是：${block.filter(Boolean).join('、')}`);
   }
 
-  // 同一篇文章可能按天出现多行（每日明细）：同标题同发表日期合并，计数类取最大值。
-  // 取最大而不是求和：多数导出是累计值，求和会把累计数重复相加；真正的每日增量应导出汇总表。
-  const merged = new Map<string, ArticleStatInput>();
+  // 同一篇文章会出现多行，合并规则取决于多行的含义：
+  //   - 按渠道拆分（有"传播渠道"列）：有"全部"行就用它，没有就把各渠道相加；
+  //   - 否则视为同一篇的多次累计快照，取最大值——求和会把累计数重复相加。
+  type Bucket = { input: ArticleStatInput; total: ArticleMetrics | null };
+  const merged = new Map<string, Bucket>();
   for (const row of table.slice(headerIndex + 1)) {
     const title = (row[titleColumn] ?? '').trim();
     const publishDate = normalizeDate(row[dateColumn] ?? '');
     if (!title || !publishDate || /^(合计|总计|汇总)$/.test(title)) continue;
     const key = `${normalizeTitle(title)}|${publishDate}`;
-    const current = merged.get(key) ?? { title, publishDate, metrics: emptyMetrics() };
+    const bucket = merged.get(key) ?? { input: { title, publishDate, metrics: emptyMetrics() }, total: null };
+    const channel = channelColumn >= 0 ? (row[channelColumn] ?? '').trim() : '';
+    const isTotal = channelColumn >= 0 && /^(全部|合计|总计)$/.test(channel);
+    if (isTotal) bucket.total = emptyMetrics();
     for (const metric of found) {
       const value = parseCount(row[metricColumns[metric]]);
-      if (value !== null) current.metrics[metric] = Math.max(current.metrics[metric] ?? 0, value);
+      if (value === null) continue;
+      if (isTotal) bucket.total![metric] = value;
+      else if (channelColumn >= 0) bucket.input.metrics[metric] = (bucket.input.metrics[metric] ?? 0) + value;
+      else bucket.input.metrics[metric] = Math.max(bucket.input.metrics[metric] ?? 0, value);
     }
-    merged.set(key, current);
+    merged.set(key, bucket);
   }
-  if (!merged.size) throw new Error('表头识别成功，但没有读到任何带标题和发表日期的数据行');
-  return [...merged.values()];
+  if (!merged.size) {
+    throw new Error('文件格式识别成功，但单篇文章表是空的：统计期内还没有已发表的文章。推进草稿箱的文章需要在后台发表或群发后才会有数据');
+  }
+  return [...merged.values()].map(({ input, total }) => (total ? { ...input, metrics: total } : input));
 }
 
 /** 标题比对时忽略空白、标点和大小写：后台展示的标题常被去掉首尾空格或换掉全半角符号。 */

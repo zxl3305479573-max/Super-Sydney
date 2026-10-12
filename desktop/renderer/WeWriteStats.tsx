@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ArticleMetricKey, ArticleStatRecord, ArticleStatsView } from '../shared';
+import type { ArticleStatRecord, ArticleStatsView } from '../shared';
+import { METRIC_LABELS, readBase } from '../services/article-stats';
 import { ConfirmButton, EmptyState, Icon, readableError, relativeTime } from './ui';
-
-const METRIC_LABELS: Record<ArticleMetricKey, string> = {
-  readUsers: '阅读人数', reads: '阅读次数', shareUsers: '分享人数', shares: '分享次数', likes: '点赞',
-  wows: '在看', favorites: '收藏', comments: '留言', delivered: '送达人数', follows: '阅读后关注'
-};
 
 type SortKey = 'publishDate' | 'reads' | 'shareRate' | 'engageRate';
 
@@ -15,10 +11,6 @@ function count(value: number | null): string {
 
 function percent(value: number | null): string {
   return value === null ? '—' : `${(value * 100).toFixed(1)}%`;
-}
-
-function readBase(record: ArticleStatRecord): number | null {
-  return record.metrics.readUsers ?? record.metrics.reads;
 }
 
 export default function WeWriteStats({ notify }: { notify: (message: string) => void }) {
@@ -60,7 +52,7 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
   const records = useMemo(() => {
     const list = [...(view?.records ?? [])];
     const value = (record: ArticleStatRecord): number => {
-      if (sort === 'reads') return readBase(record) ?? -1;
+      if (sort === 'reads') return readBase(record.metrics) ?? -1;
       if (sort === 'shareRate') return record.shareRate ?? -1;
       return record.engageRate ?? -1;
     };
@@ -76,7 +68,7 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
       <div className="ww-group-head">
         <div>
           <h3>导入文章数据</h3>
-          <p className="ww-muted">当前公众号未认证，接口取不到数据。请在「公众号后台 → 数据分析 → 内容分析」下载单篇文章的数据明细，再在这里导入。支持 xlsx / csv；同一篇重复导入时用新数据覆盖。</p>
+          <p className="ww-muted">当前公众号未认证，接口取不到数据。请在「公众号后台 → 数据分析 → 内容分析」导出数据（xls / xlsx / csv 都可以），再在这里导入；同一篇重复导入时用新数据覆盖。</p>
         </div>
         <button className="button button-primary" disabled={importing} onClick={() => void importFile()}>
           <Icon name="chart" />{importing ? '导入中…' : '选择文件导入'}
