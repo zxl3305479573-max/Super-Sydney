@@ -567,6 +567,13 @@ button.chip { cursor: pointer; }
 .cd-default { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .cd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cd-actions .ww-muted { margin: 0; }
+.cd-image-prompt { display: grid; gap: 6px; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 6px; }
+.cd-sub .cd-image-prompt { grid-column: 1 / -1; }
+.cd-image-prompt summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
+.cd-image-prompt summary small { color: var(--faint); font-weight: 400; }
+.cd-image-prompt .input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.6; resize: vertical; }
+.cd-image-prompt-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.cd-image-prompt-foot small { color: var(--faint); font-size: 11px; line-height: 1.6; }
 
 
 /* ── 公众号创作流水线 ── */
@@ -716,9 +723,7 @@ button.chip { cursor: pointer; }
 .flow-settings-summary { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--muted); font-size: 12px; }
 .flow-settings-summary span { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .flow-settings-summary b { color: var(--faint); font-weight: 600; }
-.flow-settings-body { display: grid; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 /* 设置区自带保存条，不跟着视口悬浮，避免压住下面的流水线内容 */
-.flow-settings-body .ww-savebar { position: static; }
 
 /* ── 闲鱼模块 ───────────────────────────────────────────────────
  * 目前只有模块壳子：导航入口加一块空工作区。
@@ -745,3 +750,14 @@ button.chip { cursor: pointer; }
 .stats-sort .input { width: auto; min-height: 30px; padding: 4px 8px; }
 .stats-error { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 10px 12px; border: 1px solid oklch(0.88 0.05 30); border-radius: var(--radius-sm); background: oklch(0.98 0.012 30); color: oklch(0.45 0.12 30); font-size: 12px; line-height: 1.6; }
 @media (max-width: 1100px) { .stats-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ── 公众号资料：顶部切换 + 配置模块标签 ── */
+.ww-profile-switch { display: grid; gap: 4px; min-width: 240px; color: var(--muted); font-size: 12px; }
+.ww-profile-switch select { min-height: 34px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; }
+.ww-profile-switch small { max-width: 320px; overflow: hidden; color: var(--faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.pc-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.pc-modules { flex-wrap: wrap; }
+.pc-danger { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px dashed var(--line); }
+.pc-danger small { color: var(--faint); font-size: 11px; }
+.cd-image-prompt.is-flat { border: 0; padding: 0; }
+.cd-image-prompt-status { color: var(--faint); font-size: 11px; }

@@ -26,7 +26,8 @@ export function normalizeDirectionNoteRequest(input: unknown): DirectionNoteRequ
     directionName: text('directionName', MAX_NAME),
     directionNote: text('directionNote', MAX_NOTE),
     subdirectionName: text('subdirectionName', MAX_NAME),
-    note: text('note', MAX_NOTE)
+    note: text('note', MAX_NOTE),
+    audience: text('audience', MAX_NOTE)
   };
   if (!request.directionName) throw new Error('先填写内容方向名称，再让 AI 优化约束');
   return request;
@@ -46,13 +47,14 @@ const SYSTEM = [
 ].join('\n');
 
 /**
- * 不注入账号级的读者定位：style.yaml 的目标读者是按最初那个方向写的，
- * 拿去给新方向（比如 AI 技术）起草会把它带偏成老年健康。读者由方向自己的约束决定。
+ * 只注入方向自己的目标读者（可空），不用账号级 style.yaml：那是按最初那个方向写的，
+ * 拿去给新方向（比如 AI 技术）起草会把它带偏成老年健康。
  */
 export function buildDirectionNotePrompt(request: DirectionNoteRequest): string {
   const isSub = Boolean(request.subdirectionName);
   const lines = [
     `内容方向：${request.directionName}`,
+    request.audience ? `这个方向的目标读者：${request.audience}` : '',
     isSub ? `具体方向：${request.subdirectionName}` : '',
     isSub ? `一级方向已有约束（不要重复）：\n${request.directionNote || '（无）'}` : '',
     `${isSub ? '具体方向' : '内容方向'}约束原稿：\n${request.note || '（空，请从零写）'}`,

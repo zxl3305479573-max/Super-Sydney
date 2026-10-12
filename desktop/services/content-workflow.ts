@@ -4,7 +4,7 @@ import { parseJsonObject, requestChatContent } from './llm-json.ts';
 
 export type ContentApiConfig = {
   apiKey: string; baseUrl: string; model: string;
-  style?: { targetAudience: string; tone: string; voice: string; wordCount: string; blacklistWords: string[]; blacklistTopics: string[] };
+  style?: { targetAudience: string; tone: string; voice: string; wordCount: string; contentStyle?: string; blacklistWords: string[]; blacklistTopics: string[] };
   /** 内容方向与具体方向（含各自的写作约束）由界面/数据库提供，提示词不再写死某个领域。 */
   direction?: { name: string; note: string };
   subdirection?: { name: string; note: string };

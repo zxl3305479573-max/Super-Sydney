@@ -39,3 +39,17 @@ export function defaultSelection(taxonomy: ContentTaxonomy | null): { directionI
 export function subdirectionsOf(directions: ContentDirection[], directionId: number | null): ContentSubdirection[] {
   return findDirectionById(directions, directionId)?.subdirections ?? [];
 }
+
+/** 进入某份资料时，新建任务预选的具体方向：全局默认落在这份资料里就用它，否则取第一个。 */
+export function profileDefaultSubdirection(taxonomy: ContentTaxonomy | null, profileId: number | null): number | null {
+  const profile = findDirectionById(taxonomy?.directions ?? [], profileId);
+  if (!profile) return null;
+  return profile.subdirections.find(item => item.id === taxonomy?.defaultSubdirectionId)?.id ?? profile.subdirections[0]?.id ?? null;
+}
+
+/** 启动时的当前资料：上次选过且仍存在就用它，否则用全局默认具体方向所在的资料，再否则第一份。 */
+export function initialProfileId(taxonomy: ContentTaxonomy | null, remembered: number | null): number | null {
+  const directions = taxonomy?.directions ?? [];
+  if (remembered && directions.some(item => item.id === remembered)) return remembered;
+  return findSubdirectionById(directions, taxonomy?.defaultSubdirectionId)?.direction.id ?? directions[0]?.id ?? null;
+}

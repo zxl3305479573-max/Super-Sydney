@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ArticleStatRecord, ArticleStatsView } from '../shared';
+import type { ArticleStatRecord, ArticleStatsView, ContentDirection } from '../shared';
 import { METRIC_LABELS, readBase } from '../services/article-stats';
 import { ConfirmButton, EmptyState, Icon, readableError, relativeTime } from './ui';
 
@@ -13,7 +13,9 @@ function percent(value: number | null): string {
   return value === null ? '—' : `${(value * 100).toFixed(1)}%`;
 }
 
-export default function WeWriteStats({ notify }: { notify: (message: string) => void }) {
+/** 只显示当前公众号资料的文章数据；切换资料时父组件用 key 重建本组件。 */
+export default function WeWriteStats({ profile, notify }: { profile: ContentDirection | null; notify: (message: string) => void }) {
+  const profileId = profile?.id ?? null;
   const [view, setView] = useState<ArticleStatsView | null>(null);
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
@@ -21,14 +23,14 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
 
   useEffect(() => {
     let alive = true;
-    window.sydney.getArticleStats().then(next => { if (alive) setView(next); }).catch(issue => { if (alive) setError(readableError(issue)); });
+    window.sydney.getArticleStats(profileId).then(next => { if (alive) setView(next); }).catch(issue => { if (alive) setError(readableError(issue)); });
     return () => { alive = false; };
-  }, []);
+  }, [profileId]);
 
   const importFile = async () => {
     setImporting(true);
     try {
-      const result = await window.sydney.importArticleStats();
+      const result = await window.sydney.importArticleStats(profileId);
       if (!result) return;
       setView(result.view);
       setError('');
@@ -43,7 +45,7 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
 
   const remove = async (id: number) => {
     try {
-      setView(await window.sydney.deleteArticleStat(id));
+      setView(await window.sydney.deleteArticleStat(id, profileId));
     } catch (issue) {
       notify(readableError(issue));
     }
@@ -76,10 +78,11 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
       </div>
       {error && <p className="stats-error"><Icon name="alert" /> {error}</p>}
       {view?.lastImportedAt && <p className="ww-muted">最近一次导入：{relativeTime(view.lastImportedAt)}</p>}
+      {Boolean(view?.overview.unmatched) && <p className="ww-muted">另有 {view?.overview.unmatched} 篇文章对不上本应用里的创作任务（标题改过或不是在这里写的），无法归到某份资料，未计入下面的数字。</p>}
     </section>
 
     {!view && !error && <p className="ww-muted">读取中…</p>}
-    {view && !hasRecords && <EmptyState icon="chart" title="还没有文章数据">导入一份后台导出的数据表后，这里会按篇、按内容方向汇总。</EmptyState>}
+    {view && !hasRecords && <EmptyState icon="chart" title={`「${profile?.name ?? '当前资料'}」还没有文章数据`}>导入一份后台导出的数据表后，这里会按篇、按具体方向汇总这份资料的文章。</EmptyState>}
 
     {view && hasRecords && <>
       <div className="stats-overview">
@@ -90,7 +93,7 @@ export default function WeWriteStats({ notify }: { notify: (message: string) => 
       </div>
 
       <section className="ww-group">
-        <div className="ww-group-head"><h3>按内容方向</h3><p className="ww-muted">按阅读中位数排序；篇数少时只作参考</p></div>
+        <div className="ww-group-head"><h3>按具体方向</h3><p className="ww-muted">按阅读中位数排序；篇数少时只作参考</p></div>
         <div className="stats-table-wrap">
           <table className="flow-table stats-table">
             <thead><tr><th>方向</th><th>篇数</th><th>阅读中位数</th><th>平均分享率</th><th>平均互动率</th></tr></thead>

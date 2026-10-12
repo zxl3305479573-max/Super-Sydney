@@ -53,13 +53,13 @@ export function listLocalWeWriteThemes(homeDir: string, home = weWriteHome()): W
  * 内容方向是 style.yaml 里 topics / default_topic 的唯一来源：
  * 两份配置各写一份必然漂移，这里在保存分类时统一回写，agent 侧的 WeWrite 流程也能读到。
  */
-export function syncStyleTopics(topics: string[], defaultTopic: string, home = weWriteHome()): void {
+export function syncStyleTopics(topics: string[], defaultTopic: string, home = weWriteHome(), profile?: Partial<ReturnType<typeof parseStyleSummary>>): void {
   try {
     const { styleText } = readWeWriteFiles(home);
     if (styleText === null) return;
-    // 其余字段原样带回去，只替换 topics / default_topic，绝不动用户填过的内容。
+    // 其余字段原样带回去，只替换 topics / default_topic（以及传入时的默认资料字段），绝不动用户填过的其它内容。
     const style = parseStyleSummary(styleText);
-    writeWeWriteFile(path.join(home, 'style.yaml'), serializeStyleConfig({ ...style, topics, defaultTopic }));
+    writeWeWriteFile(path.join(home, 'style.yaml'), serializeStyleConfig({ ...style, topics, defaultTopic, ...(profile ?? {}) }));
   } catch {
     // style.yaml 缺失或不可写时不影响分类本身落库。
   }

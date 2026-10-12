@@ -86,15 +86,34 @@ export type ContentStage = 'topics' | 'brief' | 'claims' | 'draft' | 'review' | 
  * 一级「内容方向」（如 中老年健康科普 / 科技与数码），二级「具体方向」（如 饮食营养与蔬果利弊）。
  * 写作与配图的提示词都从这里的 name/note 取，不再写死某个领域。
  */
-export type ContentSubdirection = { id: number; name: string; note: string };
-export type ContentDirection = { id: number; name: string; note: string; subdirections: ContentSubdirection[] };
+/** imagePrompt：配图风格模板，替换默认的画风与禁忌两行；具体方向留空时沿用方向的，方向也留空时用内置默认。 */
+export type ContentSubdirection = { id: number; name: string; note: string; imagePrompt: string };
+/**
+ * 一级内容方向 = 一份「公众号资料」：写作相关的配置全部按资料隔离。
+ * 写作、配图、推送署名、新建任务的排版主题都只用文章所属资料的值，不再回退到账号级 style.yaml——
+ * 否则新加的资料会被最初那份资料的设定带偏。图片服务、内容 API、微信凭证仍是全局一份。
+ *   - name：资料名称（界面上切换用）；accountName：公众号名称
+ *   - note：写作约束；imagePrompt：配图风格模板
+ *   - audience / tone / voice：读者定位
+ *   - persona / theme / wordCount / contentStyle：模板设置
+ */
+export type ContentProfileFields = {
+  accountName: string; industry: string; author: string;
+  audience: string; tone: string; voice: string;
+  persona: string; theme: string; wordCount: string; contentStyle: string;
+  blacklistWords: string[]; blacklistTopics: string[];
+};
+export type ContentDirection = { id: number; name: string; note: string; imagePrompt: string; subdirections: ContentSubdirection[] } & ContentProfileFields;
 export type ContentTaxonomy = { directions: ContentDirection[]; defaultSubdirectionId: number | null };
 /** 保存时用：没有 id 表示新增，缺失的 id 表示删除。 */
-export type ContentSubdirectionInput = { id?: number; name: string; note?: string };
-export type ContentDirectionInput = { id?: number; name: string; note?: string; subdirections: ContentSubdirectionInput[] };
+export type ContentSubdirectionInput = { id?: number; name: string; note?: string; imagePrompt?: string };
+export type ContentDirectionInput = { id?: number; name: string; note?: string; imagePrompt?: string; subdirections: ContentSubdirectionInput[] } & Partial<ContentProfileFields>;
 /** AI 优化约束说明：subdirectionName 为空表示优化一级方向的约束，否则优化该具体方向的额外要求。 */
-export type DirectionNoteRequest = { directionName: string; directionNote: string; subdirectionName: string; note: string };
+/** audience：方向自己的目标读者，可空。 */
+export type DirectionNoteRequest = { directionName: string; directionNote: string; subdirectionName: string; note: string; audience?: string };
 export type DirectionNoteSuggestion = { note: string; changes: string[] };
+/** 配图风格模板的 AI 优化请求；parentTemplate 是具体方向留空时会沿用的上级模板。建议复用 DirectionNoteSuggestion。 */
+export type ImageStyleRequest = { directionName: string; directionNote: string; subdirectionName: string; subdirectionNote: string; parentTemplate: string; template: string; audience?: string };
 /** 前端可视化用的图片：thumbnail 是小尺寸 data URI，path 只作标识与排错。 */
 export type ContentAssetView = { path: string; caption: string; thumbnail: string };
 export type ContentAssetBundle = { cover: ContentAssetView | null; images: ContentAssetView[] };
@@ -208,6 +227,8 @@ export type ArticleStatRecord = {
   importedAt: string;
   /** 按标题匹配到的创作任务；null 表示不是在本应用里写的，或标题被改过。 */
   taskId: number | null;
+  /** 所属公众号资料（取自匹配到的任务）。 */
+  directionId: number | null;
   directionName: string;
   subdirectionName: string;
   /** 分享 / 阅读，优先用人数。 */
@@ -221,7 +242,8 @@ export type ArticleStatGroup = { name: string; count: number; medianReads: numbe
 export type ArticleStatsView = {
   records: ArticleStatRecord[];
   groups: ArticleStatGroup[];
-  overview: { articles: number; matched: number; medianReads: number | null; totalReads: number | null; meanShareRate: number | null };
+  /** unmatched：按资料查看时，对不上任何创作任务、因而无法归到资料的文章数（不计入其它数字）。 */
+  overview: { articles: number; matched: number; unmatched: number; medianReads: number | null; totalReads: number | null; meanShareRate: number | null };
   availableMetrics: ArticleMetricKey[];
   lastImportedAt: string;
 };
@@ -300,6 +322,8 @@ export interface SydneyApi {
   saveContentTaxonomy(directions: ContentDirectionInput[], defaultSubdirectionId?: number | null): Promise<ContentTaxonomy>;
   /** 用内容 API 把约束原稿整理成规则条目；只返回建议，不落库。 */
   optimizeDirectionNote(request: DirectionNoteRequest): Promise<DirectionNoteSuggestion>;
+  /** 按内容方向与已写内容优化配图风格模板，只返回建议。 */
+  optimizeImageStyle(request: ImageStyleRequest): Promise<DirectionNoteSuggestion>;
   createContentTask(directionId: number | null, subdirectionId: number | null, topic?: string): Promise<ContentTask>;
   updateContentTask(id: number, patch: Partial<ContentTask>): Promise<ContentTask>;
   generateContentStage(id: number, stage: ContentStage): Promise<ContentTask>;
@@ -317,10 +341,11 @@ export interface SydneyApi {
   getWeWriteEnvironment(): Promise<WeWriteEnvironment>;
   getWeWriteOverview(): Promise<WeWriteOverview>;
   saveWeWriteConfig(config: WeWriteConfigDraft): Promise<WeWriteOverview>;
-  getArticleStats(): Promise<ArticleStatsView>;
-  /** 弹出文件选择框导入后台导出的数据表；用户取消时返回 null。 */
-  importArticleStats(): Promise<ArticleStatsImportResult | null>;
-  deleteArticleStat(id: number): Promise<ArticleStatsView>;
+  /** profileId 为公众号资料（一级方向）id；传 null 返回全部。 */
+  getArticleStats(profileId: number | null): Promise<ArticleStatsView>;
+  /** 弹出文件选择框导入后台导出的数据表；用户取消时返回 null。返回的视图按 profileId 过滤。 */
+  importArticleStats(profileId: number | null): Promise<ArticleStatsImportResult | null>;
+  deleteArticleStat(id: number, profileId: number | null): Promise<ArticleStatsView>;
   listVideoProjects(): Promise<VideoProject[]>;
   createVideoProject(platform: VideoPlatform, topic?: string): Promise<VideoProject>;
   updateVideoProject(id: number, patch: Partial<VideoProject>): Promise<VideoProject>;

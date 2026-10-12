@@ -10,7 +10,7 @@ test('请求校验：方向名必填，文本裁剪，类型不对报错', () =>
   assert.throws(() => normalizeDirectionNoteRequest({ directionName: '健康', note: 3 }), /note/);
   assert.throws(() => normalizeDirectionNoteRequest(null), /请求格式/);
   assert.deepEqual(normalizeDirectionNoteRequest({ directionName: ' 健康 ', note: ' 少术语 ' }),
-    { directionName: '健康', directionNote: '', subdirectionName: '', note: '少术语' });
+    { directionName: '健康', directionNote: '', subdirectionName: '', note: '少术语', audience: '' });
 });
 
 test('一级方向提示词：只带方向与原稿，不带账号级读者定位', () => {
@@ -51,4 +51,9 @@ test('requestDirectionNote：缺密钥不请求；正常时发送 JSON 模式请
   assert.deepEqual(body.response_format, { type: 'json_object' });
   assert.equal(result.note, '不诊断、不开药方\n配图不出现医疗器械');
   assert.deepEqual(result.changes, ['补充配图要求']);
+});
+
+test('提示词带上方向自己的目标读者（填了才带）', () => {
+  assert.match(buildDirectionNotePrompt({ directionName: 'AI技术', directionNote: '', subdirectionName: '', note: '', audience: '程序员' }), /这个方向的目标读者：程序员/);
+  assert.doesNotMatch(buildDirectionNotePrompt({ directionName: 'AI技术', directionNote: '', subdirectionName: '', note: '' }), /目标读者/);
 });

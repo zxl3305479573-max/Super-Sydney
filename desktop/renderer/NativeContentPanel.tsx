@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ContentStage, ContentTask, ContentTaxonomy } from '../shared';
+import type { ContentDirection, ContentStage, ContentTask, ContentTaxonomy } from '../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html';
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
-import { defaultSelection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
+import { profileDefaultSubdirection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
 import { readableError, shortTime } from './ui';
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
 import { Board, CoverStep, DraftStep, EvidenceStep, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
-export default function NativeContentPanel({ notify }: { notify: (message: string) => void }) {
-  const [tasks, setTasks] = useState<ContentTask[]>([]);
+/**
+ * 创作流水线：只显示当前公众号资料下的文章任务（加上还没归类的老任务），新建任务也归到这份资料。
+ * 切换资料时由父组件用 key 重建本组件，所以这里把资料当作常量处理。
+ */
+export default function NativeContentPanel({ profile, notify, onOpenConfig }: { profile: ContentDirection | null; notify: (message: string) => void; onOpenConfig: () => void }) {
+  const directionId = profile?.id ?? null;
+  const [allTasks, setTasks] = useState<ContentTask[]>([]);
+  const tasks = useMemo(() => allTasks.filter(task => task.directionId === directionId || task.directionId === null), [allTasks, directionId]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [taxonomy, setTaxonomy] = useState<ContentTaxonomy | null>(null);
-  const [directionId, setDirectionId] = useState<number | null>(null);
   const [subdirectionId, setSubdirectionId] = useState<number | null>(null);
   const [topicSeed, setTopicSeed] = useState('');
   const [busy, setBusy] = useState('');
@@ -22,7 +27,7 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   const [mode, setMode] = useState<'pipeline' | 'board'>('pipeline');
   const [step, setStep] = useState<PipelineStepKey>('topic');
   const [dirty, setDirty] = useState(false);
-  /** 用户手动选过方向后，就不再让默认方向覆盖他的选择。 */
+  /** 用户手动选过具体方向后，就不再让默认值覆盖他的选择。 */
   const categoryPicked = useRef(false);
   const selected = tasks.find(item => item.id === selectedId) ?? null;
   const pipeline = useMemo(() => selected ? buildPipeline(selected, env) : [], [selected, env]);
@@ -31,20 +36,17 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   const refresh = useCallback(async () => {
     const next = await window.sydney.listContentTasks();
     setTasks(next);
-    setSelectedId(current => current ?? next[0]?.id ?? null);
-  }, []);
+    const visible = next.filter(task => task.directionId === directionId || task.directionId === null);
+    setSelectedId(current => (current && visible.some(task => task.id === current) ? current : visible[0]?.id ?? null));
+  }, [directionId]);
   useEffect(() => { void refresh().catch(error => notify(readableError(error))); }, [refresh, notify]);
-  /** 创作设置里的默认类别与微信凭证都来自 ~/.wewrite，保存后要立即反映到新建任务那一行。 */
+  /** 具体方向与微信凭证在「环境与配置」里维护，改完要立即反映到新建任务那一行。 */
   const refreshEnvironment = useCallback(async () => {
     const [next, tree] = await Promise.all([window.sydney.getWeWriteEnvironment(), window.sydney.getContentTaxonomy()]);
     setEnv({ wechatConfigured: next.wechatConfigured });
     setTaxonomy(tree);
-    if (!categoryPicked.current) {
-      const preferred = defaultSelection(tree);
-      setDirectionId(preferred.directionId);
-      setSubdirectionId(preferred.subdirectionId);
-    }
-  }, []);
+    if (!categoryPicked.current) setSubdirectionId(profileDefaultSubdirection(tree, directionId));
+  }, [directionId]);
   useEffect(() => { void refreshEnvironment().catch(() => undefined); }, [refreshEnvironment]);
   useEffect(() => window.sydney.onWeWriteChanged(() => { void refreshEnvironment().catch(() => undefined); }), [refreshEnvironment]);
 
@@ -220,22 +222,8 @@ export default function NativeContentPanel({ notify }: { notify: (message: strin
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
 
   return <section className="native-content">
-    <ContentSettingsPanel
-      notify={notify}
-      onSaved={() => { categoryPicked.current = false; void refreshEnvironment().catch(() => undefined); }}
-    />
+    <ContentSettingsPanel profile={profile} onOpenConfig={onOpenConfig} />
     <div className="native-create">
-      <label><span>内容方向</span>
-        <select value={directionId ?? ''} onChange={event => {
-          categoryPicked.current = true;
-          const next = Number(event.target.value) || null;
-          setDirectionId(next);
-          // 换一级方向时把具体方向落到它的第一个可选项，避免出现"方向A + 方向B的具体方向"。
-          setSubdirectionId(subdirectionsOf(taxonomy?.directions ?? [], next)[0]?.id ?? null);
-        }}>
-          {(taxonomy?.directions ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-      </label>
       <label><span>具体方向</span>
         <select value={subdirectionId ?? ''} onChange={event => { categoryPicked.current = true; setSubdirectionId(Number(event.target.value) || null); }}>
           <option value="">未指定</option>

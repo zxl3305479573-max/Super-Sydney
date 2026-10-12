@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import {
   chosenDefaultSubdirectionName, createContentTask, getContentTask, listContentTasks, migrateContentTables,
-  readTaxonomy, saveTaxonomyTree, seedContentTaxonomy, updateContentTask
+  adoptAccountProfile, readTaxonomy, saveTaxonomyTree, seedContentTaxonomy, updateContentTask
 } from '../services/content-store.ts';
 import { DEFAULT_DIRECTION_NAME, DEFAULT_SUBDIRECTIONS } from '../services/content-taxonomy.ts';
 
@@ -84,4 +84,48 @@ test('chosenDefaultSubdirectionName 优先用户指定，无效时兜底', () =>
   const second = taxonomy.directions[0].subdirections[1];
   assert.equal(chosenDefaultSubdirectionName(taxonomy, second.id), second.name);
   assert.equal(chosenDefaultSubdirectionName(taxonomy, 999), taxonomy.directions[0].subdirections[0].name);
+});
+
+test('内容方向的配图模板随分类树保存与读取', () => {
+  const db = new DatabaseSync(':memory:');
+  migrateContentTables(db);
+  saveTaxonomyTree(db, [{ name: '科技', note: '', imagePrompt: ' 扁平插画 ', subdirections: [{ name: 'AI 硬件', imagePrompt: '产品特写' }, { name: '手机' }] }]);
+  const [direction] = readTaxonomy(db).directions;
+  assert.equal(direction.imagePrompt, '扁平插画');
+  assert.deepEqual(direction.subdirections.map(sub => sub.imagePrompt), ['产品特写', '']);
+});
+
+test('公众号资料字段随分类树保存；升级时专属字段只迁给默认资料，通用字段每份一份', () => {
+  const db = new DatabaseSync(':memory:');
+  assert.equal(migrateContentTables(db), true, '新库首次建表要报告补了资料列');
+  assert.equal(migrateContentTables(db), false, '再次迁移不能重复触发');
+  saveTaxonomyTree(db, [
+    { name: '健康', subdirections: [{ name: '饮食' }] },
+    { name: 'AI技术', subdirections: [{ name: '大模型' }] }
+  ]);
+  adoptAccountProfile(db, {
+    name: '健康号', industry: '健康', author: 'TODO', targetAudience: '中老年', tone: '平和', voice: '邻居',
+    persona: 'elder', theme: 'elder-clear', wordCount: '1500', contentStyle: '干货', defaultTopic: '饮食',
+    blacklistWords: ['震惊'], blacklistTopics: ['赌博']
+  }, '雪梨');
+  const [health, ai] = readTaxonomy(db).directions;
+  assert.deepEqual([health.accountName, health.audience, health.persona, health.theme], ['健康号', '中老年', 'elder', 'elder-clear']);
+  assert.deepEqual([ai.accountName, ai.audience, ai.persona, ai.theme], ['', '', '', '']);
+  assert.match(health.imagePrompt, /医疗符号/, '原来那份资料保留旧默认配图模板');
+  assert.equal(ai.imagePrompt, '', '新资料用通用默认，不继承医疗禁忌');
+  for (const profile of [health, ai]) {
+    assert.equal(profile.author, '雪梨', 'config.yaml 的草稿署名优先于 style.yaml 的占位署名');
+    assert.deepEqual([profile.wordCount, profile.contentStyle], ['1500', '干货']);
+    assert.deepEqual([profile.blacklistWords, profile.blacklistTopics], [['震惊'], ['赌博']]);
+  }
+
+  // 之后各改各的：保存时列表去重去空，互不影响
+  saveTaxonomyTree(db, [
+    { ...health, subdirections: health.subdirections },
+    { ...ai, audience: ' 程序员 ', blacklistWords: ['标题党', ' 标题党 ', ''], subdirections: ai.subdirections }
+  ]);
+  const [healthAfter, aiAfter] = readTaxonomy(db).directions;
+  assert.equal(aiAfter.audience, '程序员');
+  assert.deepEqual(aiAfter.blacklistWords, ['标题党']);
+  assert.deepEqual(healthAfter.blacklistWords, ['震惊']);
 });

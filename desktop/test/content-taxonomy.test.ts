@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ContentTaxonomy } from '../shared.ts';
 import { DEFAULT_DIRECTION_NAME, DEFAULT_SUBDIRECTIONS, LEGACY_CATEGORY_NAMES, findSubdirection, normalizeTaxonomyInput, resolveDefaultSubdirection, subdirectionNames } from '../services/content-taxonomy.ts';
+const PROFILE = { accountName: '', industry: '', author: '', persona: '', theme: '', wordCount: '', contentStyle: '', blacklistWords: [] as string[], blacklistTopics: [] as string[] };
 
 test('分类树归一化：去空格、保留 id、按输入顺序', () => {
   const normalized = normalizeTaxonomyInput([
-    { id: 3, name: '  中老年健康科普  ', note: ' 不诊疗 ', subdirections: [{ id: 7, name: ' 饮食营养 ', note: '' }] },
+    { id: 3, name: '  中老年健康科普  ', note: ' 不诊疗 ', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [{ id: 7, name: ' 饮食营养 ', note: '', imagePrompt: '' }] },
     { name: '科技与数码', subdirections: [{ name: 'AI 硬件' }] }
   ]);
-  assert.deepEqual(normalized[0], { id: 3, name: '中老年健康科普', note: '不诊疗', subdirections: [{ id: 7, name: '饮食营养', note: '' }] });
+  assert.deepEqual(normalized[0], { id: 3, name: '中老年健康科普', note: '不诊疗', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [{ id: 7, name: '饮食营养', note: '', imagePrompt: '' }] });
   assert.equal(normalized[1].id, undefined);
   assert.equal(normalized[1].subdirections[0].name, 'AI 硬件');
 });
@@ -24,8 +25,8 @@ test('分类树归一化拒绝空名称、重名与空树', () => {
 
 const TAXONOMY: ContentTaxonomy = {
   directions: [
-    { id: 1, name: '中老年健康科普', note: '', subdirections: [{ id: 11, name: '饮食营养与蔬果利弊', note: '' }, { id: 12, name: '身心健康与作息', note: '' }] },
-    { id: 2, name: '科技与数码', note: '', subdirections: [{ id: 21, name: 'AI 硬件', note: '' }] }
+    { id: 1, name: '中老年健康科普', note: '', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [{ id: 11, name: '饮食营养与蔬果利弊', note: '', imagePrompt: '' }, { id: 12, name: '身心健康与作息', note: '', imagePrompt: '' }] },
+    { id: 2, name: '科技与数码', note: '', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [{ id: 21, name: 'AI 硬件', note: '', imagePrompt: '' }] }
   ],
   defaultSubdirectionId: 12
 };
@@ -42,13 +43,13 @@ test('默认具体方向：先按 id，再按 style.yaml 里的名字，最后�
   assert.deepEqual(resolveDefaultSubdirection(TAXONOMY), { directionId: 1, subdirectionId: 12, name: '身心健康与作息' });
   assert.deepEqual(resolveDefaultSubdirection({ ...TAXONOMY, defaultSubdirectionId: null }, 'AI 硬件'), { directionId: 2, subdirectionId: 21, name: 'AI 硬件' });
   assert.deepEqual(resolveDefaultSubdirection({ ...TAXONOMY, defaultSubdirectionId: null }, '不存在的方向'), { directionId: 1, subdirectionId: 11, name: '饮食营养与蔬果利弊' });
-  assert.deepEqual(resolveDefaultSubdirection({ directions: [{ id: 3, name: '空方向', note: '', subdirections: [] }], defaultSubdirectionId: null }), { directionId: null, subdirectionId: null, name: '' });
+  assert.deepEqual(resolveDefaultSubdirection({ directions: [{ id: 3, name: '空方向', note: '', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [] }], defaultSubdirectionId: null }), { directionId: null, subdirectionId: null, name: '' });
 });
 
 test('写回 style.yaml 的 topics 是所有具体方向名（去重）', () => {
   const directions = [
     ...TAXONOMY.directions,
-    { id: 4, name: '育儿', note: '', subdirections: [{ id: 41, name: 'AI 硬件', note: '' }] }
+    { id: 4, name: '育儿', note: '', imagePrompt: '', ...PROFILE, audience: '', tone: '', voice: '', subdirections: [{ id: 41, name: 'AI 硬件', note: '', imagePrompt: '' }] }
   ];
   assert.deepEqual(subdirectionNames(directions), ['饮食营养与蔬果利弊', '身心健康与作息', 'AI 硬件']);
 });

@@ -1,4 +1,4 @@
-import type { ContentDirection, ContentDirectionInput, ContentSubdirection, ContentSubdirectionInput, ContentTaxonomy } from '../shared.ts';
+import type { ContentProfileFields, ContentDirection, ContentDirectionInput, ContentSubdirection, ContentSubdirectionInput, ContentTaxonomy } from '../shared.ts';
 
 /**
  * 内容方向的纯逻辑：归一化、查表、旧数据映射。
@@ -36,6 +36,21 @@ function cleanText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+/** 文本列表：去空白、去空项、去重，保持顺序。 */
+function cleanList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(cleanText).filter(Boolean))];
+}
+
+export function normalizeProfileFields(record: Partial<Record<keyof ContentProfileFields, unknown>>): ContentProfileFields {
+  return {
+    accountName: cleanText(record.accountName), industry: cleanText(record.industry), author: cleanText(record.author),
+    audience: cleanText(record.audience), tone: cleanText(record.tone), voice: cleanText(record.voice),
+    persona: cleanText(record.persona), theme: cleanText(record.theme), wordCount: cleanText(record.wordCount), contentStyle: cleanText(record.contentStyle),
+    blacklistWords: cleanList(record.blacklistWords), blacklistTopics: cleanList(record.blacklistTopics)
+  };
+}
+
 function assertUnique(names: string[], scope: string): void {
   const seen = new Set<string>();
   for (const name of names) {
@@ -49,7 +64,7 @@ function assertUnique(names: string[], scope: string): void {
  * 去掉空名称与空二级方向、按输入顺序重排、同层不允许重名。
  * 至少保留一个方向与一个具体方向，否则新建任务没有可选值。
  */
-export function normalizeTaxonomyInput(input: unknown): Array<{ id?: number; name: string; note: string; subdirections: Array<{ id?: number; name: string; note: string }> }> {
+export function normalizeTaxonomyInput(input: unknown): Array<{ id?: number; name: string; note: string; imagePrompt: string; subdirections: Array<{ id?: number; name: string; note: string; imagePrompt: string }> } & ContentProfileFields> {
   if (!Array.isArray(input)) throw new Error('内容方向必须是数组');
   const directions = input.map((raw, index) => {
     if (!raw || typeof raw !== 'object') throw new Error(`第 ${index + 1} 个内容方向格式不正确`);
@@ -65,7 +80,8 @@ export function normalizeTaxonomyInput(input: unknown): Array<{ id?: number; nam
       return {
         ...(Number.isInteger(sub.id) && Number(sub.id) > 0 ? { id: Number(sub.id) } : {}),
         name: subName,
-        note: cleanText(sub.note)
+        note: cleanText(sub.note),
+        imagePrompt: cleanText(sub.imagePrompt)
       };
     });
     assertUnique(subdirections.map(item => item.name), `「${name}」的具体方向`);
@@ -73,6 +89,8 @@ export function normalizeTaxonomyInput(input: unknown): Array<{ id?: number; nam
       ...(Number.isInteger(record.id) && Number(record.id) > 0 ? { id: Number(record.id) } : {}),
       name,
       note: cleanText(record.note),
+      imagePrompt: cleanText(record.imagePrompt),
+      ...normalizeProfileFields(record),
       subdirections
     };
   });

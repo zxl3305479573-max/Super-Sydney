@@ -227,14 +227,19 @@ function mean(values: number[]): number | null {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 }
 
-/** 汇总成界面直接渲染的视图：每篇的派生比率、按具体方向分组、整体中位数。 */
-export function buildStatsView(stored: StoredStat[], tasks: ContentTask[]): ArticleStatsView {
-  const records: ArticleStatRecord[] = stored.map(stat => {
+/**
+ * 汇总成界面直接渲染的视图：每篇的派生比率、按具体方向分组、整体中位数。
+ * profileId 非空时只保留匹配到这份公众号资料任务的文章；对不上任务的只计数，
+ * 不混进任何资料——它可能属于任意一份，混进来会污染这份资料的中位数。
+ */
+export function buildStatsView(stored: StoredStat[], tasks: ContentTask[], profileId: number | null = null): ArticleStatsView {
+  const all: ArticleStatRecord[] = stored.map(stat => {
     const task = matchTask(stat, tasks);
     const base = readBase(stat.metrics);
     return {
       ...stat,
       taskId: task?.id ?? null,
+      directionId: task?.directionId ?? null,
       directionName: task?.directionName ?? '',
       subdirectionName: task?.subdirectionName ?? '',
       shareRate: ratio(stat.metrics.shareUsers ?? stat.metrics.shares, base),
@@ -242,10 +247,12 @@ export function buildStatsView(stored: StoredStat[], tasks: ContentTask[]): Arti
       openRate: ratio(stat.metrics.readUsers, stat.metrics.delivered)
     };
   }).sort((a, b) => b.publishDate.localeCompare(a.publishDate) || a.title.localeCompare(b.title));
+  const records = profileId === null ? all : all.filter(record => record.directionId === profileId);
+  const unmatched = profileId === null ? 0 : all.filter(record => record.taskId === null).length;
 
   const groups = new Map<string, ArticleStatRecord[]>();
   for (const record of records) {
-    const key = record.subdirectionName ? `${record.directionName} / ${record.subdirectionName}` : '未关联创作任务';
+    const key = record.subdirectionName ? (profileId === null ? `${record.directionName} / ${record.subdirectionName}` : record.subdirectionName) : '未关联创作任务';
     groups.set(key, [...(groups.get(key) ?? []), record]);
   }
   const groupViews: ArticleStatGroup[] = [...groups.entries()].map(([name, items]) => ({
@@ -263,6 +270,7 @@ export function buildStatsView(stored: StoredStat[], tasks: ContentTask[]): Arti
     overview: {
       articles: records.length,
       matched: records.filter(record => record.taskId !== null).length,
+      unmatched,
       medianReads: median(reads),
       totalReads: reads.length ? reads.reduce((sum, value) => sum + value, 0) : null,
       meanShareRate: mean(records.map(record => record.shareRate).filter((value): value is number => value !== null))

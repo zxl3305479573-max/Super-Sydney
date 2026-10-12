@@ -1,16 +1,46 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { ContentDirection, ContentSubdirection, ContentTask, ContentTaxonomy } from '../shared.ts';
+import type { ContentDirection, ContentProfileFields, ContentSubdirection, ContentTask, ContentTaxonomy } from '../shared.ts';
 import {
   DEFAULT_DIRECTION_NAME, DEFAULT_DIRECTION_NOTE, DEFAULT_SUBDIRECTIONS, LEGACY_CATEGORY_NAMES,
   findDirection, findSubdirection, normalizeTaxonomyInput, resolveDefaultSubdirection
 } from './content-taxonomy.ts';
+import { LEGACY_IMAGE_STYLE } from './image-style.ts';
 
 /**
  * 公众号文章任务与两级内容方向的持久化。
  * 只碰 SQLite；style.yaml 同步、广播刷新由调用方负责。
  */
 
-export function migrateContentTables(db: DatabaseSync): void {
+/** 资料字段与数据库列名的对应；列表类字段存 JSON 文本。 */
+const PROFILE_COLUMNS: Array<[keyof ContentProfileFields, string]> = [
+  ['accountName', 'account_name'], ['industry', 'industry'], ['author', 'author'],
+  ['audience', 'audience'], ['tone', 'tone'], ['voice', 'voice'],
+  ['persona', 'persona'], ['theme', 'theme'], ['wordCount', 'word_count'], ['contentStyle', 'content_style'],
+  ['blacklistWords', 'blacklist_words'], ['blacklistTopics', 'blacklist_topics']
+];
+const LIST_FIELDS = new Set<keyof ContentProfileFields>(['blacklistWords', 'blacklistTopics']);
+
+function parseList(raw: unknown): string[] {
+  try {
+    const value = JSON.parse(String(raw ?? '[]')) as unknown;
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function profileFromRow(row: Record<string, unknown>): ContentProfileFields {
+  const fields = {} as Record<keyof ContentProfileFields, string | string[]>;
+  for (const [key, column] of PROFILE_COLUMNS) fields[key] = LIST_FIELDS.has(key) ? parseList(row[column]) : String(row[column] ?? '');
+  return fields as ContentProfileFields;
+}
+
+function profileValues(profile: ContentProfileFields): string[] {
+  return PROFILE_COLUMNS.map(([key]) => LIST_FIELDS.has(key) ? JSON.stringify(profile[key]) : String(profile[key]));
+}
+
+/** 返回 true 表示本次刚给内容方向补上公众号资料列（新库或老库升级），调用方据此做一次性迁移。 */
+export function migrateContentTables(db: DatabaseSync): boolean {
   db.exec(`CREATE TABLE IF NOT EXISTS content_tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL DEFAULT '', direction_id INTEGER, subdirection_id INTEGER,
     topic TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
@@ -29,6 +59,15 @@ export function migrateContentTables(db: DatabaseSync): void {
     sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
   );`);
   db.exec('CREATE INDEX IF NOT EXISTS idx_content_subdirections_direction ON content_subdirections(direction_id);');
+  for (const table of ['content_directions', 'content_subdirections']) {
+    const taxonomyColumns = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map(column => column.name));
+    if (!taxonomyColumns.has('image_prompt')) db.exec(`ALTER TABLE ${table} ADD COLUMN image_prompt TEXT NOT NULL DEFAULT ''`);
+  }
+  const directionColumns = new Set((db.prepare('PRAGMA table_info(content_directions)').all() as Array<{ name: string }>).map(column => column.name));
+  const profileAdded = !directionColumns.has('account_name');
+  for (const [key, column] of PROFILE_COLUMNS) {
+    if (!directionColumns.has(column)) db.exec(`ALTER TABLE content_directions ADD COLUMN ${column} TEXT NOT NULL DEFAULT '${LIST_FIELDS.has(key) ? '[]' : ''}'`);
+  }
   const columns = new Set((db.prepare('PRAGMA table_info(content_tasks)').all() as Array<{ name: string }>).map(column => column.name));
   if (!columns.has('publish_json')) db.exec("ALTER TABLE content_tasks ADD COLUMN publish_json TEXT NOT NULL DEFAULT ''");
   if (!columns.has('sources_json')) db.exec("ALTER TABLE content_tasks ADD COLUMN sources_json TEXT NOT NULL DEFAULT ''");
@@ -36,6 +75,34 @@ export function migrateContentTables(db: DatabaseSync): void {
   if (!columns.has('theme')) db.exec("ALTER TABLE content_tasks ADD COLUMN theme TEXT NOT NULL DEFAULT ''");
   if (!columns.has('direction_id')) db.exec('ALTER TABLE content_tasks ADD COLUMN direction_id INTEGER');
   if (!columns.has('subdirection_id')) db.exec('ALTER TABLE content_tasks ADD COLUMN subdirection_id INTEGER');
+  return profileAdded;
+}
+
+export type AccountStyle = {
+  name: string; industry: string; author: string; targetAudience: string; tone: string; voice: string;
+  persona: string; theme: string; wordCount: string; contentStyle: string; defaultTopic: string;
+  blacklistWords: string[]; blacklistTopics: string[];
+};
+
+/**
+ * 写作配置从账号级 style.yaml 下放到公众号资料时的一次性迁移（只在刚补列时调用，之后清空不会被再次填回）：
+ *   - 公众号名称、行业、读者定位、写作人格、排版主题只属于最初那份资料，
+ *     写给"默认具体方向所在的资料"（找不到就第一个），其它资料保持空；
+ *   - 署名、篇幅、内容风格、禁忌词与禁忌话题是通用的，每份资料都拷一份，之后各改各的。
+ * draftAuthor 是 config.yaml 里的草稿署名，比 style.yaml 的署名更可信（后者常是占位文字）。
+ */
+export function adoptAccountProfile(db: DatabaseSync, style: AccountStyle, draftAuthor = ''): void {
+  const byTopic = style.defaultTopic
+    ? db.prepare('SELECT direction_id AS id FROM content_subdirections WHERE name=? ORDER BY id LIMIT 1').get(style.defaultTopic) as { id: number } | undefined
+    : undefined;
+  const owner = byTopic ?? db.prepare('SELECT id FROM content_directions ORDER BY sort_order, id LIMIT 1').get() as { id: number } | undefined;
+  db.prepare('UPDATE content_directions SET author=?, word_count=?, content_style=?, blacklist_words=?, blacklist_topics=?')
+    .run(draftAuthor || style.author, style.wordCount, style.contentStyle, JSON.stringify(style.blacklistWords), JSON.stringify(style.blacklistTopics));
+  if (!owner) return;
+  db.prepare('UPDATE content_directions SET account_name=?, industry=?, audience=?, tone=?, voice=?, persona=?, theme=? WHERE id=?')
+    .run(style.name, style.industry, style.targetAudience, style.tone, style.voice, style.persona, style.theme, owner.id);
+  // 内置默认配图模板改成了通用版；原来那份资料一直用的是旧默认（含医疗禁忌），没自定义过就把旧默认写给它。
+  db.prepare("UPDATE content_directions SET image_prompt=? WHERE id=? AND image_prompt=''").run(LEGACY_IMAGE_STYLE, owner.id);
 }
 
 /** 任务查询统一带出分类名，界面不必再自己去查分类表。 */
@@ -115,12 +182,14 @@ export function readTaxonomy(db: DatabaseSync, preferredDefaultTopic = ''): Cont
     id: Number(row.id),
     name: String(row.name ?? ''),
     note: String(row.note ?? ''),
+    imagePrompt: String(row.image_prompt ?? ''),
+    ...profileFromRow(row),
     subdirections: [] as ContentSubdirection[]
   })) as ContentDirection[];
   const byId = new Map(directions.map(item => [item.id, item]));
   for (const row of db.prepare('SELECT * FROM content_subdirections ORDER BY sort_order, id').all() as Array<Record<string, unknown>>) {
     const parent = byId.get(Number(row.direction_id));
-    if (parent) parent.subdirections.push({ id: Number(row.id), name: String(row.name ?? ''), note: String(row.note ?? '') });
+    if (parent) parent.subdirections.push({ id: Number(row.id), name: String(row.name ?? ''), note: String(row.note ?? ''), imagePrompt: String(row.image_prompt ?? '') });
   }
   const fallback = resolveDefaultSubdirection({ directions, defaultSubdirectionId: null }, preferredDefaultTopic);
   return { directions, defaultSubdirectionId: fallback.subdirectionId };
@@ -175,15 +244,17 @@ export function saveTaxonomyTree(db: DatabaseSync, input: unknown): void {
 
   normalized.forEach((direction, index) => {
     const directionId = direction.id
-      ? (db.prepare('UPDATE content_directions SET name=?, note=?, sort_order=?, updated_at=? WHERE id=?').run(direction.name, direction.note, index, now, direction.id), direction.id)
-      : Number(db.prepare('INSERT INTO content_directions (name, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(direction.name, direction.note, index, now, now).lastInsertRowid);
+      ? (db.prepare(`UPDATE content_directions SET name=?, note=?, image_prompt=?, ${PROFILE_COLUMNS.map(([, column]) => `${column}=?`).join(', ')}, sort_order=?, updated_at=? WHERE id=?`)
+        .run(direction.name, direction.note, direction.imagePrompt, ...profileValues(direction), index, now, direction.id), direction.id)
+      : Number(db.prepare(`INSERT INTO content_directions (name, note, image_prompt, ${PROFILE_COLUMNS.map(([, column]) => column).join(', ')}, sort_order, created_at, updated_at) VALUES (${Array(PROFILE_COLUMNS.length + 6).fill('?').join(', ')})`)
+        .run(direction.name, direction.note, direction.imagePrompt, ...profileValues(direction), index, now, now).lastInsertRowid);
     direction.subdirections.forEach((subdirection, subIndex) => {
       if (subdirection.id) {
-        db.prepare('UPDATE content_subdirections SET direction_id=?, name=?, note=?, sort_order=?, updated_at=? WHERE id=?')
-          .run(directionId, subdirection.name, subdirection.note, subIndex, now, subdirection.id);
+        db.prepare('UPDATE content_subdirections SET direction_id=?, name=?, note=?, image_prompt=?, sort_order=?, updated_at=? WHERE id=?')
+          .run(directionId, subdirection.name, subdirection.note, subdirection.imagePrompt, subIndex, now, subdirection.id);
       } else {
-        db.prepare('INSERT INTO content_subdirections (direction_id, name, note, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-          .run(directionId, subdirection.name, subdirection.note, subIndex, now, now);
+        db.prepare('INSERT INTO content_subdirections (direction_id, name, note, image_prompt, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(directionId, subdirection.name, subdirection.note, subdirection.imagePrompt, subIndex, now, now);
       }
     });
   });

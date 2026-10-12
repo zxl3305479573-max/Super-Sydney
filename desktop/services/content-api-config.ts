@@ -1,6 +1,7 @@
 import type { ContentTask, ContentTaxonomy, VideoProject } from '../shared.ts';
 import type { ContentApiConfig } from './content-workflow.ts';
 import { findSubdirection } from './content-taxonomy.ts';
+import { DEFAULT_IMAGE_STYLE, renderImageStyle, resolveImageStyle } from './image-style.ts';
 import { parseStyleSummary, yamlBlock, yamlScalar } from './wewrite-config.ts';
 import type { WeWriteFiles } from './wewrite-files.ts';
 
@@ -36,10 +37,18 @@ export function buildContentApiConfig(input: {
     baseUrl: yamlScalar(writer, 'base_url') || env.SYDNEY_LLM_BASE_URL || DEFAULT_LLM_BASE_URL,
     model: yamlScalar(writer, 'model') || env.SYDNEY_LLM_MODEL || DEFAULT_LLM_MODEL,
     // 只带账号表达相关的字段：topics/default_topic 属于分类范畴，已经由内容方向表达，重复注入只会互相干扰。
-    style: {
-      targetAudience: style.targetAudience, tone: style.tone, voice: style.voice, wordCount: style.wordCount,
-      blacklistWords: style.blacklistWords, blacklistTopics: style.blacklistTopics
-    },
+    // 写作配置按公众号资料取：归类了的文章只用所属资料的值（空就是空，不回退到最初那份资料的账号设定）；
+    // 视频与未归类文章没有资料，才用 style.yaml。
+    style: found
+      ? {
+        targetAudience: found.direction.audience, tone: found.direction.tone, voice: found.direction.voice,
+        wordCount: found.direction.wordCount, contentStyle: found.direction.contentStyle,
+        blacklistWords: found.direction.blacklistWords, blacklistTopics: found.direction.blacklistTopics
+      }
+      : {
+        targetAudience: style.targetAudience, tone: style.tone, voice: style.voice, wordCount: style.wordCount,
+        blacklistWords: style.blacklistWords, blacklistTopics: style.blacklistTopics
+      },
     ...(found ? {
       direction: { name: found.direction.name, note: found.direction.note },
       subdirection: { name: found.subdirection.name, note: found.subdirection.note }
@@ -60,30 +69,34 @@ export function imageApiConfig(configText: string | null): ImageApiConfig {
   };
 }
 
-export type ImagePromptScope = { direction: { name: string; note: string } | null; audience: string };
+/** style 是已经填好占位符的配图风格（见 image-style.ts），直接拼进提示词。 */
+export type ImagePromptScope = { direction: { name: string; note: string } | null; audience: string; style: string };
 
-/** 提示词里要用的内容方向（含用户自己写的约束）与账号读者定位。 */
+/** 提示词里要用的内容方向（含用户自己写的约束）、账号读者定位与该方向的配图风格模板。 */
 export function imagePromptScope(taxonomy: ContentTaxonomy, task: ContentTask, styleText: string | null): ImagePromptScope {
   const found = findSubdirection(taxonomy.directions, task.subdirectionId);
-  const audience = parseStyleSummary(styleText).targetAudience;
-  if (!found) return { direction: null, audience };
+  if (!found) {
+    const audience = parseStyleSummary(styleText).targetAudience;
+    return { direction: null, audience, style: renderImageStyle(DEFAULT_IMAGE_STYLE, audience) };
+  }
+  const audience = found.direction.audience;
   return {
     direction: {
       name: found.subdirection.name ? `${found.direction.name} / ${found.subdirection.name}` : found.direction.name,
       note: [found.direction.note, found.subdirection.note].map(item => item.trim()).filter(Boolean).join(' ')
     },
-    audience
+    audience,
+    style: renderImageStyle(resolveImageStyle(found.direction, found.subdirection), audience)
   };
 }
 
-/** 封面提示词：主题 + 内容方向约束 + 读者定位，禁止文字与效果承诺。 */
+/** 封面提示词：主题 + 内容方向约束 + 该方向的配图风格模板。 */
 export function coverImagePrompt(task: ContentTask, scope: ImagePromptScope): string {
   return [
     '公众号封面图，横构图。',
     scope.direction ? `内容方向：${scope.direction.name}${scope.direction.note ? `（${scope.direction.note}）` : ''}。` : '',
     `主题：${task.title || task.topic}。`,
-    scope.audience ? `面向${scope.audience}：温暖写实、自然光、简洁清晰。` : '写实、自然光、简洁清晰。',
-    '不要文字、不要水印、不要器械或医疗符号、不要夸张效果或效果承诺。'
+    scope.style
   ].filter(Boolean).join('\n');
 }
 

@@ -16,7 +16,9 @@ import { migrateCodexEventColumns } from './services/codex-event-store';
 import { migrateAiDraftColumns } from './services/ai-draft-store';
 import { migrateRuleTables } from './services/evolution-rules';
 import { migrateCardColumns } from './services/experience-cards';
-import { migrateContentTables, seedContentTaxonomy } from './services/content-store';
+import { adoptAccountProfile, migrateContentTables, seedContentTaxonomy } from './services/content-store';
+import { parseStyleSummary, yamlBlock, yamlScalar } from './services/wewrite-config';
+import { readWeWriteFiles } from './services/wewrite-files';
 import { migrateVideoTables } from './services/video-store';
 import { migrateEventMetadataColumns, migrateEventTables } from './services/event-store';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
@@ -32,7 +34,7 @@ function openDatabase(file: string): DatabaseSync {
   const db = new DatabaseSync(file);
   migrateScreenFrameTable({ db });
   migrateEventTables(db);
-  migrateContentTables(db);
+  const profileColumnsAdded = migrateContentTables(db);
   migrateVideoTables(db);
   migrateArticleStatTables(db);
   migrateCodexEventColumns(db);
@@ -40,6 +42,11 @@ function openDatabase(file: string): DatabaseSync {
   migrateRuleTables(db);
   migrateCardColumns(db);
   seedContentTaxonomy(db);
+  // 写作配置下放到公众号资料：刚补列时把 style.yaml 里的旧值迁过去（必须在种子数据之后）。
+  if (profileColumnsAdded) {
+    const { styleText, configText } = readWeWriteFiles();
+    adoptAccountProfile(db, parseStyleSummary(styleText), yamlScalar(yamlBlock(configText, 'wechat'), 'author'));
+  }
   migrateEventMetadataColumns(db);
   return db;
 }

@@ -10,6 +10,7 @@ import { chosenDefaultSubdirectionName, createContentTask, getContentTask, listC
 import { findSubdirection, subdirectionNames } from '../services/content-taxonomy';
 import { requestContentStage } from '../services/content-workflow';
 import { normalizeDirectionNoteRequest, requestDirectionNote } from '../services/direction-note';
+import { normalizeImageStyleRequest, requestImageStyle } from '../services/image-style-note';
 import { exportContentArticle, parseContentSources } from '../services/content-export';
 import { assertContentDeliverable, assertContentStage, deliverableArticle, isContentPublishable, prepareContentEdit } from '../services/content-policy';
 import { DEFAULT_AIGC_FOOTER, makeDigest, normalizeTitle, renderWeChatHtml, toPlainText } from '../services/article-html';
@@ -55,7 +56,7 @@ export function registerContentIpc(ctx: AppContext): void {
     const failures: string[] = [];
     const settled = await Promise.allSettled(slots.map((slot, index) => generateImageFile(
       path.join(directory, `inline-${stamp}-${index + 1}.png`),
-      buildImagePrompt({ articleTitle: task.title || task.topic, heading: slot.heading, excerpt: slot.excerpt, direction: scope.direction, audience: scope.audience }),
+      buildImagePrompt({ articleTitle: task.title || task.topic, heading: slot.heading, excerpt: slot.excerpt, direction: scope.direction, style: scope.style }),
       '1792x1024',
       signal
     )));
@@ -73,15 +74,29 @@ export function registerContentIpc(ctx: AppContext): void {
   ipcMain.handle('content:taxonomy:save', (_event, directions: ContentDirectionInput[], defaultSubdirectionId?: number | null) => {
     saveTaxonomyTree(db, directions);
     const saved = readContentTaxonomy(ctx);
-    syncStyleTopics(subdirectionNames(saved.directions), chosenDefaultSubdirectionName(saved, defaultSubdirectionId));
+    // style.yaml 镜像默认具体方向所在的那份资料：agent 侧 skill 只认这一份，和应用里的默认资料保持一致。
+    const defaultName = chosenDefaultSubdirectionName(saved, defaultSubdirectionId);
+    const owner = saved.directions.find(direction => direction.subdirections.some(sub => sub.name === defaultName));
+    syncStyleTopics(subdirectionNames(saved.directions), defaultName, undefined, owner ? {
+      name: owner.accountName, industry: owner.industry, author: owner.author,
+      targetAudience: owner.audience, tone: owner.tone, voice: owner.voice,
+      persona: owner.persona, theme: owner.theme, wordCount: owner.wordCount, contentStyle: owner.contentStyle,
+      blacklistWords: owner.blacklistWords, blacklistTopics: owner.blacklistTopics
+    } : undefined);
     ctx.broadcast();
     return readContentTaxonomy(ctx);
   });
   /** 只返回建议文本，由用户在界面上确认采用后随分类一起保存。 */
   ipcMain.handle('content:direction-note:optimize', async (_event, request: unknown): Promise<DirectionNoteSuggestion> =>
     requestDirectionNote(normalizeDirectionNoteRequest(request), contentApiConfig(ctx)));
+  ipcMain.handle('content:image-style:optimize', async (_event, request: unknown): Promise<DirectionNoteSuggestion> =>
+    requestImageStyle(normalizeImageStyleRequest(request), contentApiConfig(ctx)));
   ipcMain.handle('content:create', (_event, directionId: number | null, subdirectionId: number | null, topic = '') => {
-    const task = createContentTask(db, readContentTaxonomy(ctx), directionId, subdirectionId, topic);
+    const taxonomy = readContentTaxonomy(ctx);
+    const created = createContentTask(db, taxonomy, directionId, subdirectionId, topic);
+    // 新任务的排版主题取所属资料的默认主题；之后在编辑器里单篇切换。
+    const theme = findSubdirection(taxonomy.directions, created.subdirectionId)?.direction.theme;
+    const task = theme ? updateContentTask(db, created.id, { theme }) : created;
     ctx.broadcast();
     return task;
   });
@@ -143,7 +158,9 @@ export function registerContentIpc(ctx: AppContext): void {
 
     const title = normalizeTitle(task.title || toPlainText(article).slice(0, 40) || '未命名文章');
     if (!title) throw new Error('请先填写文章标题');
-    const author = yamlScalar(configText, 'author') || yamlScalar(styleText, 'author');
+    // 署名优先用文章所属资料的；资料没填才用全局的草稿默认署名。
+    const profileAuthor = findSubdirection(readContentTaxonomy(ctx).directions, task.subdirectionId)?.direction.author ?? '';
+    const author = profileAuthor || yamlScalar(configText, 'author') || yamlScalar(styleText, 'author');
     const credentials = { appid, secret };
     // 正文里的本地配图在微信侧无法显示，必须先传上去换成微信图片地址。
     const uploadedImages = new Map<string, string>();

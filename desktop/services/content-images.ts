@@ -6,6 +6,8 @@
  * 推送时都能稳定识别，不会和正文段落混在一起。
  */
 
+import { DEFAULT_IMAGE_STYLE, renderImageStyle } from './image-style.ts';
+
 export type ImageSlot = {
   /** 插在这一行之后（0-based）。 */
   afterLine: number;
@@ -88,18 +90,18 @@ export function planImageSlots(markdown: string, maxImages = 3): ImageSlot[] {
 }
 
 /**
- * 正文配图提示词：贴合段落内容，画风与红线来自内容方向与账号读者定位，不写死某个领域。
- * direction.note 由用户在「内容方向」里自己维护，所以换方向就等于换一套约束。
+ * 正文配图提示词：贴合段落内容，画风与红线来自内容方向的配图风格模板，不写死某个领域。
+ * direction.note 与 style 都由用户在「内容方向」里自己维护，所以换方向就等于换一套约束。
+ * style 不传时用内置默认模板（按 audience 填占位符）。
  */
-export function buildImagePrompt(input: { articleTitle: string; heading: string; excerpt: string; direction?: { name: string; note: string } | null; audience?: string }): string {
-  const audience = (input.audience ?? '').trim();
+export function buildImagePrompt(input: { articleTitle: string; heading: string; excerpt: string; direction?: { name: string; note: string } | null; audience?: string; style?: string }): string {
+  const style = input.style?.trim() || renderImageStyle(DEFAULT_IMAGE_STYLE, input.audience ?? '');
   return [
     '公众号正文配图，横构图。',
     input.direction?.name.trim() ? `内容方向：${input.direction.name.trim()}${input.direction.note.trim() ? `（${input.direction.note.trim()}）` : ''}。` : '',
     `文章主题：${input.articleTitle || '这篇文章'}；配图位置：${input.heading}。`,
     `配合这段内容：${input.excerpt}`,
-    audience ? `面向${audience}：温暖写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。` : '写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。',
-    '画面里不要出现任何文字、字母、数字、水印、logo、器械或医疗符号；不要夸张，不要令人不适的画面，不要用画面暗示任何效果承诺。'
+    style
   ].filter(Boolean).join('\n');
 }
 

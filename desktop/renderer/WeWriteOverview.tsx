@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { WeWriteConfigDraft, WeWriteOverview } from '../shared';
-import ContentDirections from './ContentDirections';
-import { emptyWeWriteDraft, splitLines, weWriteDraftFromOverview } from './config-draft';
+import { emptyWeWriteDraft, weWriteDraftFromOverview } from './config-draft';
 import { readableError } from './ui';
 
 const STATUS_TEXT: Record<string, string> = { PASS: '通过', WARN: '警告', FAIL: '失败', SKIP: '跳过' };
@@ -9,21 +8,23 @@ const STATUS_CLASS: Record<string, string> = { PASS: 'approved', WARN: 'pending'
 
 const PROVIDERS = ['openai', 'doubao', 'dashscope', 'jimeng', 'minimax', 'gemini', 'openrouter', 'replicate', 'azure_openai', 'sub2api'];
 
-
+/**
+ * 「全局服务」：整个应用共用的一份配置——内容生成 API、图片服务、微信草稿箱凭证与自检。
+ * 写作相关的配置（资料、读者、模板、禁忌等）已按公众号资料隔离，在 ProfileConfig 里编辑；
+ * 这里保存时 style.yaml 原样带回，不会改动资料同步过去的值。
+ */
 export default function WeWriteOverviewPanel({ notify }: { notify: (message: string) => void }) {
   const [overview, setOverview] = useState<WeWriteOverview | null>(null);
   const [draft, setDraft] = useState<WeWriteConfigDraft>(emptyWeWriteDraft);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [listText, setListText] = useState({ topics: '', words: '', forbiddenTopics: '' });
   const [savedAt, setSavedAt] = useState('');
 
   const load = useCallback(async () => {
     const next = await window.sydney.getWeWriteOverview();
     setOverview(next);
     setDraft(weWriteDraftFromOverview(next));
-    setListText({ topics: next.style.topics.join('\n'), words: next.style.blacklistWords.join('\n'), forbiddenTopics: next.style.blacklistTopics.join('\n') });
     setError('');
     return next;
   }, []);
@@ -34,7 +35,6 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
     return () => { alive = false; };
   }, [load]);
 
-  const patchStyle = (patch: Partial<WeWriteConfigDraft['style']>) => setDraft(current => ({ ...current, style: { ...current.style, ...patch } }));
   const patchWechat = (patch: Partial<WeWriteConfigDraft['wechat']>) => setDraft(current => ({ ...current, wechat: { ...current.wechat, ...patch } }));
   const patchWriter = (patch: Partial<NonNullable<WeWriteConfigDraft['writer']>>) => setDraft(current => ({ ...current, writer: { baseUrl: '', model: '', apiKey: '', enabled: false, ...current.writer, ...patch } }));
   const patchImage = (patch: Partial<WeWriteConfigDraft['image']>) => setDraft(current => ({ ...current, image: { ...current.image, ...patch } }));
@@ -42,12 +42,11 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
   const save = async () => {
     setSaving(true);
     try {
-      const next = await window.sydney.saveWeWriteConfig({ ...draft, style: { ...draft.style, topics: splitLines(listText.topics), blacklistWords: splitLines(listText.words), blacklistTopics: splitLines(listText.forbiddenTopics) } });
+      const next = await window.sydney.saveWeWriteConfig(draft);
       setOverview(next);
       setDraft(weWriteDraftFromOverview(next));
-      setListText({ topics: next.style.topics.join('\n'), words: next.style.blacklistWords.join('\n'), forbiddenTopics: next.style.blacklistTopics.join('\n') });
       setSavedAt(new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }));
-      notify('公众号配置已保存');
+      notify('全局服务配置已保存');
     } catch (issue) {
       notify(readableError(issue));
     } finally {
@@ -69,50 +68,6 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
       <span><b>配置目录</b>{overview.home}</span>
       <span><b>图片服务</b>{flags.skipImageGen ? '未配置' : '可用'}</span>
       <span><b>微信草稿箱</b>{flags.skipPublish ? '未配置' : '可用'}</span>
-    </div>
-
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>公众号资料</h3><small>显示名称与署名</small></div>
-      <div className="ww-grid ww-grid-three">
-        <label className="ww-input"><span>公众号名称</span><input value={draft.style.name} onChange={event => patchStyle({ name: event.target.value })} placeholder="例如：中老年健康科普" /></label>
-        <label className="ww-input"><span>行业</span><input value={draft.style.industry} onChange={event => patchStyle({ industry: event.target.value })} placeholder="健康科普/中老年生活" /></label>
-        <label className="ww-input"><span>署名</span><input value={draft.style.author} onChange={event => patchStyle({ author: event.target.value })} placeholder="文章作者署名" /></label>
-      </div>
-    </div>
-
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>读者定位</h3><small>决定选题与表达取向</small></div>
-      <div className="ww-grid">
-        <label className="ww-input ww-wide"><span>目标读者</span><input value={draft.style.targetAudience} onChange={event => patchStyle({ targetAudience: event.target.value })} placeholder="例如：55-75岁关注自身健康的中老年读者，以及替父母查资料的子女" /></label>
-        <label className="ww-input"><span>写作语气</span><input value={draft.style.tone} onChange={event => patchStyle({ tone: event.target.value })} placeholder="平和、尊重、不吓唬人" /></label>
-        <label className="ww-input"><span>写作人称</span><input value={draft.style.voice} onChange={event => patchStyle({ voice: event.target.value })} placeholder="第一人称，像懂行的邻居" /></label>
-        <label className="ww-input"><span>文章篇幅</span><input value={draft.style.wordCount} onChange={event => patchStyle({ wordCount: event.target.value })} placeholder="1200-1800" /></label>
-        <label className="ww-input"><span>内容风格</span><input value={draft.style.contentStyle} onChange={event => patchStyle({ contentStyle: event.target.value })} placeholder="干货" /></label>
-      </div>
-    </div>
-
-    <ContentDirections notify={notify} />
-
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>模板与排版</h3><small>写作人格与默认排版主题</small></div>
-      <div className="ww-grid">
-        <label className="ww-input"><span>写作人格</span><input value={draft.style.persona} onChange={event => patchStyle({ persona: event.target.value })} placeholder="elder-health-guide" /><small>{files.persona ? `当前生效：${files.persona}` : '未检测到自定义人格'}</small></label>
-        <label className="ww-input"><span>默认排版主题</span>
-          <select value={draft.style.theme} onChange={event => patchStyle({ theme: event.target.value })}>
-            <option value="">未指定</option>
-            {overview.themes.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
-            {draft.style.theme && !overview.themes.some(item => item.name === draft.style.theme) && <option value={draft.style.theme}>{draft.style.theme}</option>}
-          </select>
-        </label>
-      </div>
-    </div>
-
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>合规与禁忌</h3><small>写入 style.yaml 的 blacklist</small></div>
-      <div className="ww-grid">
-        <label className="ww-input"><span>禁忌词（每行一个）</span><textarea value={listText.words} onChange={event => setListText(current => ({ ...current, words: event.target.value }))} /></label>
-        <label className="ww-input"><span>禁忌话题（每行一个）</span><textarea value={listText.forbiddenTopics} onChange={event => setListText(current => ({ ...current, forbiddenTopics: event.target.value }))} /></label>
-      </div>
     </div>
 
     <div className="ww-group">
@@ -149,7 +104,7 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
       <div className="ww-grid">
         <label className="ww-input"><span>AppID</span><input value={draft.wechat.appid} onChange={event => patchWechat({ appid: event.target.value })} placeholder={flags.skipPublish ? '输入公众号 AppID' : '留空则保留现有 AppID'} /></label>
         <label className="ww-input"><span>AppSecret</span><input type="password" value={draft.wechat.secret} onChange={event => patchWechat({ secret: event.target.value })} placeholder={flags.skipPublish ? '输入公众号 AppSecret' : '留空则保留现有 Secret'} /></label>
-        <label className="ww-input ww-wide"><span>草稿默认署名</span><input value={draft.wechat.author} onChange={event => patchWechat({ author: event.target.value })} placeholder="留空则使用公众号资料中的署名" /></label>
+        <label className="ww-input ww-wide"><span>草稿默认署名</span><input value={draft.wechat.author} onChange={event => patchWechat({ author: event.target.value })} placeholder="公众号资料没填署名时使用" /></label>
       </div>
       <p className="ww-muted">未配置凭证时，排版与预览仍可本地完成，仅推送草稿箱不可用。</p>
     </div>

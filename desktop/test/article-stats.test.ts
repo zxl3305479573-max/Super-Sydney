@@ -221,3 +221,23 @@ test('二进制 xls：SST 跨 CONTINUE、LABELSST / NUMBER / RK / MULRK / LABEL'
   ]);
   assert.deepEqual(readTableFile(buildCfb(stream), 'a.xls'), [['标题', '5', '', '阅读'], ['冬天AB', '46306', '7', '8']]);
 });
+
+test('按公众号资料查看：只保留匹配到该资料任务的文章，对不上任务的只计数', () => {
+  const metrics = (readUsers: number) => ({ readUsers, reads: null, shareUsers: null, shares: null, likes: null, wows: null, favorites: null, comments: null, delivered: null, follows: null });
+  const stored = [
+    { id: 1, title: 'A', publishDate: '2026-10-01', metrics: metrics(100), source: 'x', importedAt: '' },
+    { id: 2, title: 'B', publishDate: '2026-10-02', metrics: metrics(300), source: 'x', importedAt: '' },
+    { id: 3, title: 'C', publishDate: '2026-10-03', metrics: metrics(900), source: 'x', importedAt: '' }
+  ];
+  const tasks = [task(10, 'A'), { ...task(11, 'B', '', '大模型'), directionId: 2 }];
+  const health = buildStatsView(stored, tasks, 1);
+  assert.deepEqual(health.records.map(record => record.title), ['A']);
+  assert.equal(health.overview.unmatched, 1);
+  assert.equal(health.overview.medianReads, 100);
+  assert.equal(health.groups[0].name, '饮食营养', '按资料查看时分组只写具体方向名');
+  const ai = buildStatsView(stored, tasks, 2);
+  assert.deepEqual(ai.records.map(record => record.title), ['B']);
+  const all = buildStatsView(stored, tasks);
+  assert.equal(all.records.length, 3);
+  assert.equal(all.overview.unmatched, 0);
+});
