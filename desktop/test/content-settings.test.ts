@@ -7,9 +7,6 @@ import { splitLines, weWriteDraftFromOverview } from '../renderer/config-draft.t
 
 function overview(): WeWriteOverview {
   return {
-    cliAvailable: true,
-    cliError: '',
-    cliVersion: 'test',
     writer: { baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', apiKeyMasked: 'sk-ab••••1234', enabled: true },
     home: 'C:\\Users\\tester\\.wewrite',
     checks: [],
@@ -25,9 +22,7 @@ function overview(): WeWriteOverview {
       persona: 'elder-health-guide', theme: 'elder-clear', author: '李医生', defaultTopic: '饮食营养与蔬果利弊',
       topics: ['饮食营养与蔬果利弊', '身心健康与作息'], blacklistWords: ['震惊'], blacklistTopics: ['具体用药剂量']
     },
-    themes: [{ name: 'elder-clear', description: '中老年友好大字号' }],
-    skills: { total: 6, elderHealth: true, complianceReference: true, topicReference: true },
-    counts: { total: 1, active: 1, completed: 0, failed: 0 }
+    themes: [{ name: 'elder-clear', description: '中老年友好大字号' }]
   };
 }
 
