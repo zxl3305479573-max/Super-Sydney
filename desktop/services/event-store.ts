@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { WorkEvent } from '../shared.ts';
+import type { EventKind, EventStatus, WorkEvent } from '../shared.ts';
 
 /** 工作事件表的读写。只碰 SQLite；广播刷新与 Obsidian 落盘由调用方负责。 */
 
@@ -57,6 +57,41 @@ export function insertMetadataEvent(db: DatabaseSync, input: MetadataEventInput)
     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, '提效方案', ?, ?, ?, ?)`)
     .run(new Date().toISOString(), input.appName || '', input.windowTitle || '', input.kind, input.note, input.durationSeconds || 0, input.summary, input.source, input.relatedPath || '', input.adapter || '', input.changeType || '');
   return Number(result.lastInsertRowid);
+}
+
+const EVENT_STATUSES: EventStatus[] = ['pending', 'approved', 'rejected'];
+const EVENT_KINDS: EventKind[] = ['manual', 'activity', 'codex', 'claude', 'file_change', 'adapter'];
+const TEXT_FIELDS = ['note', 'summary', 'category', 'app_name', 'window_title', 'created_at'] as const;
+const COUNT_FIELDS = ['value_score', 'duration_seconds'] as const;
+
+/**
+ * 校验渲染进程提交的事件字段：文本必须是字符串、状态与类型必须是已知取值、计数必须是非负整数。
+ * 未知字段丢弃；取值不对时抛错，避免把脏数据写进库再在复盘里出错。
+ */
+export function sanitizeEventInput(input: unknown): Partial<WorkEvent> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('事件格式不正确');
+  const source = input as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of TEXT_FIELDS) {
+    if (source[key] === undefined) continue;
+    if (typeof source[key] !== 'string') throw new Error(`事件字段 ${key} 必须是文本`);
+    result[key] = source[key];
+  }
+  for (const key of COUNT_FIELDS) {
+    if (source[key] === undefined) continue;
+    const value = source[key];
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) throw new Error(`事件字段 ${key} 必须是非负整数`);
+    result[key] = value;
+  }
+  if (source.status !== undefined) {
+    if (!EVENT_STATUSES.includes(source.status as EventStatus)) throw new Error('事件状态取值不正确');
+    result.status = source.status;
+  }
+  if (source.kind !== undefined) {
+    if (!EVENT_KINDS.includes(source.kind as EventKind)) throw new Error('事件类型取值不正确');
+    result.kind = source.kind;
+  }
+  return result as Partial<WorkEvent>;
 }
 
 const EDITABLE_EVENT_FIELDS = ['note', 'status', 'category', 'value_score', 'summary'];

@@ -34,6 +34,31 @@ export function mergeSettings(value: Partial<Settings>, defaultVaultPath: string
   return { ...defaults, ...value, allowedApps, vaultPath: resolveVaultPath(value.vaultPath, defaultVaultPath, projectPath) };
 }
 
+/**
+ * 校验渲染进程提交的设置补丁：只收已知字段，类型必须与默认值一致。
+ * 未知字段直接丢弃（不会写进 settings.json）；类型不对时抛错而不是静默写坏配置。
+ */
+export function sanitizeSettingsPatch(input: unknown, defaults: Settings): Partial<Settings> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('设置格式不正确');
+  const patch: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!(key in defaults)) continue;
+    const expected = defaults[key as keyof Settings];
+    if (Array.isArray(expected)) {
+      if (!Array.isArray(value) || !value.every(item => typeof item === 'string')) throw new Error(`设置项 ${key} 必须是文本列表`);
+      patch[key] = value.map(item => item.trim()).filter(Boolean);
+    } else if (typeof expected === 'number') {
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new Error(`设置项 ${key} 必须是非负数字`);
+      patch[key] = value;
+    } else if (typeof value !== typeof expected) {
+      throw new Error(`设置项 ${key} 类型不正确`);
+    } else {
+      patch[key] = value;
+    }
+  }
+  return patch as Partial<Settings>;
+}
+
 /** settings.json 的读写；读失败时回退默认值，写入走原子写。 */
 export class SettingsFile {
   private readonly filePath: string;

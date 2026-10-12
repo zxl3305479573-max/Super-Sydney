@@ -12,7 +12,8 @@ import { applyAiDraft, clearAiDraft, saveAiDraft } from '../services/ai-draft-st
 import { buildDeepSeekInput } from '../services/ai-draft-input';
 import { requestEventDraft } from '../services/deepseek';
 import { writeConfirmedEvent, writeDailySummary, writeWeeklySummary, writeWorkflowCandidate } from '../services/obsidian-output';
-import { aiEventsSince, confirmedEvents, deleteEvent, getApprovedEvent, getEvent, insertEvent, recentEvents, todayStats, updateEvent } from '../services/event-store';
+import { aiEventsSince, confirmedEvents, deleteEvent, getApprovedEvent, getEvent, insertEvent, recentEvents, sanitizeEventInput, todayStats, updateEvent } from '../services/event-store';
+import { sanitizeSettingsPatch } from '../services/app-settings';
 
 /** 工作事件、设置、复盘与规则进化：Today / 复盘 / 进化 / 设置 四个页面的通道。 */
 export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void {
@@ -31,11 +32,12 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
   }));
 
   ipcMain.handle('event:create', (_event, input: Partial<WorkEvent>) => {
-    const id = insertEvent(db, input);
+    const id = insertEvent(db, sanitizeEventInput(input));
     ctx.broadcast();
     return id;
   });
-  ipcMain.handle('event:update', (_event, id: number, patch: Partial<WorkEvent>) => {
+  ipcMain.handle('event:update', (_event, id: number, input: Partial<WorkEvent>) => {
+    const patch = sanitizeEventInput(input);
     updateEvent(db, id, patch);
     if (patch.status === 'approved') {
       const event = getApprovedEvent(db, id);
@@ -65,7 +67,7 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
   ipcMain.handle('capture:set', (_event, mode: CaptureMode) => capture.setCapture(mode));
   ipcMain.handle('settings:save', (_event, patch: Partial<Settings>) => {
     const previous = ctx.settings.read();
-    const next = { ...previous, ...patch };
+    const next = { ...previous, ...sanitizeSettingsPatch(patch, previous) };
     next.vaultPath = ctx.settings.resolveVault(next.vaultPath);
     ctx.settings.write(next);
     capture.applySettings(previous, next);

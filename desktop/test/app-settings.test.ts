@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultSettings, mergeSettings } from '../services/app-settings.ts';
+import { defaultSettings, mergeSettings, sanitizeSettingsPatch } from '../services/app-settings.ts';
 
 test('LLM sending is disabled by default and survives settings merge', () => {
   assert.equal(defaultSettings('D:/Vault', 'D:/Project').llmEnabled, false);
@@ -17,4 +17,17 @@ test('migrates the previous default allow-list to include Codex without changing
   const legacy = ['Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'];
   assert.ok(mergeSettings({ allowedApps: legacy }, 'D:/Vault', 'D:/Project').allowedApps.includes('Codex'));
   assert.deepEqual(mergeSettings({ allowedApps: ['Only Me'] }, 'D:/Vault', 'D:/Project').allowedApps, ['Only Me']);
+});
+
+test('sanitizeSettingsPatch 只收已知字段并校验类型', () => {
+  const defaults = defaultSettings('D:\vault', 'D:\project');
+  assert.deepEqual(
+    sanitizeSettingsPatch({ llmEnabled: true, captureIntervalSeconds: 45, allowedApps: [' Code ', ''], unknownKey: 'x' }, defaults),
+    { llmEnabled: true, captureIntervalSeconds: 45, allowedApps: ['Code'] }
+  );
+  assert.throws(() => sanitizeSettingsPatch({ llmEnabled: 'yes' }, defaults), /llmEnabled/);
+  assert.throws(() => sanitizeSettingsPatch({ captureIntervalSeconds: -1 }, defaults), /非负数字/);
+  assert.throws(() => sanitizeSettingsPatch({ captureIntervalSeconds: Number.NaN }, defaults), /非负数字/);
+  assert.throws(() => sanitizeSettingsPatch({ blockedApps: [1] }, defaults), /文本列表/);
+  assert.throws(() => sanitizeSettingsPatch(null, defaults), /设置格式/);
 });
