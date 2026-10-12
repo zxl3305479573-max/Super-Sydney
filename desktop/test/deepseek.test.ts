@@ -41,6 +41,6 @@ test('rejects before fetch when API key is missing', async () => {
 
 test('reports HTTP and response-format failures', async () => {
   const config = { apiKey: 'key', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' };
-  await assert.rejects(() => requestEventDraft(input, config, async () => new Response('failure', { status: 401 })), /401/);
+  await assert.rejects(() => requestEventDraft(input, config, async () => new Response(JSON.stringify({ error: { message: '余额不足' } }), { status: 401 })), /401.*余额不足/);
   await assert.rejects(() => requestEventDraft(input, config, async () => new Response('{"choices":[{"message":{"content":"not json"}}]}', { status: 200 })), /JSON/);
 });

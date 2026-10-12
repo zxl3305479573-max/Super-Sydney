@@ -1,0 +1,499 @@
+
+> sydney-work-os@0.1.0 test
+> node --experimental-strip-types --test desktop/test/*.test.*
+
+TAP version 13
+# <--- Last few GCs --->
+# [72120:000001DECEDA8000]      292 ms: Mark-Compact (reduce) 7.1 (8.7) -> 6.9 (8.7) MB, pooled: 0 MB, 3.82 / 0.00 ms  (average mu = 0.986, current mu = 0.986) memory pressure; GC in old space requested
+# <--- JS stacktrace --->
+# FATAL ERROR: Committing semi space failed. Allocation failed - JavaScript heap out of memory
+# ----- Native stack trace -----
+#  1: 00007FF6308618E7 
+#  2: 00007FF6307C212B 
+#  3: 00007FF6313CAE51 
+#  4: 00007FF6313B7916 
+#  5: 00007FF631214060 
+#  6: 00007FF6311CBCBD 
+#  7: 00007FF63121D2A3 
+#  8: 00007FF63120D12D 
+#  9: 00007FF631208CE5 
+# 10: 00007FF630B9273D 
+# 11: 7FF8000000000000 
+# Subtest: desktop\\test\\ai-draft-input.test.ts
+not ok 1 - desktop\\test\\ai-draft-input.test.ts
+  ---
+  duration_ms: 800.4642
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\ai-draft-input.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 134
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\ai-draft-store.test.ts
+not ok 2 - desktop\\test\\ai-draft-store.test.ts
+  ---
+  duration_ms: 1592.4307
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\ai-draft-store.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221226505
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\app-settings.test.ts
+not ok 3 - desktop\\test\\app-settings.test.ts
+  ---
+  duration_ms: 1497.1356
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\app-settings.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221226505
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\application-adapters.test.ts
+not ok 4 - desktop\\test\\application-adapters.test.ts
+  ---
+  duration_ms: 1400.4775
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\application-adapters.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221226505
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\capture-status.test.ts
+not ok 5 - desktop\\test\\capture-status.test.ts
+  ---
+  duration_ms: 577.4797
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\capture-status.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221225725
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# <--- Last few GCs --->
+# <--- JS stacktrace --->
+# \#
+# \# Fatal JavaScript out of memory: MemoryChunk allocation failed during deserialization.
+# \#
+# ----- Native stack trace -----
+#  1: 00007FF6308618E7 
+#  2: 00007FF6307320FF 
+#  3: 00007FF631A31016 
+#  4: 00007FF6313CAEA3 
+#  5: 00007FF6313B7916 
+#  6: 00007FF631214060 
+#  7: 00007FF6311DB081 
+#  8: 00007FF6311DB6A0 
+#  9: 00007FF6311DB3A6 
+# 10: 00007FF6311C0FEC 
+# 11: 00007FF631201B96 
+# 12: 00007FF631201820 
+# 13: 00007FF631200F08 
+# 14: 00007FF631200681 
+# 15: 00007FF630ED3B82 
+# 16: 00007FF630ED5472 
+# 17: 00007FF630ED0039 
+# 18: 00007FF630ED4D4C 
+# 19: 00007FF630ED5582 
+# 20: 00007FF630ED0039 
+# 21: 00007FF630ED4D4C 
+# 22: 00007FF630ED5582 
+# 23: 00007FF630ED0039 
+# 24: 00007FF630ED4D4C 
+# 25: 00007FF630ED5582 
+# 26: 00007FF630ED0039 
+# 27: 00007FF630ED4D4C 
+# 28: 00007FF630ED5582 
+# 29: 00007FF630ED0039 
+# 30: 00007FF630ED4D4C 
+# 31: 00007FF630ED5582 
+# 32: 00007FF630ED0039 
+# 33: 00007FF630ED4D4C 
+# 34: 00007FF630ED5582 
+# 35: 00007FF630ED0039 
+# 36: 00007FF630ED4D4C 
+# 37: 00007FF630ED5582 
+# 38: 00007FF630ED0F65 
+# 39: 00007FF630ED5B0F 
+# 40: 00007FF63121A068 
+# 41: 00007FF630EB1110 
+# 42: 00007FF6312863D5 
+# 43: 00007FF630EB8FF3 
+# 44: 00007FF6313C0A41 
+# 45: 00007FF6308A098D 
+# 46: 00007FF63076411B 
+# 47: 00007FF63080CF99 
+# 48: 00007FF63080BCAE 
+# 49: 00007FF63056B01C 
+# 50: 00007FF632125E1C 
+# 51: 00007FFC671EE8D7 BaseThreadInitThunk+23
+# 52: 00007FFC6816C53C 
+# Subtest: desktop\\test\\codex-event-store.test.ts
+not ok 6 - desktop\\test\\codex-event-store.test.ts
+  ---
+  duration_ms: 533.3172
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\codex-event-store.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 2147483651
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\codex-session-adapter.test.ts
+not ok 7 - desktop\\test\\codex-session-adapter.test.ts
+  ---
+  duration_ms: 485.0881
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\codex-session-adapter.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221225794
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\codex-session.test.ts
+not ok 8 - desktop\\test\\codex-session.test.ts
+  ---
+  duration_ms: 420.2803
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\codex-session.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221225725
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\content-export.test.ts
+not ok 9 - desktop\\test\\content-export.test.ts
+  ---
+  duration_ms: 358.754
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\content-export.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 3221225794
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: desktop\\test\\content-workflow.test.ts
+not ok 10 - desktop\\test\\content-workflow.test.ts
+  ---
+  duration_ms: 290.1439
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\content-workflow.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\deepseek.test.ts
+not ok 11 - desktop\\test\\deepseek.test.ts
+  ---
+  duration_ms: 278.0029
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\deepseek.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn ENOMEM'
+  code: 'ENOMEM'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\obsidian-output.test.ts
+not ok 12 - desktop\\test\\obsidian-output.test.ts
+  ---
+  duration_ms: 271.8873
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\obsidian-output.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\publishing.test.ts
+not ok 13 - desktop\\test\\publishing.test.ts
+  ---
+  duration_ms: 266.4776
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\publishing.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\screen-capture-policy.test.ts
+not ok 14 - desktop\\test\\screen-capture-policy.test.ts
+  ---
+  duration_ms: 260.9504
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\screen-capture-policy.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\screen-frame-store.test.ts
+not ok 15 - desktop\\test\\screen-frame-store.test.ts
+  ---
+  duration_ms: 255.6915
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\screen-frame-store.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# Subtest: desktop\\test\\secret-store.test.ts
+not ok 16 - desktop\\test\\secret-store.test.ts
+  ---
+  duration_ms: 250.7262
+  type: 'test'
+  location: 'D:\\Super-Sydney\\desktop\\test\\secret-store.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  error: 'spawn UNKNOWN'
+  code: 'UNKNOWN'
+  stack: |-
+    ChildProcess.spawn (node:internal/child_process:420:11)
+    spawn (node:child_process:787:9)
+    TestContext.<anonymous> (node:internal/test_runner/runner:376:19)
+    FileTest.runInAsyncScope (node:async_hooks:214:14)
+    FileTest.run (node:internal/test_runner/test:1047:25)
+    FileTest.start (node:internal/test_runner/test:944:17)
+    runTestFile (node:internal/test_runner/runner:455:32)
+    node:internal/test_runner/runner:726:25
+    node:internal/per_context/primordials:559:37
+    new Promise (<anonymous>)
+  ...
+# (node:43280) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/vault-path.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: uses the existing legacy vault as the initial default, outside the project
+ok 17 - uses the existing legacy vault as the initial default, outside the project
+  ---
+  duration_ms: 1.4118
+  type: 'test'
+  ...
+# Subtest: preserves an explicitly configured vault path
+ok 18 - preserves an explicitly configured vault path
+  ---
+  duration_ms: 0.2272
+  type: 'test'
+  ...
+# Subtest: rejects a vault path inside the application project
+ok 19 - rejects a vault path inside the application project
+  ---
+  duration_ms: 0.7143
+  type: 'test'
+  ...
+# (node:78200) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/wewrite-config.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: stripScalar removes an inline comment before stripping quotes
+ok 20 - stripScalar removes an inline comment before stripping quotes
+  ---
+  duration_ms: 1.7173
+  type: 'test'
+  ...
+# Subtest: yamlScalar reads simple keys and ignores commented examples
+ok 21 - yamlScalar reads simple keys and ignores commented examples
+  ---
+  duration_ms: 0.8011
+  type: 'test'
+  ...
+# Subtest: yamlBlock extracts only the nested block
+ok 22 - yamlBlock extracts only the nested block
+  ---
+  duration_ms: 0.7774
+  type: 'test'
+  ...
+# Subtest: yamlList reads top-level and nested lists, and disambiguates duplicate keys
+ok 23 - yamlList reads top-level and nested lists, and disambiguates duplicate keys
+  ---
+  duration_ms: 1.5182
+  type: 'test'
+  ...
+# Subtest: parseStyleSummary keeps content topics and blacklist topics separate
+ok 24 - parseStyleSummary keeps content topics and blacklist topics separate
+  ---
+  duration_ms: 1.0183
+  type: 'test'
+  ...
+# Subtest: parseImageConfig masks the api key and never returns it in full
+ok 25 - parseImageConfig masks the api key and never returns it in full
+  ---
+  duration_ms: 0.7385
+  type: 'test'
+  ...
+# Subtest: maskSecret never leaks short or empty values
+ok 26 - maskSecret never leaks short or empty values
+  ---
+  duration_ms: 0.3366
+  type: 'test'
+  ...
+# Subtest: parses the diagnose JSON payload into panel types
+ok 27 - parses the diagnose JSON payload into panel types
+  ---
+  duration_ms: 0.767
+  type: 'test'
+  ...
+# Subtest: parsers tolerate missing or malformed diagnose fields
+ok 28 - parsers tolerate missing or malformed diagnose fields
+  ---
+  duration_ms: 0.4652
+  type: 'test'
+  ...
+# Subtest: countRuns groups runs by status
+ok 29 - countRuns groups runs by status
+  ---
+  duration_ms: 0.6097
+  type: 'test'
+  ...
+# Subtest: serialized style.yaml round-trips through the parser
+ok 30 - serialized style.yaml round-trips through the parser
+  ---
+  duration_ms: 1.2025
+  type: 'test'
+  ...
+# Subtest: serialized cli config round-trips and keeps values verbatim
+ok 31 - serialized cli config round-trips and keeps values verbatim
+  ---
+  duration_ms: 0.7258
+  type: 'test'
+  ...
+# Subtest: serializer escapes values that would otherwise break YAML
+ok 32 - serializer escapes values that would otherwise break YAML
+  ---
+  duration_ms: 0.3904
+  type: 'test'
+  ...
+# Subtest: serializer keeps an empty secret readable as unconfigured
+ok 33 - serializer keeps an empty secret readable as unconfigured
+  ---
+  duration_ms: 0.2754
+  type: 'test'
+  ...
+# (node:81772) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/wewrite-runs.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: summarizeRun maps the CLI state into the frontend summary
+ok 34 - summarizeRun maps the CLI state into the frontend summary
+  ---
+  duration_ms: 2.2154
+  type: 'test'
+  ...
+# Subtest: summarizeRun tolerates missing and unknown upstream fields
+ok 35 - summarizeRun tolerates missing and unknown upstream fields
+  ---
+  duration_ms: 0.2877
+  type: 'test'
+  ...
+# Subtest: status normalizers reject values outside the known vocabularies
+ok 36 - status normalizers reject values outside the known vocabularies
+  ---
+  duration_ms: 0.141
+  type: 'test'
+  ...
+# Subtest: readSteps always returns the five canonical steps in order
+ok 37 - readSteps always returns the five canonical steps in order
+  ---
+  duration_ms: 0.8833
+  type: 'test'
+  ...
+# Subtest: pickArticlePath prefers the finished article over the draft
+ok 38 - pickArticlePath prefers the finished article over the draft
+  ---
+  duration_ms: 0.1589
+  type: 'test'
+  ...
+# Subtest: describeRun exposes the detail fields the panel renders
+ok 39 - describeRun exposes the detail fields the panel renders
+  ---
+  duration_ms: 0.3979
+  type: 'test'
+  ...
+# Subtest: parseThemes reads the two-column CLI listing
+ok 40 - parseThemes reads the two-column CLI listing
+  ---
+  duration_ms: 0.5452
+  type: 'test'
+  ...
+1..40
+# tests 40
+# suites 0
+# pass 24
+# fail 16
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1663.8484

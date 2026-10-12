@@ -1,0 +1,694 @@
+TAP version 13
+# (node:5424) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/ai-draft-input.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Codex input contains only the prompt and displayed final response
+ok 1 - Codex input contains only the prompt and displayed final response
+  ---
+  duration_ms: 1.9407
+  type: 'test'
+  ...
+# Subtest: manual event input uses its local note and summary only
+ok 2 - manual event input uses its local note and summary only
+  ---
+  duration_ms: 0.3164
+  type: 'test'
+  ...
+# (node:40704) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/ai-draft-store.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:40704) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: migrates AI draft columns and stores, applies, and clears a draft without approving the event
+ok 3 - migrates AI draft columns and stores, applies, and clears a draft without approving the event
+  ---
+  duration_ms: 2.0005
+  type: 'test'
+  ...
+# Subtest: applying a missing or invalid draft does not change the event
+ok 4 - applying a missing or invalid draft does not change the event
+  ---
+  duration_ms: 0.6976
+  type: 'test'
+  ...
+# (node:90300) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/app-settings.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: LLM sending is disabled by default and survives settings merge
+ok 5 - LLM sending is disabled by default and survives settings merge
+  ---
+  duration_ms: 0.8903
+  type: 'test'
+  ...
+# Subtest: Codex capture remains opt-in while Codex is an allowed application
+ok 6 - Codex capture remains opt-in while Codex is an allowed application
+  ---
+  duration_ms: 0.18
+  type: 'test'
+  ...
+# Subtest: migrates the previous default allow-list to include Codex without changing custom lists
+ok 7 - migrates the previous default allow-list to include Codex without changing custom lists
+  ---
+  duration_ms: 0.7974
+  type: 'test'
+  ...
+# (node:78396) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/application-adapters.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: uses the actual window title as the event summary
+ok 8 - uses the actual window title as the event summary
+  ---
+  duration_ms: 1.2776
+  type: 'test'
+  ...
+# Subtest: falls back to the application name when a window has no title
+ok 9 - falls back to the application name when a window has no title
+  ---
+  duration_ms: 0.1606
+  type: 'test'
+  ...
+# (node:66768) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/capture-status.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: reports an allowed active window as sampled immediately
+ok 10 - reports an allowed active window as sampled immediately
+  ---
+  duration_ms: 0.9129
+  type: 'test'
+  ...
+# Subtest: reports blocked or disallowed windows without pretending they were sampled
+ok 11 - reports blocked or disallowed windows without pretending they were sampled
+  ---
+  duration_ms: 0.1689
+  type: 'test'
+  ...
+# Subtest: reports an unallowed non-sensitive window as saved for manual review when enabled
+ok 12 - reports an unallowed non-sensitive window as saved for manual review when enabled
+  ---
+  duration_ms: 0.1427
+  type: 'test'
+  ...
+# (node:52772) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/codex-event-store.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# (node:52772) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# Subtest: Codex capture is disabled by default
+ok 13 - Codex capture is disabled by default
+  ---
+  duration_ms: 0.832
+  type: 'test'
+  ...
+# Subtest: a prompt creates one local pending Codex event with source metadata
+ok 14 - a prompt creates one local pending Codex event with source metadata
+  ---
+  duration_ms: 3.2769
+  type: 'test'
+  ...
+# Subtest: the next final answer updates the newest unanswered prompt in the same session
+ok 15 - the next final answer updates the newest unanswered prompt in the same session
+  ---
+  duration_ms: 1.2666
+  type: 'test'
+  ...
+# Subtest: answers update the matching turn instead of the newest unanswered prompt
+ok 16 - answers update the matching turn instead of the newest unanswered prompt
+  ---
+  duration_ms: 3.5986
+  type: 'test'
+  ...
+# Subtest: a repeated answer does not overwrite or duplicate the paired event
+ok 17 - a repeated answer does not overwrite or duplicate the paired event
+  ---
+  duration_ms: 1.104
+  type: 'test'
+  ...
+# Subtest: a response without a pending prompt is retained and duplicate messages are ignored
+ok 18 - a response without a pending prompt is retained and duplicate messages are ignored
+  ---
+  duration_ms: 1.1163
+  type: 'test'
+  ...
+# (node:91100) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/codex-session-adapter.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: tails only complete UTF-8 JSONL records and retains an incomplete line
+ok 19 - tails only complete UTF-8 JSONL records and retains an incomplete line
+  ---
+  duration_ms: 2.0006
+  type: 'test'
+  ...
+# Subtest: capture runs only when explicit opt-in and recording are both active
+ok 20 - capture runs only when explicit opt-in and recording are both active
+  ---
+  duration_ms: 0.2586
+  type: 'test'
+  ...
+# Subtest: bootstraps old session at EOF and only emits appended Codex Desktop messages once
+ok 21 - bootstraps old session at EOF and only emits appended Codex Desktop messages once
+  ---
+  duration_ms: 8.7103
+  type: 'test'
+  ...
+# Subtest: discovers a newly created desktop session but ignores another originator
+ok 22 - discovers a newly created desktop session but ignores another originator
+  ---
+  duration_ms: 7.7894
+  type: 'test'
+  ...
+# Subtest: restart baselines to EOF and skips content written while stopped
+ok 23 - restart baselines to EOF and skips content written while stopped
+  ---
+  duration_ms: 12.3133
+  type: 'test'
+  ...
+# Subtest: forwards the turn id from a prompt and its final answer
+ok 24 - forwards the turn id from a prompt and its final answer
+  ---
+  duration_ms: 7.6826
+  type: 'test'
+  ...
+# Subtest: deduplicates response items and completed display events by message id
+ok 25 - deduplicates response items and completed display events by message id
+  ---
+  duration_ms: 6.1973
+  type: 'test'
+  ...
+# (node:60408) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/codex-session.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: extracts user input_text from a Codex Desktop message
+ok 26 - extracts user input_text from a Codex Desktop message
+  ---
+  duration_ms: 3.0804
+  type: 'test'
+  ...
+# Subtest: keeps only the real request from the desktop attachment envelope
+ok 27 - keeps only the real request from the desktop attachment envelope
+  ---
+  duration_ms: 0.9798
+  type: 'test'
+  ...
+# Subtest: cleanCodexUserText removes attachment metadata without changing a normal request
+ok 28 - cleanCodexUserText removes attachment metadata without changing a normal request
+  ---
+  duration_ms: 0.2001
+  type: 'test'
+  ...
+# Subtest: extracts only the displayed final answer from Codex Desktop
+ok 29 - extracts only the displayed final answer from Codex Desktop
+  ---
+  duration_ms: 0.1818
+  type: 'test'
+  ...
+# Subtest: requires an explicit final_answer phase for assistant output
+ok 30 - requires an explicit final_answer phase for assistant output
+  ---
+  duration_ms: 0.2701
+  type: 'test'
+  ...
+# Subtest: extracts nested output text and top-level final_answer records
+ok 31 - extracts nested output text and top-level final_answer records
+  ---
+  duration_ms: 0.1898
+  type: 'test'
+  ...
+# Subtest: extracts completed user and assistant items from Codex event messages
+ok 32 - extracts completed user and assistant items from Codex event messages
+  ---
+  duration_ms: 0.3595
+  type: 'test'
+  ...
+# Subtest: ignores non-message completed items and assistant commentary events
+ok 33 - ignores non-message completed items and assistant commentary events
+  ---
+  duration_ms: 1.1253
+  type: 'test'
+  ...
+# Subtest: ignores analysis, commentary, tool events, metadata, and malformed lines
+ok 34 - ignores analysis, commentary, tool events, metadata, and malformed lines
+  ---
+  duration_ms: 0.5386
+  type: 'test'
+  ...
+# Subtest: rejects non-desktop sessions even when their message shape matches
+ok 35 - rejects non-desktop sessions even when their message shape matches
+  ---
+  duration_ms: 0.4688
+  type: 'test'
+  ...
+# Subtest: parseCodexRecord returns null for malformed JSON
+ok 36 - parseCodexRecord returns null for malformed JSON
+  ---
+  duration_ms: 0.1907
+  type: 'test'
+  ...
+# (node:81860) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/content-export.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: source records stay user-provided rather than automatically verified
+ok 37 - source records stay user-provided rather than automatically verified
+  ---
+  duration_ms: 1.4154
+  type: 'test'
+  ...
+# Subtest: sources reject malformed records and credential-bearing links
+ok 38 - sources reject malformed records and credential-bearing links
+  ---
+  duration_ms: 0.6922
+  type: 'test'
+  ...
+# Subtest: changing source material invalidates the reviewed article
+ok 39 - changing source material invalidates the reviewed article
+  ---
+  duration_ms: 0.3214
+  type: 'test'
+  ...
+# Subtest: repeated exports create distinct notes and cover copies without overwriting manual content
+ok 40 - repeated exports create distinct notes and cover copies without overwriting manual content
+  ---
+  duration_ms: 22.2682
+  type: 'test'
+  ...
+# Subtest: stale review is rejected before writing a note
+ok 41 - stale review is rejected before writing a note
+  ---
+  duration_ms: 1.2675
+  type: 'test'
+  ...
+# (node:79688) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/content-workflow.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: changing reviewed content invalidates the final article and review
+ok 42 - changing reviewed content invalidates the final article and review
+  ---
+  duration_ms: 2.3333
+  type: 'test'
+  ...
+# Subtest: publish gate requires a passing review for the current body
+ok 43 - publish gate requires a passing review for the current body
+  ---
+  duration_ms: 0.8923
+  type: 'test'
+  ...
+# Subtest: generation stages reject missing prerequisites
+ok 44 - generation stages reject missing prerequisites
+  ---
+  duration_ms: 0.2397
+  type: 'test'
+  ...
+# Subtest: model response shape and review contradictions are validated
+ok 45 - model response shape and review contradictions are validated
+  ---
+  duration_ms: 0.5261
+  type: 'test'
+  ...
+# Subtest: API call uses account style, a timeout and the persisted task
+ok 46 - API call uses account style, a timeout and the persisted task
+  ---
+  duration_ms: 18.9373
+  type: 'test'
+  ...
+# Subtest: missing key or invalid stage never calls the provider
+ok 47 - missing key or invalid stage never calls the provider
+  ---
+  duration_ms: 0.3758
+  type: 'test'
+  ...
+# Subtest: writer secret is never serialized into configuration
+ok 48 - writer secret is never serialized into configuration
+  ---
+  duration_ms: 0.6679
+  type: 'test'
+  ...
+# (node:59528) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/deepseek.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: sends only prompt and final response and normalizes the JSON result
+ok 49 - sends only prompt and final response and normalizes the JSON result
+  ---
+  duration_ms: 24.7752
+  type: 'test'
+  ...
+# Subtest: rejects before fetch when API key is missing
+ok 50 - rejects before fetch when API key is missing
+  ---
+  duration_ms: 0.4666
+  type: 'test'
+  ...
+# Subtest: reports HTTP and response-format failures
+ok 51 - reports HTTP and response-format failures
+  ---
+  duration_ms: 1.4156
+  type: 'test'
+  ...
+# (node:67724) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/obsidian-output.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: confirmed event links an associated vault file as an Obsidian wikilink
+ok 52 - confirmed event links an associated vault file as an Obsidian wikilink
+  ---
+  duration_ms: 5.1961
+  type: 'test'
+  ...
+# Subtest: daily, weekly, and workflow outputs are written into their dedicated folders
+ok 53 - daily, weekly, and workflow outputs are written into their dedicated folders
+  ---
+  duration_ms: 9.901
+  type: 'test'
+  ...
+# (node:90396) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/publishing.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: escapeHtml neutralizes markdown-embedded markup
+ok 54 - escapeHtml neutralizes markdown-embedded markup
+  ---
+  duration_ms: 1.6454
+  type: 'test'
+  ...
+# Subtest: rendered HTML escapes raw HTML from the model
+ok 55 - rendered HTML escapes raw HTML from the model
+  ---
+  duration_ms: 0.7561
+  type: 'test'
+  ...
+# Subtest: renders headings, lists, quotes and bold with inline styles only
+ok 56 - renders headings, lists, quotes and bold with inline styles only
+  ---
+  duration_ms: 0.4075
+  type: 'test'
+  ...
+# Subtest: AIGC footer is optional and escaped
+ok 57 - AIGC footer is optional and escaped
+  ---
+  duration_ms: 0.1449
+  type: 'test'
+  ...
+# Subtest: toPlainText strips markdown markers
+ok 58 - toPlainText strips markdown markers
+  ---
+  duration_ms: 0.6093
+  type: 'test'
+  ...
+# Subtest: makeDigest respects the UTF-8 byte limit without splitting characters
+ok 59 - makeDigest respects the UTF-8 byte limit without splitting characters
+  ---
+  duration_ms: 0.3972
+  type: 'test'
+  ...
+# Subtest: normalizeTitle collapses whitespace and truncates by character
+ok 60 - normalizeTitle collapses whitespace and truncates by character
+  ---
+  duration_ms: 0.1252
+  type: 'test'
+  ...
+# Subtest: contentTypeFor maps common cover formats
+ok 61 - contentTypeFor maps common cover formats
+  ---
+  duration_ms: 0.1621
+  type: 'test'
+  ...
+# Subtest: access token is cached across operations
+ok 62 - access token is cached across operations
+  ---
+  duration_ms: 21.2234
+  type: 'test'
+  ...
+# Subtest: an expired cached token is refreshed
+ok 63 - an expired cached token is refreshed
+  ---
+  duration_ms: 2.6096
+  type: 'test'
+  ...
+# Subtest: WeChat error codes surface even though HTTP status is 200
+ok 64 - WeChat error codes surface even though HTTP status is 200
+  ---
+  duration_ms: 1.057
+  type: 'test'
+  ...
+# Subtest: an invalid token triggers one refresh and retry
+ok 65 - an invalid token triggers one refresh and retry
+  ---
+  duration_ms: 1.9905
+  type: 'test'
+  ...
+# Subtest: a missing media_id is treated as a failure
+ok 66 - a missing media_id is treated as a failure
+  ---
+  duration_ms: 0.539
+  type: 'test'
+  ...
+# Subtest: draft body keeps Chinese characters unescaped
+ok 67 - draft body keeps Chinese characters unescaped
+  ---
+  duration_ms: 0.5992
+  type: 'test'
+  ...
+# Subtest: uploadThumb sends a multipart media field
+ok 68 - uploadThumb sends a multipart media field
+  ---
+  duration_ms: 0.6405
+  type: 'test'
+  ...
+# Subtest: missing credentials fail before any network call
+ok 69 - missing credentials fail before any network call
+  ---
+  duration_ms: 0.2634
+  type: 'test'
+  ...
+# (node:65384) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/screen-capture-policy.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: allows an approved application with a non-sensitive window
+ok 70 - allows an approved application with a non-sensitive window
+  ---
+  duration_ms: 1.5962
+  type: 'test'
+  ...
+# Subtest: skips missing, blocked, disallowed, and sensitive windows
+ok 71 - skips missing, blocked, disallowed, and sensitive windows
+  ---
+  duration_ms: 0.3144
+  type: 'test'
+  ...
+# Subtest: applies configured blocked app names to the title as well as the app name
+ok 72 - applies configured blocked app names to the title as well as the app name
+  ---
+  duration_ms: 0.1414
+  type: 'test'
+  ...
+# (node:71796) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/screen-frame-store.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: encrypts saved screen frames and cleans only expired frame files
+ok 73 - encrypts saved screen frames and cleans only expired frame files
+  ---
+  duration_ms: 13.3479
+  type: 'test'
+  ...
+# (node:89388) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/secret-store.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: stores only encrypted bytes and returns a masked status
+ok 74 - stores only encrypted bytes and returns a masked status
+  ---
+  duration_ms: 5.9478
+  type: 'test'
+  ...
+# Subtest: replaces and removes a stored key
+ok 75 - replaces and removes a stored key
+  ---
+  duration_ms: 7.756
+  type: 'test'
+  ...
+# Subtest: never writes when encryption is unavailable and treats corrupt data as unconfigured
+ok 76 - never writes when encryption is unavailable and treats corrupt data as unconfigured
+  ---
+  duration_ms: 2.69
+  type: 'test'
+  ...
+# Subtest: stored key has priority over environment fallback
+ok 77 - stored key has priority over environment fallback
+  ---
+  duration_ms: 0.1579
+  type: 'test'
+  ...
+# (node:87932) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/vault-path.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: uses the existing legacy vault as the initial default, outside the project
+ok 78 - uses the existing legacy vault as the initial default, outside the project
+  ---
+  duration_ms: 0.876
+  type: 'test'
+  ...
+# Subtest: preserves an explicitly configured vault path
+ok 79 - preserves an explicitly configured vault path
+  ---
+  duration_ms: 0.178
+  type: 'test'
+  ...
+# Subtest: rejects a vault path inside the application project
+ok 80 - rejects a vault path inside the application project
+  ---
+  duration_ms: 0.4117
+  type: 'test'
+  ...
+# (node:86908) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/wewrite-config.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: stripScalar removes an inline comment before stripping quotes
+ok 81 - stripScalar removes an inline comment before stripping quotes
+  ---
+  duration_ms: 3.0691
+  type: 'test'
+  ...
+# Subtest: yamlScalar reads simple keys and ignores commented examples
+ok 82 - yamlScalar reads simple keys and ignores commented examples
+  ---
+  duration_ms: 0.8083
+  type: 'test'
+  ...
+# Subtest: yamlBlock extracts only the nested block
+ok 83 - yamlBlock extracts only the nested block
+  ---
+  duration_ms: 0.8669
+  type: 'test'
+  ...
+# Subtest: yamlList reads top-level and nested lists, and disambiguates duplicate keys
+ok 84 - yamlList reads top-level and nested lists, and disambiguates duplicate keys
+  ---
+  duration_ms: 1.4797
+  type: 'test'
+  ...
+# Subtest: parseStyleSummary keeps content topics and blacklist topics separate
+ok 85 - parseStyleSummary keeps content topics and blacklist topics separate
+  ---
+  duration_ms: 0.8335
+  type: 'test'
+  ...
+# Subtest: parseImageConfig masks the api key and never returns it in full
+ok 86 - parseImageConfig masks the api key and never returns it in full
+  ---
+  duration_ms: 0.5433
+  type: 'test'
+  ...
+# Subtest: maskSecret never leaks short or empty values
+ok 87 - maskSecret never leaks short or empty values
+  ---
+  duration_ms: 0.2572
+  type: 'test'
+  ...
+# Subtest: parses the diagnose JSON payload into panel types
+ok 88 - parses the diagnose JSON payload into panel types
+  ---
+  duration_ms: 0.5194
+  type: 'test'
+  ...
+# Subtest: parsers tolerate missing or malformed diagnose fields
+ok 89 - parsers tolerate missing or malformed diagnose fields
+  ---
+  duration_ms: 0.3694
+  type: 'test'
+  ...
+# Subtest: countRuns groups runs by status
+ok 90 - countRuns groups runs by status
+  ---
+  duration_ms: 0.477
+  type: 'test'
+  ...
+# Subtest: serialized style.yaml round-trips through the parser
+ok 91 - serialized style.yaml round-trips through the parser
+  ---
+  duration_ms: 0.8346
+  type: 'test'
+  ...
+# Subtest: serialized cli config round-trips and keeps values verbatim
+ok 92 - serialized cli config round-trips and keeps values verbatim
+  ---
+  duration_ms: 0.4831
+  type: 'test'
+  ...
+# Subtest: serializer escapes values that would otherwise break YAML
+ok 93 - serializer escapes values that would otherwise break YAML
+  ---
+  duration_ms: 0.2489
+  type: 'test'
+  ...
+# Subtest: serializer keeps an empty secret readable as unconfigured
+ok 94 - serializer keeps an empty secret readable as unconfigured
+  ---
+  duration_ms: 0.1825
+  type: 'test'
+  ...
+# (node:90180) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///D:/Super-Sydney/desktop/test/wewrite-runs.test.ts is not specified and it doesn't parse as CommonJS.
+# Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+# To eliminate this warning, add "type": "module" to D:\\Super-Sydney\\package.json.
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: summarizeRun maps the CLI state into the frontend summary
+ok 95 - summarizeRun maps the CLI state into the frontend summary
+  ---
+  duration_ms: 1.3907
+  type: 'test'
+  ...
+# Subtest: summarizeRun tolerates missing and unknown upstream fields
+ok 96 - summarizeRun tolerates missing and unknown upstream fields
+  ---
+  duration_ms: 0.2426
+  type: 'test'
+  ...
+# Subtest: status normalizers reject values outside the known vocabularies
+ok 97 - status normalizers reject values outside the known vocabularies
+  ---
+  duration_ms: 0.1462
+  type: 'test'
+  ...
+# Subtest: readSteps always returns the five canonical steps in order
+ok 98 - readSteps always returns the five canonical steps in order
+  ---
+  duration_ms: 0.762
+  type: 'test'
+  ...
+# Subtest: pickArticlePath prefers the finished article over the draft
+ok 99 - pickArticlePath prefers the finished article over the draft
+  ---
+  duration_ms: 0.1267
+  type: 'test'
+  ...
+# Subtest: describeRun exposes the detail fields the panel renders
+ok 100 - describeRun exposes the detail fields the panel renders
+  ---
+  duration_ms: 0.3254
+  type: 'test'
+  ...
+# Subtest: parseThemes reads the two-column CLI listing
+ok 101 - parseThemes reads the two-column CLI listing
+  ---
+  duration_ms: 0.4831
+  type: 'test'
+  ...
+1..101
+# tests 101
+# suites 0
+# pass 101
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3613.1899

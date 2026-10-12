@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { writeFileAtomic } from './atomic-file.ts';
 
 export type SafeStorageLike = {
   isEncryptionAvailable(): boolean;
@@ -17,10 +18,8 @@ const FILE_NAME = 'deepseek-api-key.bin';
 
 export class SecretStore {
   private readonly filePath: string;
-  private readonly directory: string;
   private readonly safeStorage: SafeStorageLike;
   constructor(directory: string, safeStorage: SafeStorageLike, fileName = FILE_NAME) {
-    this.directory = directory;
     this.safeStorage = safeStorage;
     this.filePath = path.join(directory, fileName);
   }
@@ -35,15 +34,7 @@ export class SecretStore {
     const normalized = value.trim();
     if (!normalized) throw new Error('API key 不能为空');
     if (!this.safeStorage.isEncryptionAvailable()) throw new Error('系统凭据加密不可用，无法保存 API key');
-    fs.mkdirSync(this.directory, { recursive: true });
-    const encrypted = this.safeStorage.encryptString(normalized);
-    const temporary = `${this.filePath}.${process.pid}.tmp`;
-    try {
-      fs.writeFileSync(temporary, encrypted, { mode: 0o600 });
-      fs.renameSync(temporary, this.filePath);
-    } finally {
-      if (fs.existsSync(temporary)) fs.rmSync(temporary, { force: true });
-    }
+    writeFileAtomic(this.filePath, this.safeStorage.encryptString(normalized), { mode: 0o600 });
   }
 
   read(): string {

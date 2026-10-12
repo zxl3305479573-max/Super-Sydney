@@ -1,0 +1,137 @@
+/**
+ * 正文配图的纯逻辑：挑位置、写提示词、把图片插回 Markdown、提取图片清单。
+ *
+ * 不碰文件系统也不发网络请求，方便单测；真正的生成与上传在 main.ts。
+ * 图片统一写成独立成行的 Markdown 语法 ![说明](<路径>)，这样渲染、导出和
+ * 推送时都能稳定识别，不会和正文段落混在一起。
+ */
+
+export type ImageSlot = {
+  /** 插在这一行之后（0-based）。 */
+  afterLine: number;
+  /** 归属的小标题；正文开头那段记为「导语」。 */
+  heading: string;
+  /** 所在段落的开头文字，用来生成贴合内容的提示词。 */
+  excerpt: string;
+};
+
+export type InlineImage = { caption: string; source: string };
+
+const IMAGE_LINE = /^!\[([^\]]*)\]\(\s*(?:<([^>]*)>|([^)]*))\s*\)\s*$/;
+/**
+ * 配图门槛只用来滤掉「- 降压药」这类碎片，不能太高：
+ * 中老年科普常见两句话成段，门槛定高了整篇一张图都挑不到。
+ */
+const MIN_EXCERPT_LENGTH = 30;
+
+export function matchImageLine(line: string): InlineImage | null {
+  const match = line.trim().match(IMAGE_LINE);
+  if (!match) return null;
+  const source = (match[2] ?? match[3] ?? '').trim();
+  return source ? { caption: match[1].trim(), source } : null;
+}
+
+/** 按出现顺序列出正文里的图片，用于推送前上传到微信。 */
+export function listInlineImages(markdown: string): InlineImage[] {
+  const found: InlineImage[] = [];
+  for (const line of markdown.replace(/\r\n?/g, '\n').split('\n')) {
+    const image = matchImageLine(line);
+    if (image) found.push(image);
+  }
+  return found;
+}
+
+export function countInlineImages(markdown: string): number {
+  return listInlineImages(markdown).length;
+}
+
+/** 前端可视化用的资源清单：封面 + 正文配图；缩略图由主进程负责生成。 */
+export function collectTaskAssets(task: { coverPath: string; draft: string }): { cover: string; images: InlineImage[] } {
+  return { cover: task.coverPath.trim(), images: listInlineImages(task.draft) };
+}
+
+/** 挑配图位置：导语段加各小节的段落，超出上限时均匀取样覆盖全文。 */
+export function planImageSlots(markdown: string, maxImages = 3): ImageSlot[] {
+  const limit = Math.max(1, Math.round(maxImages));
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  const candidates: ImageSlot[] = [];
+  let heading = '导语';
+  let paragraph: string[] = [];
+  let paragraphEnd = -1;
+
+  const flush = () => {
+    const text = paragraph.join(' ').trim();
+    paragraph = [];
+    if (text.length < MIN_EXCERPT_LENGTH) return;
+    candidates.push({ afterLine: paragraphEnd, heading, excerpt: text.slice(0, 160) });
+  };
+
+  lines.forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) { flush(); return; }
+    const headingMatch = line.match(/^#{2,3}\s+(.*)$/);
+    if (headingMatch) { flush(); heading = headingMatch[1].trim(); return; }
+    if (matchImageLine(line) || line.startsWith('>')) { flush(); return; }
+    paragraph.push(line);
+    paragraphEnd = index;
+  });
+  flush();
+
+  if (candidates.length <= limit) return candidates;
+  const step = (candidates.length - 1) / (limit - 1 || 1);
+  const picked = new Map<number, ImageSlot>();
+  for (let index = 0; index < limit; index += 1) {
+    const slot = candidates[Math.round(index * step)];
+    if (slot) picked.set(slot.afterLine, slot);
+  }
+  return [...picked.values()];
+}
+
+/** 正文配图提示词：贴合段落内容，同时守住健康科普的合规底线。 */
+export function buildImagePrompt(input: { articleTitle: string; heading: string; excerpt: string }): string {
+  return [
+    '公众号正文配图，横构图。',
+    `文章主题：${input.articleTitle || '健康科普'}；配图位置：${input.heading}。`,
+    `配合这段内容：${input.excerpt}`,
+    '面向中老年读者：温暖写实、自然光、画面干净、主体明确，避免拥挤和强刺激色彩。',
+    '画面里不要出现任何文字、字母、数字、水印、logo、医疗符号或器械；不要夸大疗效，不要痛苦表情。'
+  ].join('\n');
+}
+
+/**
+ * 「封面 + 正文配图」一次生成的前置判断。
+ *
+ * 正文为空或段落太短时只出封面，并把原因交给界面提示——
+ * 这时候直接报错会让用户以为封面也没生成，而封面本来是可以生成的。
+ */
+export function planCoverAndInlineImages(markdown: string, count: number): { withInline: boolean; slots: ImageSlot[]; note: string } {
+  if (!markdown.trim()) return { withInline: false, slots: [], note: '正文还是空的，这次只生成了封面' };
+  const slots = planImageSlots(markdown, count);
+  if (!slots.length) return { withInline: false, slots: [], note: '正文段落太短，这次只生成了封面' };
+  return { withInline: true, slots, note: '' };
+}
+
+/**
+ * 把并发生成的结果合并回正文：paths 与 slots 一一对应，null 表示这一张没生成成功。
+ * 失败的图直接跳过，不打断已经成功的那些。
+ */
+export function applyGeneratedImages(markdown: string, slots: ImageSlot[], paths: Array<string | null>): { draft: string; inserted: number; failed: number } {
+  const inserts = slots.flatMap((slot, index) => {
+    const target = paths[index];
+    return target ? [{ afterLine: slot.afterLine, caption: slot.heading, path: target }] : [];
+  });
+  return { draft: insertImages(markdown, inserts), inserted: inserts.length, failed: slots.length - inserts.length };
+}
+
+/** 把图片插回正文；从后往前插，避免前面的插入让后面的行号漂移。 */
+export function insertImages(markdown: string, images: Array<{ afterLine: number; caption: string; path: string }>): string {
+  const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
+  const ordered = [...images].sort((left, right) => right.afterLine - left.afterLine);
+  for (const image of ordered) {
+    const at = Math.max(0, Math.min(image.afterLine + 1, lines.length));
+    const caption = image.caption.replace(/[[\]]/g, '').replace(/\n/g, ' ').trim();
+    const target = image.path.replace(/[<>\n]/g, '').trim();
+    lines.splice(at, 0, '', `![${caption}](<${target}>)`, '');
+  }
+  return lines.join('\n');
+}

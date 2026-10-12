@@ -22,11 +22,13 @@ Use system sans for Chinese UI and `ui-monospace` for event metadata. Body text 
 
 ## Components
 
-Use a persistent left navigation, a compact top status bar, full-width work surfaces, small framed event rows, and modal dialogs only for destructive or sensitive actions. Border radius is 8px or less. Avoid nested cards and decorative gradients.
-
-## Interaction
-
-Primary controls have a clear verb and object. Every capture state has a visible status and a pause control. Lists support keyboard focus. Motion is limited to short opacity/translate transitions and respects `prefers-reduced-motion`.
+- **Shell**: sticky left sidebar grouped as 工作记录 / 成长 / 内容, with a pending-count badge on 待确认 and a recording widget (state + pause/resume) pinned at the bottom so capture is controllable from every page.
+- **Panels**: one level of framed surface (`.panel`, `.set-card`) with a header (title + one-line purpose + actions on the right), optional footer for secondary actions. No nested cards; inner groups use soft fills instead of borders.
+- **Event rows**: time · kind avatar (Claude / Codex / 应用 / 文件 / 手动, each with its own tint) · title (2 lines) · summary (2 lines) · meta chips. Pending rows carry an amber left bar and inline 确认 / 忽略; everything else lives in the ⋯ menu. Rows are keyboard-focusable: A 确认, X 忽略, Enter 详情, Space 勾选.
+- **Dialogs**: `Modal` with backdrop, Esc to close, footer actions right-aligned and the destructive action on the left as a two-step ConfirmButton. Used for event details and manual records (never `window.prompt`).
+- **Controls**: `Switch` for booleans, `Segmented` for mutually exclusive filters (with counts), chip-style `TagEditor` for app lists, numbers commit on blur/Enter.
+- **Feedback**: stacked toasts bottom-right (dark = info, red = error), status pills (amber 待确认, green 已确认, grey 已忽略), source chips with a coloured dot (green running, amber waiting, grey off, red error).
+- Border radius 8px (6px for controls, pills fully rounded). Shadows only for floating layers and hover.
 
 ## AI Draft Review
 

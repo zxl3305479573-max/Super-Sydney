@@ -2,7 +2,7 @@ import type { DeepSeekInput } from './deepseek.ts';
 import type { WorkEvent } from '../shared.ts';
 
 export function buildDeepSeekInput(event: WorkEvent): DeepSeekInput {
-  if (event.source === 'codex') {
+  if (event.source === 'codex' || event.source === 'claude') {
     return { prompt: event.codex_prompt || event.note, response: event.codex_response || event.summary };
   }
   return { prompt: event.note, response: event.summary || event.window_title };

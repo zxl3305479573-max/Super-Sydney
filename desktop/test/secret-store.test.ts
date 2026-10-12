@@ -46,6 +46,24 @@ test('never writes when encryption is unavailable and treats corrupt data as unc
   assert.equal(store.read(), '');
 });
 
+test('saves the key even when the directory rejects renames with EXDEV', () => {
+  const dir = tempDir();
+  const store = new SecretStore(dir, fakeSafeStorage());
+  const mutable = fs as unknown as { renameSync: typeof fs.renameSync };
+  const original = mutable.renameSync;
+  mutable.renameSync = () => {
+    const error = new Error('EXDEV: cross-device link not permitted') as NodeJS.ErrnoException;
+    error.code = 'EXDEV';
+    throw error;
+  };
+  try {
+    store.save('key-under-exdev');
+  } finally {
+    mutable.renameSync = original;
+  }
+  assert.equal(store.read(), 'key-under-exdev');
+});
+
 test('stored key has priority over environment fallback', () => {
   assert.equal(resolveLlmApiKey('stored-key', 'environment-key'), 'stored-key');
   assert.equal(resolveLlmApiKey('', 'environment-key'), 'environment-key');

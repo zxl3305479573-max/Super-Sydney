@@ -1,0 +1,7 @@
+{
+  "name": "sydney-work-os",
+  "version": "0.1.0",
+  "description": "Sydney personal AI work OS desktop client",
+  "main": "out/main/main.js",
+  "private": true
+}

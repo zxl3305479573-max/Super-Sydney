@@ -87,3 +87,47 @@ test('restart baselines to EOF and skips content written while stopped', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('forwards the turn id from a prompt and its final answer', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sydney-codex-'));
+  const session = path.join(root, 'turn.jsonl');
+  const emitted: Array<{ role: string; turnId?: string }> = [];
+  const turnMeta = { internal_chat_message_metadata_passthrough: { turn_id: 'turn-1' } };
+  const prompt = JSON.stringify({ type: 'response_item', payload: { type: 'message', id: 'prompt-1', role: 'user', content: [{ type: 'input_text', text: 'prompt' }], ...turnMeta } });
+  const finalAnswer = JSON.stringify({ type: 'response_item', payload: { type: 'message', id: 'answer-1', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text: 'answer' }], ...turnMeta } });
+  const adapter = new CodexSessionAdapter(root, message => emitted.push({ role: message.role, turnId: message.turnId }), undefined, 60_000);
+  try {
+    fs.writeFileSync(session, `${meta}\n`, 'utf8');
+    adapter.start();
+    fs.appendFileSync(session, `${prompt}\n${finalAnswer}\n`, 'utf8');
+    adapter.scanOnce();
+    assert.deepEqual(emitted, [{ role: 'user', turnId: 'turn-1' }, { role: 'assistant', turnId: 'turn-1' }]);
+  } finally {
+    adapter.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('deduplicates response items and completed display events by message id', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sydney-codex-'));
+  const session = path.join(root, 'duplicate.jsonl');
+  const emitted: string[] = [];
+  const responseItem = JSON.stringify({ type: 'response_item', payload: {
+    type: 'message', id: 'shared-1', role: 'user', content: [{ type: 'input_text', text: 'Prompt' }]
+  } });
+  const completedEvent = JSON.stringify({ type: 'event_msg', payload: {
+    type: 'item_completed', turn_id: 'turn-1',
+    item: { type: 'UserMessage', id: 'shared-1', content: [{ type: 'text', text: 'Prompt' }] }
+  } });
+  const adapter = new CodexSessionAdapter(root, message => emitted.push(message.text), undefined, 60_000);
+  try {
+    fs.writeFileSync(session, `${meta}\n`, 'utf8');
+    adapter.start();
+    fs.appendFileSync(session, `${responseItem}\n${completedEvent}\n`, 'utf8');
+    adapter.scanOnce();
+    assert.deepEqual(emitted, ['Prompt']);
+  } finally {
+    adapter.stop();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -6,15 +6,28 @@ export function defaultSettings(defaultVaultPath: string, projectPath: string): 
     captureEnabled: false,
     capturePaused: false,
     codexCaptureEnabled: false,
+    codexIncludeCli: false,
+    claudeCaptureEnabled: false,
+    claudeExtraRoots: [],
     llmEnabled: false,
-    allowedApps: ['Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'],
+    allowedApps: ['Codex', 'Codex Desktop', 'Claude', 'Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'],
     blockedApps: ['1Password', 'KeePass', '微信', 'WhatsApp', 'Telegram'],
     captureIntervalSeconds: 30,
-    vaultPath: resolveVaultPath(undefined, defaultVaultPath, projectPath)
+    captureAllPending: true,
+    vaultPath: resolveVaultPath(undefined, defaultVaultPath, projectPath),
+    screenCaptureEnabled: false,
+    screenCaptureIntervalSeconds: 60,
+    screenRetentionHours: 24,
+    inputWatchEnabled: false,
+    inputWatchPaths: []
   };
 }
 
 export function mergeSettings(value: Partial<Settings>, defaultVaultPath: string, projectPath: string): Settings {
   const defaults = defaultSettings(defaultVaultPath, projectPath);
-  return { ...defaults, ...value, vaultPath: resolveVaultPath(value.vaultPath, defaultVaultPath, projectPath) };
+  const legacyAllowedApps = ['Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'];
+  const configuredApps = Array.isArray(value.allowedApps) ? value.allowedApps : defaults.allowedApps;
+  const isLegacyAllowList = legacyAllowedApps.length === configuredApps.length && legacyAllowedApps.every(app => configuredApps.includes(app));
+  const allowedApps = isLegacyAllowList ? [...configuredApps, 'Codex', 'Codex Desktop'] : configuredApps;
+  return { ...defaults, ...value, allowedApps, vaultPath: resolveVaultPath(value.vaultPath, defaultVaultPath, projectPath) };
 }

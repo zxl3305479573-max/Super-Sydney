@@ -1,88 +1,126 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AppState, EventDraft, EventStatus, LlmKeyStatus, WorkEvent } from '../shared';
+import { useCallback, useEffect, useState } from 'react';
+import type { AppState, WorkEvent } from '../shared';
+import WeWritePanel from './WeWritePanel';
+import VideoPanel from './VideoPanel';
+import EvolutionPanel from './EvolutionPanel';
+import { TodayView } from './TodayView';
+import { SettingsView } from './SettingsView';
+import { EventDetails, ManualRecord, type EventActions } from './EventItem';
+import { Icon, readableError, type IconName } from './ui';
 
-type View = 'today' | 'review' | 'settings';
-const empty: AppState = { settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, vaultPath: '' }, stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' } };
-const statusText: Record<EventStatus, string> = { pending: '待确认', approved: '已确认', rejected: '已忽略' };
-const durationText = (seconds: number) => { const mins = Math.round(seconds / 60); return mins < 60 ? `${mins} 分钟` : `${Math.floor(mins / 60)} 小时 ${mins % 60} 分钟`; };
+type View = 'today' | 'review' | 'evolve' | 'wewrite' | 'video' | 'settings';
+type Toast = { id: number; message: string; tone: 'info' | 'error' };
+
+const empty: AppState = {
+  settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: true, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
+  stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' }, claudeCapture: { state: 'disabled', error: '' }, screenCapture: { state: 'disabled', saved: 0, error: '' }, captureStatus: { state: 'idle', appName: '', windowTitle: '', sampledAt: '', message: '尚未采样' }
+};
+
+const NAV: Array<{ group: string; items: Array<{ view: View; label: string; icon: IconName }> }> = [
+  { group: '工作记录', items: [{ view: 'today', label: '今日工作', icon: 'today' }, { view: 'review', label: '待确认', icon: 'inbox' }] },
+  { group: '成长', items: [{ view: 'evolve', label: '自我进化', icon: 'spark' }] },
+  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频', icon: 'video' }] }
+];
+
+const HEADERS: Record<Exclude<View, 'wewrite' | 'video'>, { title: string; subtitle: string }> = {
+  today: { title: '今日工作', subtitle: '' },
+  review: { title: '待确认', subtitle: '逐条确认或批量处理采集到的事件，确认后的内容才会沉淀到知识库。' },
+  evolve: { title: '自我进化', subtitle: '从 AI 协作里找出重复劳动与返工，沉淀成项目规则和经验卡片。' },
+  settings: { title: '隐私与设置', subtitle: '采集范围、AI 对话监听和知识库位置。所有数据默认只保存在本机。' }
+};
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  const date = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+  return `${hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好'} · ${date}`;
+}
 
 export default function App() {
   const [state, setState] = useState<AppState>(empty);
   const [view, setView] = useState<View>('today');
-  const [query, setQuery] = useState('');
-  const [toast, setToast] = useState('');
-  const [draftingId, setDraftingId] = useState<number | null>(null);
-  const [llmKeyStatus, setLlmKeyStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
-  const [llmKeyInput, setLlmKeyInput] = useState('');
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [drafting, setDrafting] = useState<number | null>(null);
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [manualOpen, setManualOpen] = useState(false);
+
   const refresh = useCallback(async () => setState(await window.sydney.getState()), []);
-  useEffect(() => { void refresh(); void window.sydney.getLlmKeyStatus().then(setLlmKeyStatus); return window.sydney.onChanged(() => void refresh()); }, [refresh]);
-  const events = useMemo(() => state.events.filter(event => `${event.note} ${event.summary} ${event.app_name} ${event.window_title}`.toLowerCase().includes(query.toLowerCase())), [state.events, query]);
-  const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2400); };
-  const manual = async () => {
-    const note = window.prompt('你正在做什么？');
-    if (!note?.trim()) return;
-    await window.sydney.createEvent({ note: note.trim(), kind: 'manual', status: 'pending', category: '个人成长' });
-    notify('已保存到本地，等待确认');
-  };
-  const update = async (id: number, patch: Partial<WorkEvent>) => { await window.sydney.updateEvent(id, patch); await refresh(); };
-  const chooseVault = async () => { const target = await window.sydney.chooseVault(); if (target) notify(`知识库路径已设置：${target}`); await refresh(); };
-  const summary = async () => { const target = await window.sydney.generateDailySummary(); notify(`日报已更新：${target}`); };
-  const draftEvent = async (id: number) => {
-    setDraftingId(id);
-    try { await window.sydney.draftEvent(id); await refresh(); notify('AI 草稿已保存'); }
-    catch (error) { notify(error instanceof Error ? error.message : 'AI 整理失败'); }
-    finally { setDraftingId(null); }
-  };
-  const applyDraft = async (id: number) => { await window.sydney.applyDraft(id); await refresh(); notify('草稿已应用到摘要'); };
-  const clearDraft = async (id: number) => { await window.sydney.clearDraft(id); await refresh(); notify('AI 草稿已删除'); };
-  const saveLlmKey = async () => {
-    try { const status = await window.sydney.saveLlmKey(llmKeyInput); setLlmKeyStatus(status); setLlmKeyInput(''); notify('DeepSeek 密钥已安全保存'); }
-    catch (error) { setLlmKeyInput(''); notify(error instanceof Error ? error.message : '密钥保存失败'); }
-  };
-  const deleteLlmKey = async () => {
-    if (!window.confirm('删除程序内保存的 DeepSeek 密钥？删除后将尝试使用环境变量。')) return;
-    try { setLlmKeyStatus(await window.sydney.deleteLlmKey()); notify('DeepSeek 密钥已删除'); }
-    catch (error) { notify(error instanceof Error ? error.message : '密钥删除失败'); }
-  };
-  return <div className="app-shell">
-    <aside className="sidebar"><div className="brand"><span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div></div><nav className="nav" aria-label="主导航">{(['today', 'review', 'settings'] as View[]).map((item, i) => <button key={item} className={`nav-item ${view === item ? 'active' : ''}`} onClick={() => setView(item)}><span>{['◷', '✓', '⚙'][i]}</span>{['今日工作', '待确认事件', '隐私与设置'][i]}</button>)}</nav><div className="sidebar-footer"><span className="status-dot" />本地模式</div></aside>
-    <main className="main-content"><header className="topbar"><div><p className="eyebrow">工作台</p><h1>{view === 'today' ? '今日工作' : view === 'review' ? '待确认事件' : '隐私与设置'}</h1></div><div className="top-actions"><button className="button button-secondary" onClick={() => void window.sydney.getState().then(next => notify(next.settings.vaultPath))}>知识库路径</button><button className="button button-primary" onClick={() => void window.sydney.setCapture(state.settings.captureEnabled ? 'stop' : 'start')}>{state.settings.captureEnabled ? '停止记录' : '开始记录'}</button></div></header>
-      <section className={`capture-strip ${state.settings.captureEnabled && !state.settings.capturePaused ? 'is-live' : ''}`}><div className="capture-icon">◉</div><div><strong>{!state.settings.captureEnabled ? '记录已停止' : state.settings.capturePaused ? '记录已暂停' : '正在记录允许应用的使用时长'}</strong><p>只记录应用、窗口标题和时长，不记录键盘输入、屏幕画面或私人聊天。</p></div><div className="capture-spacer"/><button className="button button-quiet" onClick={() => void window.sydney.setCapture(state.settings.capturePaused ? 'start' : 'pause')}>{state.settings.capturePaused ? '继续' : '暂停'}</button><button className="button button-quiet" onClick={() => void manual()}>+ 手动记录</button></section>
-      {view === 'settings' && <section className="key-management"><div className="section-heading"><div><h2>DeepSeek API Key</h2><p>{llmKeyStatus.configured ? `已配置：${llmKeyStatus.masked}` : llmKeyStatus.encryptionAvailable ? '尚未配置，密钥会由系统加密保存。' : '系统凭据加密不可用，无法保存密钥。'}</p></div></div><div className="secret-actions"><input type="password" autoComplete="new-password" aria-label="DeepSeek API Key" placeholder="粘贴新的 API Key" value={llmKeyInput} onChange={e => setLlmKeyInput(e.target.value)} disabled={!llmKeyStatus.encryptionAvailable} /><button className="button button-secondary" disabled={!llmKeyInput.trim() || !llmKeyStatus.encryptionAvailable} onClick={() => void saveLlmKey()}>{llmKeyStatus.configured ? '替换密钥' : '保存密钥'}</button>{llmKeyStatus.configured && <button className="button button-quiet" onClick={() => void deleteLlmKey()}>删除密钥</button>}</div></section>}
-      {view === 'settings' ? <section><div className="section-heading"><div><h2>本地采集设置</h2><p>项目数据保存在应用数据目录，知识库单独指定。</p></div><button className="button button-primary" onClick={() => void chooseVault()}>选择知识库目录</button></div><div className="settings-grid"><label className="setting"><span>允许采集的应用（每行一个）</span><textarea value={state.settings.allowedApps.join('\n')} onChange={e => setState(s => ({ ...s, settings: { ...s.settings, allowedApps: e.target.value.split(/\r?\n/).filter(Boolean) } }))} onBlur={() => void window.sydney.saveSettings({ allowedApps: state.settings.allowedApps })}/></label><label className="setting"><span>禁止采集的应用（每行一个）</span><textarea value={state.settings.blockedApps.join('\n')} onChange={e => setState(s => ({ ...s, settings: { ...s.settings, blockedApps: e.target.value.split(/\r?\n/).filter(Boolean) } }))} onBlur={() => void window.sydney.saveSettings({ blockedApps: state.settings.blockedApps })}/></label><label className="setting"><span>当前 Obsidian 知识库路径</span><small>{state.settings.vaultPath}</small></label><label className="setting"><span>采样间隔</span><input type="number" min="10" value={state.settings.captureIntervalSeconds} onChange={e => setState(s => ({ ...s, settings: { ...s.settings, captureIntervalSeconds: Number(e.target.value) } }))} onBlur={() => void window.sydney.saveSettings({ captureIntervalSeconds: Math.max(10, state.settings.captureIntervalSeconds) })}/></label><label className="setting setting-toggle"><span><input type="checkbox" checked={state.settings.codexCaptureEnabled} onChange={async e => { await window.sydney.saveSettings({ codexCaptureEnabled: e.target.checked }); await refresh(); }} />采集 Codex 桌面端对话</span><small>仅在 Sydney 正在记录时采集新提示词和最终答复。默认关闭，不导入历史、工具输出或终端内容。</small><b className={`adapter-state adapter-${state.codexCapture.state}`}>{state.codexCapture.state === 'listening' ? '正在监听新对话' : state.codexCapture.state === 'stopped' ? '已启用，等待开始记录' : state.codexCapture.state === 'error' ? `监听错误：${state.codexCapture.error}` : '未启用'}</b></label><label className="setting setting-toggle"><span><input type="checkbox" checked={state.settings.llmEnabled} onChange={async e => { await window.sydney.saveSettings({ llmEnabled: e.target.checked }); await refresh(); }} />允许发送到 DeepSeek</span><small>默认关闭。只有你点击单条事件的“AI 整理”时，才会发送该事件的提示词和最终答复。</small></label></div></section> : <section>
-        {view === 'today' && <><div className="metric-grid"><article className="metric"><span>今日事件</span><strong>{state.stats.total}</strong><small>本地保存</small></article><article className="metric"><span>待确认</span><strong>{state.stats.pending}</strong><small>需要你的判断</small></article><article className="metric"><span>记录时长</span><strong>{durationText(state.stats.duration)}</strong><small>来自应用使用采样</small></article><article className="metric metric-accent"><span>今日焦点</span><strong>个人成长</strong><small>按工作事件沉淀</small></article></div><div className="section-heading"><div><h2>工作时间线</h2><p>记录先进入本地待确认列表。</p></div><div className="filter-row"><input placeholder="搜索事件" value={query} onChange={e => setQuery(e.target.value)}/><button className="button button-secondary" onClick={() => void summary()}>生成今日总结</button></div></div></>}
-        {view === 'review' && <div className="section-heading"><div><h2>待确认事件</h2><p>确认、修改或删除后再沉淀。</p></div></div>}
-        <div className="event-list">{events.filter(e => view !== 'review' || e.status === 'pending').map(event => <EventRow key={event.id} event={event} drafting={draftingId === event.id} onDraft={draftEvent} onApplyDraft={applyDraft} onClearDraft={clearDraft} onUpdate={update} onDelete={async id => { await window.sydney.deleteEvent(id); await refresh(); }} onEdit={async item => { const note = window.prompt('修改工作记录', item.note); if (note?.trim()) await update(item.id, { note: note.trim() }); }}/>)}</div>
-      </section>}
-    </main><div className={`toast ${toast ? 'show' : ''}`} role="status">{toast}</div>
-  </div>;
-}
+  useEffect(() => { void refresh(); return window.sydney.onChanged(() => void refresh()); }, [refresh]);
+  const notify = useCallback((message: string, tone: Toast['tone'] = 'info') => {
+    const id = Date.now() + Math.random();
+    setToasts(current => [...current.slice(-2), { id, message, tone }]);
+    window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), tone === 'error' ? 5000 : 3200);
+  }, []);
+  const notifyAny = useCallback((message: string) => notify(message, /失败|错误|无法|请先|不存在|超时|缺少/.test(message) ? 'error' : 'info'), [notify]);
+  const guard = useCallback(async (run: () => Promise<unknown>) => { try { await run(); } catch (error) { notify(readableError(error), 'error'); } }, [notify]);
 
-function EventRow({ event, drafting, onDraft, onApplyDraft, onClearDraft, onUpdate, onDelete, onEdit }: { event: WorkEvent; drafting: boolean; onDraft: (id: number) => Promise<void>; onApplyDraft: (id: number) => Promise<void>; onClearDraft: (id: number) => Promise<void>; onUpdate: (id: number, patch: Partial<WorkEvent>) => Promise<void>; onDelete: (id: number) => Promise<void>; onEdit: (event: WorkEvent) => Promise<void> }) {
-  const draft = parseDraft(event.ai_draft_json);
-  return <article className={`event-row ${event.source === 'codex' ? 'event-codex' : ''}`}><time className="event-time">{new Date(event.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</time><div className="event-body"><div className="event-title"><strong>{event.note || event.window_title || '活动采样'}</strong><span className="tag">{event.category}</span><small>{event.app_name || '手动记录'}</small>{event.source === 'codex' && <span className="local-sensitive">敏感内容，仅本地</span>}</div>{event.source === 'codex' ? <details className="codex-detail"><summary>{event.codex_response ? '查看 Codex 最终答复' : '等待 Codex 最终答复'}</summary>{event.codex_response && <pre>{event.codex_response}</pre>}<small>来源会话：{event.source_session_id || '未知'}，删除此事件不会删除 Codex 原会话。</small></details> : <div className="event-meta">{event.summary || `${event.kind === 'activity' ? '应用活动' : '手动记录'} · ${durationText(event.duration_seconds)}`}</div>}{draft && <DraftDetails draft={draft} model={event.ai_draft_model} draftedAt={event.ai_drafted_at} onApply={() => void onApplyDraft(event.id)} onClear={() => void onClearDraft(event.id)} />}</div><div className="event-actions"><span className={`status status-${event.status}`}>{statusText[event.status]}</span>{event.status === 'pending' && <button className="ai-draft-button" disabled={drafting} onClick={() => void onDraft(event.id)}>{drafting ? '整理中…' : 'AI 整理'}</button>}<button onClick={() => void onEdit(event)}>修改</button>{event.status === 'pending' && <button onClick={() => void onUpdate(event.id, { status: 'approved' })}>确认</button>}{event.status === 'pending' && <button onClick={() => void onUpdate(event.id, { status: 'rejected' })}>忽略</button>}<button onClick={() => void onDelete(event.id)}>删除</button></div></article>;
-}
-
-function parseDraft(value: string): EventDraft | null {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(value) as Partial<EventDraft>;
-    if (!parsed || typeof parsed !== 'object') return null;
-    return {
-      what_done: typeof parsed.what_done === 'string' ? parsed.what_done : '',
-      why: typeof parsed.why === 'string' ? parsed.why : '',
-      tools: typeof parsed.tools === 'string' ? parsed.tools : '',
-      problems: typeof parsed.problems === 'string' ? parsed.problems : '',
-      solution: typeof parsed.solution === 'string' ? parsed.solution : '',
-      result: typeof parsed.result === 'string' ? parsed.result : '',
-      reuse: typeof parsed.reuse === 'string' ? parsed.reuse : '',
-      category: typeof parsed.category === 'string' ? parsed.category : '个人成长',
-      content_candidate: parsed.content_candidate === true
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); setManualOpen(true); }
     };
-  } catch { return null; }
-}
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-function DraftDetails({ draft, model, draftedAt, onApply, onClear }: { draft: EventDraft; model: string; draftedAt: string; onApply: () => void; onClear: () => void }) {
-  const fields: Array<[string, string]> = [['做了什么', draft.what_done], ['为什么做', draft.why], ['使用工具', draft.tools], ['遇到问题', draft.problems], ['解决方式', draft.solution], ['最终结果', draft.result], ['如何复用', draft.reuse], ['知识分类', draft.category], ['内容候选', draft.content_candidate ? '是' : '否']];
-  return <details className="ai-draft" open><summary>AI 整理草稿 · {model || 'DeepSeek'}</summary><div className="ai-draft-grid">{fields.map(([label, value]) => <div key={label}><span>{label}</span><p>{value || '未提供'}</p></div>)}</div><small>{draftedAt ? `生成于 ${new Date(draftedAt).toLocaleString('zh-CN')}` : '仅保存在本地'}</small><div className="ai-draft-actions"><button onClick={onApply}>应用到摘要</button><button onClick={onClear}>删除草稿</button></div></details>;
+  const actions: EventActions = {
+    update: (id, patch, quiet) => guard(async () => { await window.sydney.updateEvent(id, patch); await refresh(); if (!quiet && patch.status === 'approved') notify('已确认，已写入知识库'); }),
+    remove: id => guard(async () => { await window.sydney.deleteEvent(id); await refresh(); notify('事件已删除'); }),
+    draft: id => guard(async () => { setDrafting(id); try { await window.sydney.draftEvent(id); notify('AI 草稿已生成，可在详情里查看'); } finally { setDrafting(null); } }),
+    openDetails: (event: WorkEvent) => setDetailId(event.id)
+  };
+  const capture = (mode: 'start' | 'pause' | 'stop') => void guard(() => window.sydney.setCapture(mode));
+  const summary = (kind: 'daily' | 'weekly') => void guard(async () => notify(`${kind === 'daily' ? '日报' : '周报'}已更新：${kind === 'daily' ? await window.sydney.generateDailySummary() : await window.sydney.generateWeeklySummary()}`));
+  const chooseFiles = async () => { const files = await window.sydney.chooseFiles(); if (!files.length) return; await window.sydney.saveSettings({ inputWatchPaths: [...new Set([...state.settings.inputWatchPaths, ...files])], inputWatchEnabled: true }); await refresh(); notify(`已关联 ${files.length} 个文件`); };
+  const setting = async (patch: Parameters<typeof window.sydney.saveSettings>[0]) => guard(async () => { await window.sydney.saveSettings(patch); await refresh(); });
+  const saveManual = async (note: string, category: string) => guard(async () => { await window.sydney.createEvent({ note, category, kind: 'manual', status: 'pending' }); await refresh(); notify('已保存到待确认'); });
+
+  const live = state.settings.captureEnabled && !state.settings.capturePaused;
+  const pendingCount = state.events.filter(event => event.status === 'pending').length;
+  const detailEvent = state.events.find(event => event.id === detailId) ?? null;
+  const fullWidth = view === 'wewrite' || view === 'video';
+  const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video'>];
+
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="brand"><span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
+      <nav className="nav" aria-label="主导航">
+        {NAV.map(group => <div key={group.group} className="nav-group">
+          <span className="nav-group-label">{group.group}</span>
+          {group.items.map(item => <button key={item.view} className={`nav-item ${view === item.view ? 'active' : ''}`} aria-current={view === item.view ? 'page' : undefined} onClick={() => setView(item.view)}>
+            <Icon name={item.icon} size={17} /><span>{item.label}</span>{item.view === 'review' && pendingCount > 0 && <em className="nav-badge">{pendingCount > 99 ? '99+' : pendingCount}</em>}
+          </button>)}
+        </div>)}
+      </nav>
+      <div className="sidebar-bottom">
+        <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>隐私与设置</span></button>
+        <div className={`rec-widget ${live ? 'is-live' : state.settings.captureEnabled ? 'is-paused' : ''}`}>
+          <span className="rec-dot" aria-hidden="true" />
+          <div><strong>{live ? '正在记录' : state.settings.captureEnabled ? '已暂停' : '未在记录'}</strong><small>{live ? state.captureStatus.appName || '等待采样' : '本地模式'}</small></div>
+          {state.settings.captureEnabled
+            ? <button className="icon-button" title={state.settings.capturePaused ? '继续记录' : '暂停记录'} onClick={() => capture(state.settings.capturePaused ? 'start' : 'pause')}><Icon name={state.settings.capturePaused ? 'play' : 'pause'} /></button>
+            : <button className="icon-button" title="开始记录" onClick={() => capture('start')}><Icon name="play" /></button>}
+        </div>
+      </div>
+    </aside>
+
+    <main className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
+      {header && <header className="topbar">
+        <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
+        <div className="top-actions">
+          {view === 'review' && <button className="button button-secondary" onClick={() => setManualOpen(true)}><Icon name="plus" />手动记录</button>}
+          {view !== 'today' && view !== 'settings' && (state.settings.captureEnabled
+            ? <span className={`live-tag ${live ? 'is-live' : ''}`}><span className="rec-dot" />{live ? '正在记录' : '已暂停'}</span>
+            : <button className="button button-primary" onClick={() => capture('start')}><Icon name="play" />开始记录</button>)}
+        </div>
+      </header>}
+      {view === 'settings' ? <SettingsView state={state} onSetting={setting} onChooseFiles={chooseFiles} notify={notifyAny} />
+        : view === 'evolve' ? <EvolutionPanel notify={notifyAny} />
+        : view === 'wewrite' ? <WeWritePanel notify={notifyAny} />
+        : view === 'video' ? <VideoPanel notify={notifyAny} />
+        : <TodayView state={state} mode={view} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />}
+    </main>
+
+    <EventDetails event={detailEvent} drafting={drafting === detailId} actions={actions} onClose={() => setDetailId(null)} />
+    <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />
+    <div className="toasts" role="status" aria-live="polite">{toasts.map(toast => <div key={toast.id} className={`toast toast-${toast.tone}`}><Icon name={toast.tone === 'error' ? 'alert' : 'check'} size={15} /><span>{toast.message}</span></div>)}</div>
+  </div>;
 }
