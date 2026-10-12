@@ -1,0 +1,27 @@
+import type { BrowserWindow } from 'electron';
+import type { DatabaseSync } from 'node:sqlite';
+import type { SettingsFile } from './services/app-settings';
+import type { LlmConfig } from './services/llm-json';
+import type { SecretStore } from './services/secret-store';
+
+/**
+ * 主进程各模块共享的依赖。启动时在 db、密钥存储都就绪后一次性构造，
+ * 再传给各个 register*Ipc 与采集运行时——模块之间不再通过 main.ts 的全局变量互相读写。
+ */
+export interface AppContext {
+  db: DatabaseSync;
+  /** Electron userData 目录：数据库、生成的图片素材都在这里。 */
+  dataDir: string;
+  homeDir: string;
+  settings: SettingsFile;
+  secretStore: SecretStore;
+  /** 密钥优先取系统安全存储，其次环境变量。 */
+  llmApiKey(): string;
+  llmConfig(): LlmConfig;
+  /** 通知渲染进程重新拉取 state:get。 */
+  broadcast(): void;
+  /** 通知渲染进程 ~/.wewrite 配置变了。 */
+  notifyWeWriteChanged(): void;
+  /** 对话框需要父窗口；窗口未创建时为 null。 */
+  window(): BrowserWindow | null;
+}
