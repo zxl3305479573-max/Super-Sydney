@@ -2,11 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WeWriteConfigDraft, WeWriteOverview } from '../shared';
 import ContentDirections from './ContentDirections';
 import { weWriteDraftFromOverview } from './config-draft';
+import { readableError } from './ui';
 
-function readableError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/i, '').trim() || '操作失败';
-}
 
 /**
  * 创作设置：模板设置、公众号资料、读者定位、内容类别四组值直接放在创作流水线里。

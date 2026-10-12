@@ -138,6 +138,13 @@ export function relativeTime(value: string): string {
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
+/** 月-日 时:分；非法日期原样截断显示，空值显示破折号。 */
+export function shortTime(value: string): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value.slice(0, 16).replace('T', ' ') : date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
 export function formatDuration(seconds: number): string {
   if (!seconds) return '0 分钟';
   const minutes = Math.round(seconds / 60);

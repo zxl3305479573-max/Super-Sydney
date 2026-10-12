@@ -2,16 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type { WeWriteConfigDraft, WeWriteOverview } from '../shared';
 import ContentDirections from './ContentDirections';
 import { emptyWeWriteDraft, splitLines, weWriteDraftFromOverview } from './config-draft';
+import { readableError } from './ui';
 
 const STATUS_TEXT: Record<string, string> = { PASS: '通过', WARN: '警告', FAIL: '失败', SKIP: '跳过' };
 const STATUS_CLASS: Record<string, string> = { PASS: 'approved', WARN: 'pending', FAIL: 'rejected', SKIP: 'rejected' };
 
 const PROVIDERS = ['openai', 'doubao', 'dashscope', 'jimeng', 'minimax', 'gemini', 'openrouter', 'replicate', 'azure_openai', 'sub2api'];
 
-function readableError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return raw.replace(/^Error invoking remote method '[^']+':\s*Error:\s*/i, '').trim() || '操作失败';
-}
 
 export default function WeWriteOverviewPanel({ notify }: { notify: (message: string) => void }) {
   const [overview, setOverview] = useState<WeWriteOverview | null>(null);
