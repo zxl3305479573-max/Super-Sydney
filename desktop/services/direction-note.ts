@@ -38,17 +38,21 @@ const SYSTEM = [
   'note 每行一条规则，不加序号和 Markdown 符号，每条一句话、可执行、可检查。',
   '用户原稿里写过的限制必须全部保留（可以改写得更清楚，不能删掉或放宽）。',
   '原稿没覆盖到的，只按这个方向本身补齐常见要求：读者与语气、内容边界与合规红线、事实与来源要求、配图画面要求与禁止出现的元素。',
+  '所有规则必须紧扣这个方向的名称所指的领域和它自己的读者；不要套用其它领域（例如健康、医疗、养老）的读者设定或红线，除非原稿里写了。',
   '不要新写这些通用底线（系统已统一注入）：不编造经历/案例/采访/数字/来源、区分事实推断与意见、没有联网核实能力；原稿里与它们重复的条目可以删去，但必须在 changes 里写明删了哪条、因为已由通用底线覆盖。',
   '只要 note 与原稿有任何差异，changes 就不能为空：新增、合并、拆分、删除、改写各写一句。',
   '不编造具体机构、指南名称、数据或产品；不写与该方向无关的空话。',
   '全文不超过 400 字。'
 ].join('\n');
 
-export function buildDirectionNotePrompt(request: DirectionNoteRequest, audience = ''): string {
+/**
+ * 不注入账号级的读者定位：style.yaml 的目标读者是按最初那个方向写的，
+ * 拿去给新方向（比如 AI 技术）起草会把它带偏成老年健康。读者由方向自己的约束决定。
+ */
+export function buildDirectionNotePrompt(request: DirectionNoteRequest): string {
   const isSub = Boolean(request.subdirectionName);
   const lines = [
     `内容方向：${request.directionName}`,
-    audience ? `账号目标读者：${audience}` : '',
     isSub ? `具体方向：${request.subdirectionName}` : '',
     isSub ? `一级方向已有约束（不要重复）：\n${request.directionNote || '（无）'}` : '',
     `${isSub ? '具体方向' : '内容方向'}约束原稿：\n${request.note || '（空，请从零写）'}`,
@@ -72,7 +76,7 @@ export function parseDirectionNoteSuggestion(content: string): DirectionNoteSugg
 export async function requestDirectionNote(request: DirectionNoteRequest, config: ContentApiConfig, fetchImpl: typeof fetch = fetch): Promise<DirectionNoteSuggestion> {
   if (!config.apiKey.trim()) throw new Error('请先配置内容生成 API Key');
   if (!config.baseUrl.trim() || !config.model.trim()) throw new Error('请配置内容 API 地址与模型');
-  const content = await requestChatContent(config, SYSTEM, buildDirectionNotePrompt(request, config.style?.targetAudience), {
+  const content = await requestChatContent(config, SYSTEM, buildDirectionNotePrompt(request), {
     label: '内容 API', timeoutMs: 60_000, temperature: 0.3, fetchImpl
   });
   return parseDirectionNoteSuggestion(content);

@@ -13,10 +13,10 @@ test('请求校验：方向名必填，文本裁剪，类型不对报错', () =>
     { directionName: '健康', directionNote: '', subdirectionName: '', note: '少术语' });
 });
 
-test('一级方向提示词：带读者定位与原稿，要求覆盖四类规则', () => {
-  const prompt = buildDirectionNotePrompt({ directionName: '中老年健康科普', directionNote: '', subdirectionName: '', note: '不诊疗' }, '55-75岁读者');
-  assert.match(prompt, /内容方向：中老年健康科普/);
-  assert.match(prompt, /账号目标读者：55-75岁读者/);
+test('一级方向提示词：只带方向与原稿，不带账号级读者定位', () => {
+  const prompt = buildDirectionNotePrompt({ directionName: 'AI技术', directionNote: '', subdirectionName: '', note: '不诊疗' });
+  assert.match(prompt, /内容方向：AI技术/);
+  assert.doesNotMatch(prompt, /读者：|中老年|55-75/);
   assert.match(prompt, /约束原稿：\n不诊疗/);
   assert.match(prompt, /4-8 条/);
   assert.doesNotMatch(prompt, /具体方向：/);
