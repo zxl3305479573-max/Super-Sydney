@@ -551,7 +551,18 @@ button.chip { cursor: pointer; }
 .cd-row .input { flex: 1; }
 .cd-note { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; line-height: 1.6; resize: vertical; }
 .cd-subs { display: grid; gap: 6px; padding-left: 10px; border-left: 2px solid var(--line); }
-.cd-sub { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto auto; gap: 6px; align-items: center; }
+.cd-sub { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; align-items: center; }
+.cd-sub .cd-note-field { grid-column: 1 / -1; }
+.cd-note-field { display: grid; gap: 6px; }
+.cd-note-row { display: flex; gap: 6px; align-items: flex-start; }
+.cd-note-row .cd-note { flex: 1; min-width: 0; }
+.cd-ai { flex: 0 0 auto; white-space: nowrap; }
+.cd-suggestion { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--primary-line, var(--line)); border-radius: 6px; background: var(--primary-soft, var(--surface)); }
+.cd-suggestion-head { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+.cd-suggestion-head small { color: var(--muted); font-size: 11px; }
+.cd-suggestion pre { margin: 0; white-space: pre-wrap; font-family: inherit; font-size: 12px; line-height: 1.7; color: var(--ink); }
+.cd-suggestion ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.cd-suggestion-actions { display: flex; gap: 6px; }
 .cd-sub .input { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 12px; }
 .cd-default { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .cd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

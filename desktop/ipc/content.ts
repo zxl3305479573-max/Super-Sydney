@@ -2,13 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { AppContext } from '../app-context';
-import type { ContentDirectionInput, ContentStage, ContentTask } from '../shared';
+import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion } from '../shared';
 import type { ImageSlot } from '../services/content-images';
 import { applyGeneratedImages, buildImagePrompt, collectTaskAssets, listInlineImages, planCoverAndInlineImages, planImageSlots } from '../services/content-images';
 import { coverImagePrompt, imagePromptScope } from '../services/content-api-config';
 import { chosenDefaultSubdirectionName, createContentTask, getContentTask, listContentTasks, optionalId, saveTaxonomyTree, updateContentTask } from '../services/content-store';
 import { findSubdirection, subdirectionNames } from '../services/content-taxonomy';
 import { requestContentStage } from '../services/content-workflow';
+import { normalizeDirectionNoteRequest, requestDirectionNote } from '../services/direction-note';
 import { exportContentArticle, parseContentSources } from '../services/content-export';
 import { assertContentDeliverable, assertContentStage, deliverableArticle, isContentPublishable, prepareContentEdit } from '../services/content-policy';
 import { DEFAULT_AIGC_FOOTER, makeDigest, normalizeTitle, renderWeChatHtml, toPlainText } from '../services/article-html';
@@ -76,6 +77,9 @@ export function registerContentIpc(ctx: AppContext): void {
     ctx.broadcast();
     return readContentTaxonomy(ctx);
   });
+  /** 只返回建议文本，由用户在界面上确认采用后随分类一起保存。 */
+  ipcMain.handle('content:direction-note:optimize', async (_event, request: unknown): Promise<DirectionNoteSuggestion> =>
+    requestDirectionNote(normalizeDirectionNoteRequest(request), contentApiConfig(ctx)));
   ipcMain.handle('content:create', (_event, directionId: number | null, subdirectionId: number | null, topic = '') => {
     const task = createContentTask(db, readContentTaxonomy(ctx), directionId, subdirectionId, topic);
     ctx.broadcast();

@@ -32,6 +32,7 @@ const api: SydneyApi = {
   listContentTasks: () => ipcRenderer.invoke('content:list'),
   getContentTaxonomy: () => ipcRenderer.invoke('content:taxonomy'),
   saveContentTaxonomy: (directions, defaultSubdirectionId) => ipcRenderer.invoke('content:taxonomy:save', directions, defaultSubdirectionId),
+  optimizeDirectionNote: request => ipcRenderer.invoke('content:direction-note:optimize', request),
   createContentTask: (directionId, subdirectionId, topic) => ipcRenderer.invoke('content:create', directionId, subdirectionId, topic),
   updateContentTask: (id, patch) => ipcRenderer.invoke('content:update', id, patch),
   generateContentStage: (id, stage) => ipcRenderer.invoke('content:generate', id, stage),

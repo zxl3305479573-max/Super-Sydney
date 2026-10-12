@@ -92,6 +92,9 @@ export type ContentTaxonomy = { directions: ContentDirection[]; defaultSubdirect
 /** 保存时用：没有 id 表示新增，缺失的 id 表示删除。 */
 export type ContentSubdirectionInput = { id?: number; name: string; note?: string };
 export type ContentDirectionInput = { id?: number; name: string; note?: string; subdirections: ContentSubdirectionInput[] };
+/** AI 优化约束说明：subdirectionName 为空表示优化一级方向的约束，否则优化该具体方向的额外要求。 */
+export type DirectionNoteRequest = { directionName: string; directionNote: string; subdirectionName: string; note: string };
+export type DirectionNoteSuggestion = { note: string; changes: string[] };
 /** 前端可视化用的图片：thumbnail 是小尺寸 data URI，path 只作标识与排错。 */
 export type ContentAssetView = { path: string; caption: string; thumbnail: string };
 export type ContentAssetBundle = { cover: ContentAssetView | null; images: ContentAssetView[] };
@@ -295,6 +298,8 @@ export interface SydneyApi {
   getContentTaxonomy(): Promise<ContentTaxonomy>;
   /** 保存两级内容方向；返回归一化后的结果（含新分配的 id 与默认具体方向）。 */
   saveContentTaxonomy(directions: ContentDirectionInput[], defaultSubdirectionId?: number | null): Promise<ContentTaxonomy>;
+  /** 用内容 API 把约束原稿整理成规则条目；只返回建议，不落库。 */
+  optimizeDirectionNote(request: DirectionNoteRequest): Promise<DirectionNoteSuggestion>;
   createContentTask(directionId: number | null, subdirectionId: number | null, topic?: string): Promise<ContentTask>;
   updateContentTask(id: number, patch: Partial<ContentTask>): Promise<ContentTask>;
   generateContentStage(id: number, stage: ContentStage): Promise<ContentTask>;
