@@ -20,8 +20,11 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
   const [taxonomy, setTaxonomy] = useState<ContentTaxonomy | null>(null);
   const [subdirectionId, setSubdirectionId] = useState<number | null>(null);
   const [topicSeed, setTopicSeed] = useState('');
-  const [busy, setBusy] = useState('');
-  const [busySince, setBusySince] = useState(0);
+  /**
+   * 进行中的长操作按文章记：一篇在生图时，可以切到另一篇继续写或同时生图。
+   * 后端的请求锁本来就是按文章 id 的，同一篇仍然一次只跑一件事。
+   */
+  const [jobs, setJobs] = useState<Record<number, { key: string; since: number }>>({});
   const [busySeconds, setBusySeconds] = useState(0);
   const [env, setEnv] = useState<Env>({ wechatConfigured: false });
   const [mode, setMode] = useState<'pipeline' | 'board'>('pipeline');
@@ -29,11 +32,28 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
   const [dirty, setDirty] = useState(false);
   /** 每处生成几张：1 张＝生成即插入，2–3 张先生成候选再由用户在面板里挑。 */
   const [candidateCount, setCandidateCount] = useState(1);
-  /** 待挑的候选图；只对生成它的那篇文章有效，切换任务就丢弃。 */
-  const [candidateSheet, setCandidateSheet] = useState<ImageCandidateBundle | null>(null);
+  /** 待挑的候选图按文章存：后台那篇出完候选，切回去还能接着挑。 */
+  const [candidateSheets, setCandidateSheets] = useState<Record<number, ImageCandidateBundle>>({});
   /** 用户手动选过具体方向后，就不再让默认值覆盖他的选择。 */
   const categoryPicked = useRef(false);
   const selected = tasks.find(item => item.id === selectedId) ?? null;
+  /** 异步操作完成时用它判断用户是否还停在那篇文章上，别把别的文章的界面跳走。 */
+  const selectedRef = useRef<number | null>(null);
+  selectedRef.current = selectedId;
+  const busy = selectedId !== null ? jobs[selectedId]?.key ?? '' : '';
+  const busySince = selectedId !== null ? jobs[selectedId]?.since ?? 0 : 0;
+  const candidateSheet = selectedId !== null ? candidateSheets[selectedId] ?? null : null;
+  const setCandidateSheet = (id: number, bundle: ImageCandidateBundle | null) => setCandidateSheets(current => {
+    const next = { ...current };
+    if (bundle) next[id] = bundle; else delete next[id];
+    return next;
+  });
+  const setJob = (id: number, key: string) => setJobs(current => {
+    const next = { ...current };
+    if (key) next[id] = { key, since: current[id]?.since ?? Date.now() }; else delete next[id];
+    return next;
+  });
+  const onTask = (id: number) => selectedRef.current === id;
   const pipeline = useMemo(() => selected ? buildPipeline(selected, env) : [], [selected, env]);
   const assets = useContentAssets(selected?.id ?? 0, selected?.updatedAt ?? '');
 
@@ -56,7 +76,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
 
   const openTask = (task: ContentTask, target?: PipelineStepKey) => {
     if (dirty && task.id !== selectedId && !window.confirm('当前文章有未保存的修改，切换后这些修改会丢失。继续？')) return;
-    if (task.id !== selectedId) { setDirty(false); setCandidateSheet(null); }
+    if (task.id !== selectedId) setDirty(false);
     setSelectedId(task.id);
     setStep(target ?? currentStepKey(task, env));
     setMode('pipeline');
@@ -76,12 +96,22 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     setDirty(true);
     setTasks(current => current.map(item => item.id === selected.id ? { ...item, ...patch, finalArticle: '', reviewJson: '', status: item.draft || patch.draft ? 'draft' : 'idea' } : item));
   };
-  const guarded = async (key: string, run: () => Promise<void>) => {
-    setBusy(key); setBusySince(Date.now());
-    try { await run(); } catch (error) { notify(readableError(error)); } finally { setBusy(''); }
+  /** 新建任务不属于任何一篇文章，单独占一个槽位。 */
+  const CREATE_SLOT = -1;
+  /**
+   * 长操作只锁发起它的那篇文章；结束后的提示若不在当前文章，就带上标题以免看不出是哪篇。
+   */
+  const guarded = async (key: string, run: (say: (message: string) => void, here: () => boolean) => Promise<void>) => {
+    const id = key === 'create' ? CREATE_SLOT : selectedRef.current;
+    if (id === null) return;
+    const owner = tasks.find(item => item.id === id);
+    const title = owner?.title || owner?.topic || '新文章';
+    setJobs(current => ({ ...current, [id]: { key, since: Date.now() } }));
+    const scoped = (message: string) => notify(id === CREATE_SLOT || onTask(id) ? message : `《${title}》${message}`);
+    try { await run(scoped, () => onTask(id)); } catch (error) { scoped(readableError(error)); } finally { setJob(id, ''); }
   };
   /**
-   * 生图这张网可能要等几十秒，期间所有按钮都会被锁定（避免并发改同一篇）。
+   * 生图可能要等几十秒，期间这篇文章的按钮会被锁定（避免并发改同一篇），其它文章不受影响。
    * 秒数走字 + 取消按钮是为了让「等」和「坏了」能区分开。
    */
   useEffect(() => {
@@ -98,7 +128,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     notify(cancelled ? '已请求取消，等接口返回后即可继续操作' : '当前没有正在进行的生图');
   };
 
-  const create = () => guarded('create', async () => {
+  const create = () => guarded('create', async say => {
     const task = await window.sydney.createContentTask(directionId, subdirectionId, topicSeed);
     setTasks(current => [task, ...current]);
     setSelectedId(task.id);
@@ -106,15 +136,16 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     setStep('topic');
     setMode('pipeline');
     setTopicSeed('');
-    notify('已创建文章任务，从「选题」开始');
+    say('已创建文章任务，从「选题」开始');
   });
-  const runStage = (stage: ContentStage, advance = true) => guarded(stage, async () => {
+  const runStage = (stage: ContentStage, advance = true) => guarded(stage, async (say, here) => {
     if (!selected) return;
     await persistSelected();
     const task = await window.sydney.generateContentStage(selected.id, stage);
     replaceTask(task);
-    notify(stage === 'revise' ? '正文已按审稿意见更新，请重新审稿' : `${stageLabels[stage]}完成`);
-    if (!advance) return;
+    say(stage === 'revise' ? '正文已按审稿意见更新，请重新审稿' : `${stageLabels[stage]}完成`);
+    // 用户已经切到别的文章时不要把界面跳走。
+    if (!advance || !here()) return;
     if (stage === 'review') setStep(isReviewPassed(task) ? (task.coverPath ? 'publish' : 'cover') : 'review');
     // revise 不是流水线步骤，改完要回到审稿重新过一遍门槛。
     else if (stage === 'revise') setStep('review');
@@ -124,24 +155,24 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
       if (next) setStep(next);
     }
   });
-  const save = () => guarded('save', async () => { replaceTask(await persistSelected()); notify('已保存'); });
+  const save = () => guarded('save', async say => { replaceTask(await persistSelected()); say('已保存'); });
   /** 候选张数 > 1 时先生成候选（不落库），交给候选面板挑。 */
   const wantCandidates = candidateCount > 1;
-  const generateCover = () => guarded('cover', async () => {
+  const generateCover = () => guarded('cover', async say => {
     if (!selected) return;
     await persistSelected();
     if (wantCandidates) {
-      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'cover', 3, candidateCount));
-      notify(`已生成 ${candidateCount} 张封面候选，挑一张再采用`);
+      setCandidateSheet(selected.id, await window.sydney.generateContentImageCandidates(selected.id, 'cover', 3, candidateCount));
+      say(`已生成 ${candidateCount} 张封面候选，挑一张再采用`);
       return;
     }
     replaceTask(await window.sydney.generateContentCover(selected.id));
-    notify('封面图已生成');
+    say('封面图已生成');
   });
-  const chooseCover = () => guarded('cover-choose', async () => {
+  const chooseCover = () => guarded('cover-choose', async say => {
     if (!selected) return;
     const task = await window.sydney.chooseContentCover(selected.id);
-    if (task) { replaceTask(task); notify('已关联封面图'); }
+    if (task) { replaceTask(task); say('已关联封面图'); }
   });
   /** 排版主题只影响呈现，不使审稿失效，所以保存后可以立即看到效果。 */
   const changeTheme = (theme: string) => guarded('theme', async () => {
@@ -149,67 +180,67 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     setTasks(current => current.map(item => item.id === selected.id ? { ...item, theme } : item));
     replaceTask(await window.sydney.updateContentTask(selected.id, { theme }));
   });
-  const generateImages = () => guarded('images', async () => {
+  const generateImages = () => guarded('images', async say => {
     if (!selected) return;
     await persistSelected();
     if (wantCandidates) {
-      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'inline', 3, candidateCount));
-      notify(`已生成正文配图候选（每处 ${candidateCount} 张），挑好再插入`);
+      setCandidateSheet(selected.id, await window.sydney.generateContentImageCandidates(selected.id, 'inline', 3, candidateCount));
+      say(`已生成正文配图候选（每处 ${candidateCount} 张），挑好再插入`);
       return;
     }
     replaceTask(await window.sydney.generateContentImages(selected.id, 3));
-    notify('已生成正文配图并插入正文，改动过正文需要重新审稿');
+    say('已生成正文配图并插入正文，改动过正文需要重新审稿');
   });
   /** 封面与正文配图一次出：两条生成并发跑，部分失败时按已生成的结果入库并提示原因。 */
-  const generateImagesWithCover = () => guarded('images-all', async () => {
+  const generateImagesWithCover = () => guarded('images-all', async say => {
     if (!selected) return;
     await persistSelected();
     if (wantCandidates) {
-      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'both', 3, candidateCount));
-      notify(`已生成封面与配图候选（每处 ${candidateCount} 张），挑好再采用`);
+      setCandidateSheet(selected.id, await window.sydney.generateContentImageCandidates(selected.id, 'both', 3, candidateCount));
+      say(`已生成封面与配图候选（每处 ${candidateCount} 张），挑好再采用`);
       return;
     }
     const task = await window.sydney.generateContentImagesWithCover(selected.id, 3);
     replaceTask(task);
-    notify(task.imageWarning || '封面与正文配图已生成');
+    say(task.imageWarning || '封面与正文配图已生成');
   });
-  const applyCandidates = (picks: Array<{ key: string; path: string }>) => guarded('images-apply', async () => {
+  const applyCandidates = (picks: Array<{ key: string; path: string }>) => guarded('images-apply', async say => {
     if (!selected) return;
     try {
       replaceTask(await window.sydney.applyContentImageCandidates(selected.id, picks));
-      setCandidateSheet(null);
-      notify('已采用挑好的图，改动过正文需要重新审稿');
+      setCandidateSheet(selected.id, null);
+      say('已采用挑好的图，改动过正文需要重新审稿');
     } catch (error) {
       // 正文改过等失败情形下候选已经不可用，别让面板停在点不动的状态。
-      setCandidateSheet(null);
+      setCandidateSheet(selected.id, null);
       throw error;
     }
   });
   const discardCandidates = () => guarded('images-discard', async () => {
     if (!selected) return;
-    setCandidateSheet(null);
+    setCandidateSheet(selected.id, null);
     await window.sydney.discardContentImageCandidates(selected.id);
   });
   /** 以前的图也能挑：不重新生成，直接把这篇任务已经出过的图列出来换上去。 */
-  const openImageLibrary = (scope: 'cover' | 'inline' | 'both') => guarded('images-library', async () => {
+  const openImageLibrary = (scope: 'cover' | 'inline' | 'both') => guarded('images-library', async say => {
     if (!selected) return;
     const bundle = await window.sydney.openContentImageLibrary(selected.id, scope);
-    setCandidateSheet(bundle);
-    notify(bundle.warning || '从以前生成的图里挑一张');
+    setCandidateSheet(selected.id, bundle);
+    say(bundle.warning || '从以前生成的图里挑一张');
   });
   /** 「文章配图」里逐张换图：只换那一张，用的是这篇文章生成过的图。 */
-  const swapImage = (index: number, target: string, expected: string) => guarded('images-swap', async () => {
+  const swapImage = (index: number, target: string, expected: string) => guarded('images-swap', async say => {
     if (!selected) return;
     await persistSelected();
     replaceTask(await window.sydney.swapContentImage(selected.id, index, target, expected));
-    notify(`已换掉第 ${index + 1} 张配图，改动过正文需要重新审稿`);
+    say(`已换掉第 ${index + 1} 张配图，改动过正文需要重新审稿`);
   });
-  const exportArticle = (allowUnreviewed = false) => guarded('export', async () => {
+  const exportArticle = (allowUnreviewed = false) => guarded('export', async say => {
     if (!selected) return;
     await persistSelected();
     const task = await window.sydney.exportContentTask(selected.id, allowUnreviewed);
     replaceTask(task);
-    notify(`成稿已导出：${task.exportPath}`);
+    say(`成稿已导出：${task.exportPath}`);
   });
   /**
    * 选好标题后一次跑完 任务书 → 证据计划 → 初稿 → AI 审稿。
@@ -220,18 +251,18 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     const plan = autoGeneratePlan(selected);
     if (!plan.ok) { notify(plan.reason); return; }
     if (selected.draft.trim() && !window.confirm('自动生成会覆盖现有初稿和审稿结论，继续？')) return;
-    void guarded('auto', async () => {
+    void guarded('auto', async (say, here) => {
       await persistSelected();
       let task: ContentTask = { ...selected };
       for (const stage of plan.stages) {
         const target = PIPELINE_STEPS.find(item => item.stage === stage)?.key;
-        if (target) setStep(target);
-        setBusy(`auto:${stage}`);
+        if (target && here()) setStep(target);
+        setJob(selected.id, `auto:${stage}`);
         task = await window.sydney.generateContentStage(selected.id, stage);
         replaceTask(task);
       }
-      notify(`自动生成完成：${plan.stages.map(item => stageLabels[item]).join(' → ')}`);
-      setStep(isReviewPassed(task) ? (task.coverPath ? 'publish' : 'cover') : 'review');
+      say(`自动生成完成：${plan.stages.map(item => stageLabels[item]).join(' → ')}`);
+      if (here()) setStep(isReviewPassed(task) ? (task.coverPath ? 'publish' : 'cover') : 'review');
     });
   };
   /** 审稿未通过时的确认文案：把还挂着的问题列清楚，避免误以为已经过关。 */
@@ -261,14 +292,15 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
       + `封面：${selected.coverPath}`
     );
     if (!confirmed) return;
-    void guarded('publish', async () => {
+    void guarded('publish', async say => {
       await persistSelected();
       replaceTask(await window.sydney.publishContentTask(selected.id, allowUnreviewed));
-      notify('已推送到公众号草稿箱');
+      say('已推送到公众号草稿箱');
     });
   };
 
   const locked = busy !== '';
+  const creating = Boolean(jobs[CREATE_SLOT]);
   const autoStage = busy.startsWith('auto:') ? busy.slice('auto:'.length) as ContentStage : null;
   const autoStageLabel = autoStage ? stageLabels[autoStage] : '准备中';
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
@@ -283,7 +315,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
         </select>
       </label>
       <label className="native-topic-seed"><span>已有选题或方向（可选）</span><input value={topicSeed} onChange={event => setTopicSeed(event.target.value)} placeholder="例如：柚子和常用药物的相互作用" /></label>
-      <button className="button button-primary" disabled={locked} onClick={() => void create()}>新建文章任务</button>
+      <button className="button button-primary" disabled={creating} onClick={() => void create()}>新建文章任务</button>
       <div className="flow-mode" role="tablist" aria-label="视图">
         <button role="tab" aria-selected={mode === 'pipeline'} className={mode === 'pipeline' ? 'is-active' : ''} onClick={() => setMode('pipeline')}>单篇流水线</button>
         <button role="tab" aria-selected={mode === 'board'} className={mode === 'board' ? 'is-active' : ''} onClick={() => setMode('board')}>全局看板</button>
@@ -300,7 +332,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
             <strong>{task.title || task.topic || taskScopeLabel(task)}</strong>
             <span>{taskScopeLabel(task)} · {steps.every(item => item.state === 'done') ? '已完成' : `第 ${current?.index} 步 ${current?.label}`}</span>
             <div className="flow-mini" aria-hidden="true">{steps.map(item => <i key={item.key} className={`flow-mini-${item.state}`} />)}</div>
-            <small>{shortTime(task.updatedAt)}</small>
+            <small>{jobs[task.id] ? '处理中…' : shortTime(task.updatedAt)}</small>
           </button>;
         }) : <p className="native-empty">还没有文章任务</p>}
       </aside>
