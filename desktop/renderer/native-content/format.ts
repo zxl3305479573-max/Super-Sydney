@@ -7,7 +7,7 @@ export const stageLabels: Record<ContentStage, string> = { topics: '生成选题
 export const statusNames: Record<string, string> = { idea: '选题', brief: '任务书', draft: '初稿', review: '待修改', ready: '已通过', published: '已推送草稿' };
 export const stateNames: Record<PipelineStep['state'], string> = { done: '已完成', current: '当前步骤', attention: '需处理', ready: '可进行', locked: '未解锁' };
 
-export type Source = { title: string; url: string; excerpt: string; status: 'user_provided' };
+export type Source = { title: string; url: string; excerpt: string; status: 'user_provided' | 'ai_suggested'; featured: boolean };
 export type Env = { wechatConfigured: boolean };
 
 /** 预览正文由主进程渲染：只有它能读本地配图并转成 data URI。 */
@@ -35,7 +35,7 @@ export function topicSuggestions(value: string): Array<{ title: string; angle: s
   return (parsed?.topics || []).filter(item => typeof item.title === 'string').map(item => ({ title: item.title!, angle: item.angle || '', risk: item.risk_note || '' }));
 }
 export function readSources(value: string): Source[] {
-  const data = parseObject(value || '{}') as { sources?: Array<{ title?: string; url?: string; excerpt?: string }> } | null;
-  return (data?.sources || []).map(item => ({ title: item.title || '', url: item.url || '', excerpt: item.excerpt || '', status: 'user_provided' }));
+  const data = parseObject(value || '{}') as { sources?: Array<{ title?: string; url?: string; excerpt?: string; status?: string; featured?: boolean }> } | null;
+  return (data?.sources || []).map(item => ({ title: item.title || '', url: item.url || '', excerpt: item.excerpt || '', status: item.status === 'ai_suggested' ? 'ai_suggested' : 'user_provided', featured: item.featured === true }));
 }
 export function countChars(value: string): number { return value.replace(/[#>*_`\-\s]/g, '').length; }

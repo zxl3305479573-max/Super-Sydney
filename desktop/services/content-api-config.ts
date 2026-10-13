@@ -1,6 +1,7 @@
 import type { ContentTask, ContentTaxonomy, VideoProject } from '../shared.ts';
 import type { ContentApiConfig } from './content-workflow.ts';
 import { findSubdirection } from './content-taxonomy.ts';
+import { articleLeadExcerpt } from './content-images.ts';
 import { DEFAULT_IMAGE_STYLE, renderImageStyle, resolveImageStyle } from './image-style.ts';
 import { parseStyleSummary, yamlBlock, yamlScalar } from './wewrite-config.ts';
 import type { WeWriteFiles } from './wewrite-files.ts';
@@ -31,6 +32,16 @@ export function buildContentApiConfig(input: {
   const enabled = yamlScalar(writer, 'enabled');
   if (enabled ? enabled !== 'true' : !input.llmEnabled) throw new Error('请先在公众号配置中允许内容 API 调用');
   const found = input.subdirectionId !== undefined ? findSubdirection(input.taxonomy.directions, input.subdirectionId) : null;
+  /**
+   * 明确传了 subdirectionId 却找不到方向时不能回退到 style.yaml：
+   * 那等于把「未归类/方向被删」的文章悄悄塞给最初那份账号配置（用户改了新资料的读者定位也生效不了，
+   * 选题还会按老账号的领域出），必须在界面上说清楚。视频流水线不传这个字段，仍然用 style.yaml。
+   */
+  if (input.subdirectionId !== undefined && !found) {
+    throw new Error(input.subdirectionId === null
+      ? '这篇文章还没有归到内容方向：先在「选题」里选好内容方向与具体方向，再生成'
+      : '这篇文章选的具体方向已经不存在了，请重新选择内容方向');
+  }
   const style = parseStyleSummary(input.files.styleText);
   return {
     apiKey: input.apiKey,
@@ -90,12 +101,17 @@ export function imagePromptScope(taxonomy: ContentTaxonomy, task: ContentTask, s
   };
 }
 
-/** 封面提示词：主题 + 内容方向约束 + 该方向的配图风格模板。 */
+/**
+ * 封面提示词：主题 + 正文提要 + 内容方向约束 + 该方向的配图风格模板。
+ * 带上正文提要，封面才会按文章实际写了什么来画，而不是只照标题猜。
+ */
 export function coverImagePrompt(task: ContentTask, scope: ImagePromptScope): string {
+  const excerpt = articleLeadExcerpt(task.draft || task.finalArticle || '');
   return [
     '公众号封面图，横构图。',
     scope.direction ? `内容方向：${scope.direction.name}${scope.direction.note ? `（${scope.direction.note}）` : ''}。` : '',
     `主题：${task.title || task.topic}。`,
+    excerpt ? `封面要贴住正文内容：${excerpt}` : '',
     scope.style
   ].filter(Boolean).join('\n');
 }

@@ -117,6 +117,24 @@ export type ImageStyleRequest = { directionName: string; directionNote: string; 
 /** 前端可视化用的图片：thumbnail 是小尺寸 data URI，path 只作标识与排错。 */
 export type ContentAssetView = { path: string; caption: string; thumbnail: string };
 export type ContentAssetBundle = { cover: ContentAssetView | null; images: ContentAssetView[] };
+/**
+ * AI 生图的候选图：同一处可以先生成多张，用户挑一张再落进正文或封面。
+ * 候选是「这一次挑哪张」的临时状态，不落库；重新生成或挑完就作废。
+ */
+/** origin 用来区分「本次刚生成」和「以前生成过、这次拿来用」。 */
+export type ImageCandidateOption = { path: string; thumbnail: string; origin: 'new' | 'history' };
+export type ImageCandidateGroup = {
+  /** 挑完回传给主进程的标识：封面是 cover，正文配图是 slot:<位置序号>。 */
+  key: string;
+  /** 界面上的位置说明，例如「封面」「第 2 处 · 少喝浓汤」。 */
+  label: string;
+  /** 这个位置要配合的内容提要。 */
+  excerpt: string;
+  options: ImageCandidateOption[];
+};
+export type ImageCandidateBundle = { taskId: number; groups: ImageCandidateGroup[]; warning: string };
+/** 候选图要生成哪几处：封面、正文配图，或两者一起。 */
+export type ImageCandidateScope = 'cover' | 'inline' | 'both';
 export type ContentTaskStatus = 'idea' | 'brief' | 'draft' | 'review' | 'ready' | 'published';
 export type ContentTask = {
   id: number;
@@ -287,6 +305,28 @@ export type VideoProject = {
 export type VideoAssetBundle = { cover: ContentAssetView | null };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
 
+/* ── 变现 · 站点模块（AI 代充） ──────────────────────────────────
+ * 把现成的多个站点嵌进窗口，同一时刻显示选中的那个。站点是第三方页面，
+ * 各开在自己的 WebContentsView 里、共用独立会话分区：登录态留在那儿，
+ * 应用只记一份地址列表，不碰站点数据。这块状态不进 AppState，走单独的 site:* 通道。
+ */
+export type SiteViewBounds = { x: number; y: number; width: number; height: number };
+/** 一个站点：id 由界面生成并保持不变，名称留空时主进程按域名兜底。 */
+export type SiteEntry = { id: string; name: string; url: string };
+export type SiteModuleState = {
+  sites: SiteEntry[];
+  /** 当前显示的站点；列表为空时是空串。 */
+  activeId: string;
+  /** 当前站点停在哪一页，可能已经从首页点到订单页。 */
+  currentUrl: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  /** 视图是否正挂在窗口上（离开这个模块就会摘下来）。 */
+  visible: boolean;
+  error: string;
+};
+
 export interface SydneyApi {
   getState(): Promise<AppState>;
   createEvent(event: Partial<WorkEvent>): Promise<number>;
@@ -331,6 +371,27 @@ export interface SydneyApi {
   generateContentImages(id: number, count?: number): Promise<ContentTask>;
   /** 一次同时生成封面与正文配图；imageWarning 非空表示只完成了一部分或有降级说明。 */
   generateContentImagesWithCover(id: number, count?: number): Promise<ContentTask & { imageWarning: string }>;
+  /**
+   * 生成候选图但不落正文/封面：每处出 candidates 张，交给用户挑。
+   * 只有 candidates > 1 时才有意义（1 张走上面两个「生成即插入」的入口）。
+   */
+  generateContentImageCandidates(id: number, scope: ImageCandidateScope, count?: number, candidates?: number): Promise<ImageCandidateBundle>;
+  /**
+   * 打开「以前生成的图」候选面板：不打图片接口、不花钱，把这篇任务已经生成过的图按位置列出来挑。
+   * 正文为空时只列封面；这篇文章还没生成过任何图时 groups 为空，warning 说明原因。
+   */
+  openContentImageLibrary(id: number, scope: ImageCandidateScope): Promise<ImageCandidateBundle>;
+  /** 这篇文章生成过的封面与正文配图（带缩略图），给「文章配图」逐张换图用；不打图片接口。 */
+  listContentImageHistory(id: number): Promise<{ cover: ImageCandidateOption[]; inline: ImageCandidateOption[] }>;
+  /**
+   * 把正文里第 index 张配图（或 'cover' 封面）换成这篇文章生成过的另一张图；换正文配图需重新审稿。
+   * expected 是界面上看到的那张图的原路径，位置对不上时拒绝替换。
+   */
+  swapContentImage(id: number, index: number | 'cover', path: string, expected?: string): Promise<ContentTask>;
+  /** 采用用户挑好的候选图；key 来自候选分组。返回落库后的文章。 */
+  applyContentImageCandidates(id: number, picks: Array<{ key: string; path: string }>): Promise<ContentTask>;
+  /** 放弃这次候选（界面关掉候选面板时调用），只是丢内存里的临时状态。 */
+  discardContentImageCandidates(id: number): Promise<void>;
   /** 中断正在进行的生图（长等待时的出口）；返回是否真的中断了某个请求。 */
   cancelContentImages(id: number): Promise<boolean>;
   getContentAssets(id: number): Promise<ContentAssetBundle>;
@@ -355,6 +416,24 @@ export interface SydneyApi {
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
+  getSiteModule(): Promise<SiteModuleState>;
+  /**
+   * 保存整份站点列表（增、删、改名、换地址都走这里）；
+   * activateId 只在该 id 确实在列表里时才切过去。地址只接受 http/https。
+   */
+  saveSiteModule(sites: SiteEntry[], activateId?: string | null): Promise<SiteModuleState>;
+  /** 切换当前显示的站点；站点已经开过就只是摘一挂一，不重新加载。 */
+  activateSiteModule(id: string): Promise<SiteModuleState>;
+  /** 把当前站点的视图挂到窗口上；界面报位置之前不会真的显示。 */
+  openSiteModule(): Promise<SiteModuleState>;
+  /** 从窗口上摘下来。站点进程留着，切回来时登录态和滚动位置还在。 */
+  closeSiteModule(): Promise<void>;
+  /** 界面把承载区域的位置报给主进程；主进程会夹进窗口可视区。 */
+  setSiteModuleBounds(bounds: SiteViewBounds | null): Promise<void>;
+  siteModuleGo(action: 'back' | 'reload' | 'home'): Promise<SiteModuleState>;
+  /** 支付页、客服链接这类需要完整浏览器能力的目标，交给系统浏览器。 */
+  openSiteModuleInBrowser(): Promise<void>;
   onChanged(callback: () => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
+  onSiteModuleChanged(callback: () => void): () => void;
 }

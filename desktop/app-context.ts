@@ -22,6 +22,8 @@ export interface AppContext {
   broadcast(): void;
   /** 通知渲染进程 ~/.wewrite 配置变了。 */
   notifyWeWriteChanged(): void;
+  /** 通知渲染进程变现模块里那个站点的状态变了（导航、标题、载入失败）。 */
+  notifySiteChanged(): void;
   /** 对话框需要父窗口；窗口未创建时为 null。 */
   window(): BrowserWindow | null;
 }

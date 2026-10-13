@@ -4,34 +4,11 @@ import { randomUUID } from 'node:crypto';
 import type { ContentTask } from '../shared.ts';
 import { assertContentDeliverable, deliverableArticle, isContentPublishable, type ContentDeliveryOptions } from './content-policy.ts';
 import { DEFAULT_AIGC_FOOTER } from './article-html.ts';
+import { renderEvidenceSection } from './evidence-section.ts';
 import { matchImageLine } from './content-images.ts';
-
-export type ContentSourceRecord = { title: string; url: string; excerpt: string; status: 'user_provided' };
-
-/** 来源是用户提供的资料，记录它不等于已联网验证。 */
-export function parseContentSources(value: string): ContentSourceRecord[] {
-  if (!value.trim()) return [];
-  let data: unknown;
-  try { data = JSON.parse(value); } catch { throw new Error('来源记录不是有效 JSON'); }
-  if (!data || typeof data !== 'object' || !('sources' in data) || !Array.isArray(data.sources)) throw new Error('来源记录必须包含 sources 数组');
-  if (data.sources.length > 50) throw new Error('每篇文章最多记录50份来源');
-  return data.sources.map((item: unknown) => {
-    if (!item || typeof item !== 'object') throw new Error('来源格式不正确');
-    const record = item as Record<string, unknown>;
-    for (const key of ['title', 'url', 'excerpt']) if (typeof record[key] !== 'string') throw new Error('来源的标题、链接、摘录必须是文本');
-    const title = (record.title as string).trim();
-    const url = (record.url as string).trim();
-    const excerpt = (record.excerpt as string).trim();
-    if (url) {
-      let parsed: URL;
-      try { parsed = new URL(url); } catch { throw new Error('来源链接格式不正确'); }
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('来源链接只允许不含凭证的 HTTP/HTTPS 地址');
-    }
-    if (!title && !url && !excerpt) throw new Error('来源不能全部为空');
-    if (title.length > 500 || url.length > 4000 || excerpt.length > 20000) throw new Error('来源内容过长，请缩短摘录');
-    return { title, url, excerpt, status: 'user_provided' };
-  });
-}
+// 来源解析单独成纯模块（渲染进程也要用），这里继续导出以兼容既有调用方。
+export { parseContentSources } from './content-sources.ts';
+export type { ContentSourceRecord } from './content-sources.ts';
 
 /**
  * 每次导出均创建独立文件，绝不覆盖现有知识库笔记或附件。
@@ -40,7 +17,6 @@ export function parseContentSources(value: string): ContentSourceRecord[] {
  */
 export function exportContentArticle(vault: string, task: ContentTask, options: ContentDeliveryOptions = {}): string {
   assertContentDeliverable(task, options);
-  const sources = parseContentSources(task.sourcesJson);
   const title = task.title.trim() || '未命名文章';
   const safeTitle = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60) || '未命名文章';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -60,9 +36,8 @@ export function exportContentArticle(vault: string, task: ContentTask, options: 
       fs.copyFileSync(task.coverPath, coverTarget, fs.constants.COPYFILE_EXCL);
       cover = `![封面](<assets/${path.basename(coverTarget)}>)\n\n`;
     }
-    const sourceText = sources.length ? sources.map((item, index) =>
-      `### 来源 ${index + 1}：${item.title || '用户资料'}\n\n${item.url ? `- 原文链接：${item.url}\n` : ''}- 状态：用户提供，未自动联网核实\n${item.excerpt ? `\n摘录：\n\n${item.excerpt}\n` : ''}`
-    ).join('\n') : '暂无来源记录。';
+    // 与预览、推送共用同一份「来源与证据」块；知识库笔记是给自己看的，额外保留待核实主张清单。
+    const evidence = renderEvidenceSection(task, { withClaims: true, allSources: true }) || '## 来源与证据\n\n暂无来源记录。';
     const article = deliverableArticle(task, options.allowUnreviewed);
     const reviewed = isContentPublishable(task);
     // 正文配图随笔记一起复制到 assets/，否则知识库里的绝对路径一换机器就失效。
@@ -85,7 +60,7 @@ export function exportContentArticle(vault: string, task: ContentTask, options: 
       return name ? `![${image!.caption}](<assets/${name}>)` : line;
     }).join('\n');
     // 导出的元数据带上两级内容方向，方便在知识库里按方向检索。
-    const body = `---\ntype: wechat-article\nsource: sydney-desktop\ncontent_task_id: ${task.id}\ndirection: ${JSON.stringify(task.directionName)}\nsubdirection: ${JSON.stringify(task.subdirectionName)}\nstatus: ${JSON.stringify(task.status)}\nreviewed: ${reviewed}\nexported_at: ${JSON.stringify(new Date().toISOString())}\n---\n\n# ${title}\n\n${cover}${articleForExport}\n\n## 来源记录\n\n${sourceText}\n\n## 合规说明\n\n${DEFAULT_AIGC_FOOTER}\n`;
+    const body = `---\ntype: wechat-article\nsource: sydney-desktop\ncontent_task_id: ${task.id}\ndirection: ${JSON.stringify(task.directionName)}\nsubdirection: ${JSON.stringify(task.subdirectionName)}\nstatus: ${JSON.stringify(task.status)}\nreviewed: ${reviewed}\nexported_at: ${JSON.stringify(new Date().toISOString())}\n---\n\n# ${title}\n\n${cover}${articleForExport}\n\n${evidence}\n\n## 合规说明\n\n${DEFAULT_AIGC_FOOTER}\n`;
     fs.writeFileSync(target, body, { encoding: 'utf8', flag: 'wx' });
     return target;
   } catch (error) {

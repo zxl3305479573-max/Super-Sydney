@@ -9,6 +9,7 @@ import { registerContentIpc } from './ipc/content';
 import { registerVideoIpc } from './ipc/video';
 import { registerWeWriteIpc } from './ipc/wewrite';
 import { registerArticleStatsIpc } from './ipc/article-stats';
+import { registerSiteIpc } from './ipc/site';
 import { migrateArticleStatTables } from './services/article-stats-store';
 import { SettingsFile } from './services/app-settings';
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from './services/content-api-config';
@@ -22,12 +23,14 @@ import { readWeWriteFiles } from './services/wewrite-files';
 import { migrateVideoTables } from './services/video-store';
 import { migrateEventMetadataColumns, migrateEventTables } from './services/event-store';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
+import { SiteView } from './services/site-view';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
 
 let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
+let siteView: SiteView | undefined;
 
 /** 建表与补列。顺序有依赖：codex 迁移会给 events 加 source 列，元数据列要在它之后。 */
 function openDatabase(file: string): DatabaseSync {
@@ -70,6 +73,7 @@ function createContext(): AppContext {
     }),
     broadcast: () => windowRef?.webContents.send('state:changed'),
     notifyWeWriteChanged: () => windowRef?.webContents.send('wewrite:changed'),
+    notifySiteChanged: () => windowRef?.webContents.send('site:changed'),
     window: () => windowRef
   };
 }
@@ -86,16 +90,20 @@ app.whenReady().then(() => {
   ctx.settings.write({ ...ctx.settings.read(), captureEnabled: false, capturePaused: false });
   capture = new CaptureRuntime(ctx);
   capture.start();
+  // 变现模块的站点视图：窗口还没创建时只构造，真正挂上去要等界面报位置。
+  siteView = new SiteView(ctx);
   registerCoreIpc(ctx, capture);
   registerContentIpc(ctx);
   registerVideoIpc(ctx);
   registerWeWriteIpc(ctx);
   registerArticleStatsIpc(ctx);
+  registerSiteIpc(ctx, siteView);
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 
 app.on('window-all-closed', () => {
   capture?.dispose();
+  siteView?.dispose();
   if (process.platform !== 'darwin') app.quit();
 });

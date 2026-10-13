@@ -22,13 +22,12 @@ type ProfileRow = Omit<ContentProfileFields, 'blacklistWords' | 'blacklistTopics
   /** 禁忌词/话题在编辑时按多行文本保存，保存时再拆成列表，避免边打字边被去空行。 */
   wordsText: string; topicsText: string;
 };
-type ModuleKey = 'basic' | 'audience' | 'template' | 'note' | 'image' | 'subs' | 'compliance' | 'global';
+type ModuleKey = 'basic' | 'audience' | 'template' | 'image' | 'subs' | 'compliance' | 'global';
 
 const MODULES: Array<{ key: ModuleKey; label: string }> = [
   { key: 'basic', label: '基本资料' },
   { key: 'audience', label: '读者定位' },
   { key: 'template', label: '模板设置' },
-  { key: 'note', label: '写作约束' },
   { key: 'image', label: '配图模板' },
   { key: 'subs', label: '具体方向' },
   { key: 'compliance', label: '合规禁忌' },
@@ -104,7 +103,7 @@ function ImagePromptField({ value, inherited, collapsible, onChange, busy, disab
     </div>
     {suggestion && <SuggestionCard suggestion={suggestion} onAdopt={onAdopt} onDismiss={onDismiss} />}
     <div className="cd-image-prompt-foot">
-      <small>封面和正文配图都会用这段描述画风与禁忌；文章主题、段落内容由程序自动拼在前面。可用 {'{读者}'} 代入「读者定位」。</small>
+      <small>封面和正文配图都会用这段描述画风与禁忌（画面里要不要出现文字、数字也写在这里）；文章主题、正文提要、所在段落由程序自动拼在前面。可用 {'{读者}'} 代入「读者定位」。</small>
       {!custom && <button className="button button-quiet button-small" onClick={() => onChange(inherited || DEFAULT_IMAGE_STYLE)}>在{inherited ? '资料模板' : '默认模板'}基础上修改</button>}
       {custom && <button className="button button-quiet button-small" onClick={() => onChange('')}>{inherited ? '改回沿用资料模板' : '恢复默认'}</button>}
       <select className="cd-preset" value="" aria-label="套用配图风格预设" title="把预设填进上面的模板，可以继续改；保存后才生效" onChange={event => {
@@ -303,14 +302,6 @@ export default function ProfileConfig({ profileId, notify, onSaved }: {
       </div>
     </div>}
 
-    {module === 'note' && <div className="ww-group">
-      <div className="ww-group-head"><h3>写作约束</h3><small>原样进入这份资料的生成提示词；具体方向的额外要求在「具体方向」里写</small></div>
-      <NoteField value={active.note} rows={8}
-        placeholder="这份资料的写作与配图约束（可留空；写几句要点后点「AI 优化」整理成规则）"
-        onChange={note => patchActive({ note })}
-        {...aiProps(active.key, () => optimizeNote(), note => patchActive({ note }))} />
-    </div>}
-
     {module === 'image' && <div className="ww-group">
       <div className="ww-group-head"><h3>配图风格模板</h3><small>这份资料的封面与正文配图；具体方向可在「具体方向」里单独覆盖</small></div>
       <ImagePromptField value={active.imagePrompt} inherited="" collapsible={false}
@@ -341,7 +332,14 @@ export default function ProfileConfig({ profileId, notify, onSaved }: {
     </div>}
 
     {module === 'compliance' && <div className="ww-group">
-      <div className="ww-group-head"><h3>合规与禁忌</h3><small>只作用于这份资料的生成与审稿</small></div>
+      <div className="ww-group-head"><h3>合规与禁忌</h3><small>合规要求会原样进入这份资料的生成提示词；禁忌用于生成与审稿</small></div>
+      <div className="cd-field">
+        <span>合规要求（这份资料的写作与配图红线）</span>
+        <NoteField value={active.note} rows={7}
+          placeholder="例如：不诊断、不开药方、不提供剂量疗程；不宣称根治、抗癌、排毒；配图不出现医疗符号，文字与数字要写对（可留空；写几句要点后点「AI 优化」整理成规则）"
+          onChange={note => patchActive({ note })}
+          {...aiProps(active.key, () => optimizeNote(), note => patchActive({ note }))} />
+      </div>
       <div className="ww-grid">
         <label className="ww-input"><span>禁忌词（每行一个）</span><textarea value={active.wordsText} onChange={event => patchActive({ wordsText: event.target.value })} /></label>
         <label className="ww-input"><span>禁忌话题（每行一个）</span><textarea value={active.topicsText} onChange={event => patchActive({ topicsText: event.target.value })} /></label>

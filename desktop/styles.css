@@ -51,7 +51,11 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 980px; min-height: 100vh; background: var(--bg); }
+/*
+ * 窗口最小宽度 980 是「窗外框」，减去边框与滚动条后内容区只有 940 上下；
+ * 这里若写成 980，最小窗口下整页会横向溢出 30 多像素（右侧内容被裁掉、出现横向滚动条）。
+ */
+body { margin: 0; min-width: 900px; min-height: 100vh; background: var(--bg); }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -480,6 +484,8 @@ button.chip { cursor: pointer; }
 .native-sources h3 { margin: 0; font-size: 14px; }
 .native-source { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .native-source > button { justify-self: end; }
+.native-source-feature { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.native-source-feature input { margin: 0; }
 .native-export-path { margin: 0; overflow-wrap: anywhere; color: var(--muted); font: 12px/1.6 ui-monospace, Consolas, monospace; }
 .native-topic-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .native-topic-options h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; }
@@ -507,9 +513,9 @@ button.chip { cursor: pointer; }
 .native-editor { display: grid; gap: 13px; min-width: 0; }
 .native-editor-empty { display: grid; gap: 6px; }
 .native-editor-empty strong { color: var(--ink); font-size: 14px; }
-.native-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.native-editor-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; }
 .native-editor-head h2 { margin: 3px 0 0; font-size: 19px; font-weight: 650; overflow-wrap: anywhere; }
-.native-editor-actions { display: flex; gap: 8px; }
+.native-editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .native-stagebar { display: flex; flex-wrap: wrap; gap: 7px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .native-task-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
 .native-task-fields label { display: grid; gap: 5px; font-size: 12px; color: var(--muted); }
@@ -567,6 +573,9 @@ button.chip { cursor: pointer; }
 .cd-default { display: flex; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; white-space: nowrap; }
 .cd-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .cd-actions .ww-muted { margin: 0; }
+/* 合规要求与禁忌同框：字段标签沿用 ww-input 的排版 */
+.cd-field { display: grid; gap: 6px; }
+.cd-field > span { color: var(--muted); font-size: 12px; }
 .cd-image-prompt { display: grid; gap: 6px; padding: 7px 10px; border: 1px dashed var(--line); border-radius: 6px; }
 .cd-sub .cd-image-prompt { grid-column: 1 / -1; }
 .cd-image-prompt summary { display: flex; gap: 8px; align-items: baseline; cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }
@@ -616,11 +625,16 @@ button.chip { cursor: pointer; }
 .flow-locked-note { background: var(--surface-raised); color: var(--muted); }
 .flow-attention-note { background: oklch(0.97 0.025 78); color: oklch(0.42 0.09 67); }
 .flow-body { display: grid; gap: 12px; }
-.flow-sub-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* 标题行同样允许换行：窗口变窄时「编辑/预览」掉到下一行，而不是把标题挤成一条 */
+.flow-sub-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
 .flow-sub-head h4, .flow-issue-group h4 { margin: 0; font-size: 13px; font-weight: 650; }
 .flow-sub-head h4 small { margin-left: 8px; color: var(--muted); font-weight: 400; }
 .flow-sub-head .flow-mode { margin-left: 0; }
-.flow-inline-actions { display: flex; align-items: center; gap: 10px; }
+.flow-inline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+/* 按钮不参与压缩：窗口窄的时候宁可换行，也不要被挤成一行看不清的字 */
+.flow-inline-actions > button { flex: 0 0 auto; }
+/* 说明文字跟在按钮后面：够宽就占满剩余宽度，不够就自己换到下一行 */
+.flow-inline-actions > small { flex: 1 1 260px; min-width: 0; }
 .flow-inline-actions small, .flow-risk { color: var(--muted); font-size: 11px; }
 .flow-empty { margin: 0; padding: 20px; border: 1px dashed var(--line); border-radius: 7px; color: var(--muted); font-size: 13px; text-align: center; }
 .flow-pre { margin: 0; max-height: 360px; overflow: auto; font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
@@ -655,6 +669,8 @@ button.chip { cursor: pointer; }
 .flow-gallery figure { margin: 0; display: grid; gap: 5px; }
 .flow-gallery img { width: 100%; height: 132px; object-fit: cover; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
 .flow-gallery figcaption { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.flow-gallery figure > .button { justify-self: start; }
+.flow-gallery figure.is-editing img { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 .flow-checklist { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .flow-checklist li { display: flex; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
 .flow-checklist li > span { width: 18px; font-weight: 700; }
@@ -709,7 +725,14 @@ button.chip { cursor: pointer; }
 .ww-status, .native-create, .native-sources, .ww-group { border-radius: var(--radius); box-shadow: var(--shadow-sm); }
 .native-task { border-radius: var(--radius); }
 .native-task:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
-.native-task-list { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding-right: 2px; }
+/*
+ * 任务列表吸顶只在两栏布局里成立：窄窗口下 .native-layout 会折成一栏，
+ * 编辑区排到列表下面，这时再吸顶，列表就会浮在编辑区上面（往下滚时两层叠在一起）。
+ * 断点跟 .native-layout 保持一致，窄窗口里它就是一段普通列表，随页面滚走。
+ */
+@media (min-width: 1101px) {
+  .native-task-list { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding-right: 2px; }
+}
 .ww-savebar { position: sticky; bottom: 12px; z-index: 5; border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(6px); }
 .ww-input input, .ww-input textarea, .ww-input select { border-color: var(--line-strong); }
 .ww-input input:focus, .ww-input textarea:focus, .ww-input select:focus,
@@ -738,6 +761,39 @@ button.chip { cursor: pointer; }
 .xy-blank-notes { display: grid; gap: 5px; max-width: 480px; margin: 4px 0 0; padding: 0; list-style: none; color: var(--faint); font-size: 12px; line-height: 1.6; }
 .xy-blank-notes li::before { content: "·"; margin-right: 7px; color: var(--line-strong); }
 
+/* ── 变现 · 站点模块（AI 代充） ─────────────────────────────────
+ * 站点本身是主进程挂在窗口上的 WebContentsView，这里排的是它周围的外壳：
+ * 地址行、操作按钮，以及给它让位的那块 .site-stage。
+ * 视图浮在页面之上，所以 stage 里只放「等待接管」的说明，不放要点击的东西。
+ */
+.site-panel { display: grid; gap: 12px; }
+/* 添加站点固定成最上面的一行：名称 + 地址 + 按钮，窄窗口下才换行 */
+.site-add-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.site-add-label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.site-add-name { flex: 0 1 190px; min-width: 0; }
+.site-add-url { flex: 1 1 320px; min-width: 0; }
+.site-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.site-address { display: flex; flex: 1 1 420px; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.site-address label { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.site-address .input { flex: 1 1 180px; min-width: 180px; }
+.site-address .input.site-name-input { flex: 0 1 150px; min-width: 130px; }
+/* 站点切换直接放在这一栏：下拉框跟着 activeId 走，选谁就切到谁 */
+.site-switch { flex: 0 1 160px; min-width: 128px; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-size: 13px; font-weight: 600; }
+/* 操作按钮固定自己占一行：把上面那行整条让给「站点 / 名称 / 地址」 */
+.site-actions { display: flex; flex: 1 1 100%; flex-wrap: wrap; gap: 4px; align-items: center; }
+.site-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 0; color: var(--faint); font-size: 11.5px; }
+.site-meta strong { max-width: 60ch; overflow: hidden; color: var(--ink-soft); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.site-error { display: flex; align-items: flex-start; gap: 6px; margin: 0; padding: 10px 12px; border: 1px solid oklch(0.88 0.05 30); border-radius: var(--radius-sm); background: oklch(0.98 0.012 30); color: oklch(0.45 0.12 30); font-size: 12px; line-height: 1.6; }
+.site-stage { position: relative; height: clamp(420px, calc(100vh - 300px), 900px); overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface-soft); }
+.site-stage-hint { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--faint); font-size: 12.5px; }
+.site-empty { display: grid; justify-items: center; gap: 10px; padding: 58px 28px; text-align: center; }
+.site-empty-mark { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); }
+.site-empty strong { font-size: 15px; font-weight: 650; }
+.site-empty > p { max-width: 460px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.site-notes { display: grid; gap: 5px; max-width: 460px; margin: 4px 0 0; padding: 0; list-style: none; color: var(--faint); font-size: 12px; line-height: 1.6; text-align: left; }
+.site-notes li::before { content: "·"; margin-right: 7px; color: var(--line-strong); }
+.site-privacy { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
@@ -762,3 +818,22 @@ button.chip { cursor: pointer; }
 .pc-danger small { color: var(--faint); font-size: 11px; }
 .cd-image-prompt.is-flat { border: 0; padding: 0; }
 .cd-image-prompt-status { color: var(--faint); font-size: 11px; }
+/* 候选图：每处一排出几张，选中的那张才写进文章或作为封面 */
+.flow-candidate-count { display: flex; flex: 0 0 auto; gap: 6px; align-items: center; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.flow-candidate-count select { max-width: 100%; }
+.flow-candidates { display: grid; gap: 10px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.flow-candidates .flow-sub-head { margin: 0; }
+.flow-candidates .flow-sub-head small { margin-left: 8px; }
+.flow-candidate-group { display: grid; gap: 6px; }
+.flow-candidate-head { display: grid; gap: 2px; }
+.flow-candidate-head small { color: var(--muted); }
+.flow-candidate-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.flow-candidate-options button { display: grid; gap: 4px; width: 148px; padding: 6px; cursor: pointer; background: none; border: 1px solid var(--line); border-radius: 6px; color: inherit; font: inherit; }
+.flow-candidate-options button img { width: 100%; height: 84px; object-fit: cover; border-radius: 4px; }
+.flow-candidate-options button span { color: var(--muted); font-size: 11px; text-align: center; }
+.flow-candidate-options button.is-picked { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.flow-candidate-options button.is-picked span { color: var(--accent-strong, var(--accent)); font-weight: 600; }
+/* 历史图与本次候选分开排：老图压低一点饱和，视觉上不跟新图抢 */
+.flow-candidate-history-label { color: var(--muted); font-size: 11px; }
+.flow-candidate-options.is-history button { opacity: 0.82; }
+.flow-candidate-options.is-history button.is-picked { opacity: 1; }

@@ -21,6 +21,14 @@ export function clampImageCount(count: unknown): number {
   return Math.min(5, Math.max(1, Math.round(Number(count) || 3)));
 }
 
+/**
+ * 同一处出几张候选：AI 生图常要「多出几张挑一张」，但每张都计费，
+ * 所以上限 3 张，默认 1 张＝沿用「生成即插入」的老行为。
+ */
+export function clampCandidateCount(count: unknown): number {
+  return Math.min(3, Math.max(1, Math.round(Number(count) || 1)));
+}
+
 /** 生成一张图并返回字节；封面与正文配图共用同一套接口与错误处理。 */
 export async function requestGeneratedImage(config: ImageApiConfig, prompt: string, size = '1792x1024', signal?: AbortSignal): Promise<Buffer> {
   const response = await fetch(`${config.baseUrl}/images/generations`, {

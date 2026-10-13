@@ -153,3 +153,24 @@ test('writer secret is never serialized into configuration', () => {
   assert.equal(yamlScalar(writer, 'enabled'), 'true');
   assert.throws(() => normalizeImageCost('0.04\nextra: true'), /非负数/);
 });
+
+test('证据计划自动推荐来源：去掉链接、标为 AI 推荐，重新生成保留用户录入的来源', async () => {
+  const reply = {
+    claims: [{ claim: '菠菜含草酸', tier: 'verified' }],
+    sources: [
+      { publisher: '中国营养学会', title: '《中国居民膳食指南（2022）》', year: '2022', supports: '蔬菜摄入建议', url: 'https://fake.example/deep/link' },
+      { publisher: '某机构', title: '', supports: '缺文件名的不收' }
+    ]
+  };
+  const fetcher = (async () => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(reply) } }] }))) as typeof fetch;
+  const existing = JSON.stringify({ sources: [
+    { title: '我自己找的资料', url: 'https://example.org/a', excerpt: '原文', status: 'user_provided', featured: true },
+    { title: '上一轮推荐', url: '', excerpt: '', status: 'ai_suggested', featured: false }
+  ] });
+  const result = await requestContentStage(task({ sourcesJson: existing }), 'claims', { apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer' }, fetcher);
+  assert.deepEqual(JSON.parse(result.claimsJson!), { claims: [{ claim: '菠菜含草酸', tier: 'unverified' }] });
+  assert.deepEqual(JSON.parse(result.sourcesJson!).sources, [
+    { title: '我自己找的资料', url: 'https://example.org/a', excerpt: '原文', status: 'user_provided', featured: true },
+    { title: '中国营养学会《中国居民膳食指南（2022）》（2022）', url: '', excerpt: '蔬菜摄入建议', status: 'ai_suggested', featured: false }
+  ]);
+});

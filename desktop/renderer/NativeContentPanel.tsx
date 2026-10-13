@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ContentDirection, ContentStage, ContentTask, ContentTaxonomy } from '../shared';
+import type { ContentDirection, ContentStage, ContentTask, ContentTaxonomy, ImageCandidateBundle } from '../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html';
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
 import { profileDefaultSubdirection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
 import { readableError, shortTime } from './ui';
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
-import { Board, CoverStep, DraftStep, EvidenceStep, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
+import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
 /**
  * 创作流水线：只显示当前公众号资料下的文章任务（加上还没归类的老任务），新建任务也归到这份资料。
@@ -27,6 +27,10 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
   const [mode, setMode] = useState<'pipeline' | 'board'>('pipeline');
   const [step, setStep] = useState<PipelineStepKey>('topic');
   const [dirty, setDirty] = useState(false);
+  /** 每处生成几张：1 张＝生成即插入，2–3 张先生成候选再由用户在面板里挑。 */
+  const [candidateCount, setCandidateCount] = useState(1);
+  /** 待挑的候选图；只对生成它的那篇文章有效，切换任务就丢弃。 */
+  const [candidateSheet, setCandidateSheet] = useState<ImageCandidateBundle | null>(null);
   /** 用户手动选过具体方向后，就不再让默认值覆盖他的选择。 */
   const categoryPicked = useRef(false);
   const selected = tasks.find(item => item.id === selectedId) ?? null;
@@ -52,7 +56,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
 
   const openTask = (task: ContentTask, target?: PipelineStepKey) => {
     if (dirty && task.id !== selectedId && !window.confirm('当前文章有未保存的修改，切换后这些修改会丢失。继续？')) return;
-    if (task.id !== selectedId) setDirty(false);
+    if (task.id !== selectedId) { setDirty(false); setCandidateSheet(null); }
     setSelectedId(task.id);
     setStep(target ?? currentStepKey(task, env));
     setMode('pipeline');
@@ -121,9 +125,16 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     }
   });
   const save = () => guarded('save', async () => { replaceTask(await persistSelected()); notify('已保存'); });
+  /** 候选张数 > 1 时先生成候选（不落库），交给候选面板挑。 */
+  const wantCandidates = candidateCount > 1;
   const generateCover = () => guarded('cover', async () => {
     if (!selected) return;
     await persistSelected();
+    if (wantCandidates) {
+      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'cover', 3, candidateCount));
+      notify(`已生成 ${candidateCount} 张封面候选，挑一张再采用`);
+      return;
+    }
     replaceTask(await window.sydney.generateContentCover(selected.id));
     notify('封面图已生成');
   });
@@ -141,6 +152,11 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
   const generateImages = () => guarded('images', async () => {
     if (!selected) return;
     await persistSelected();
+    if (wantCandidates) {
+      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'inline', 3, candidateCount));
+      notify(`已生成正文配图候选（每处 ${candidateCount} 张），挑好再插入`);
+      return;
+    }
     replaceTask(await window.sydney.generateContentImages(selected.id, 3));
     notify('已生成正文配图并插入正文，改动过正文需要重新审稿');
   });
@@ -148,9 +164,45 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
   const generateImagesWithCover = () => guarded('images-all', async () => {
     if (!selected) return;
     await persistSelected();
+    if (wantCandidates) {
+      setCandidateSheet(await window.sydney.generateContentImageCandidates(selected.id, 'both', 3, candidateCount));
+      notify(`已生成封面与配图候选（每处 ${candidateCount} 张），挑好再采用`);
+      return;
+    }
     const task = await window.sydney.generateContentImagesWithCover(selected.id, 3);
     replaceTask(task);
     notify(task.imageWarning || '封面与正文配图已生成');
+  });
+  const applyCandidates = (picks: Array<{ key: string; path: string }>) => guarded('images-apply', async () => {
+    if (!selected) return;
+    try {
+      replaceTask(await window.sydney.applyContentImageCandidates(selected.id, picks));
+      setCandidateSheet(null);
+      notify('已采用挑好的图，改动过正文需要重新审稿');
+    } catch (error) {
+      // 正文改过等失败情形下候选已经不可用，别让面板停在点不动的状态。
+      setCandidateSheet(null);
+      throw error;
+    }
+  });
+  const discardCandidates = () => guarded('images-discard', async () => {
+    if (!selected) return;
+    setCandidateSheet(null);
+    await window.sydney.discardContentImageCandidates(selected.id);
+  });
+  /** 以前的图也能挑：不重新生成，直接把这篇任务已经出过的图列出来换上去。 */
+  const openImageLibrary = (scope: 'cover' | 'inline' | 'both') => guarded('images-library', async () => {
+    if (!selected) return;
+    const bundle = await window.sydney.openContentImageLibrary(selected.id, scope);
+    setCandidateSheet(bundle);
+    notify(bundle.warning || '从以前生成的图里挑一张');
+  });
+  /** 「文章配图」里逐张换图：只换那一张，用的是这篇文章生成过的图。 */
+  const swapImage = (index: number, target: string, expected: string) => guarded('images-swap', async () => {
+    if (!selected) return;
+    await persistSelected();
+    replaceTask(await window.sydney.swapContentImage(selected.id, index, target, expected));
+    notify(`已换掉第 ${index + 1} 张配图，改动过正文需要重新审稿`);
   });
   const exportArticle = (allowUnreviewed = false) => guarded('export', async () => {
     if (!selected) return;
@@ -289,7 +341,10 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
             {step === 'brief' && <JsonStep value={selected.briefJson} empty="还没有任务书。任务书会给出目标读者、读者问题、核心主张、章节和边界，初稿严格按它展开。"
               labels={{ target_reader: '目标读者', reader_problem: '读者问题', promise: '文章承诺', core_claim: '核心主张', sections: '章节结构', evidence_needed: '需要的证据', boundaries: '写作边界', framework: '框架' }} />}
             {step === 'evidence' && <EvidenceStep task={selected} locked={locked} onSources={items => editSelected({ sourcesJson: JSON.stringify({ sources: items }) })} />}
-            {step === 'draft' && <DraftStep task={selected} assets={assets} locked={locked} busy={busy} busySeconds={busySeconds} onEdit={draft => editSelected({ draft })} onGenerateImages={() => void generateImages()} onGenerateImagesWithCover={() => void generateImagesWithCover()} />}
+            {step === 'draft' && <DraftStep task={selected} assets={assets} locked={locked} busy={busy} busySeconds={busySeconds}
+              candidateCount={candidateCount} onCandidateCount={setCandidateCount}
+              onEdit={draft => editSelected({ draft })} onGenerateImages={() => void generateImages()} onGenerateImagesWithCover={() => void generateImagesWithCover()}
+              onPickFromLibrary={() => void openImageLibrary('inline')} onSwapImage={(index, target, expected) => void swapImage(index, target, expected)} />}
             {step === 'review' && <ReviewStep task={selected} locked={locked} busy={busy} onRevise={() => void runStage('revise')} />}
             {step === 'cover' && <CoverStep
               task={selected}
@@ -297,12 +352,18 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
               locked={locked}
               busy={busy}
               busySeconds={busySeconds}
+              candidateCount={candidateCount}
+              onCandidateCount={setCandidateCount}
               onChoose={() => void chooseCover()}
               onGenerateCover={() => void generateCover()}
               onGenerateImages={() => void generateImages()}
               onGenerateImagesWithCover={() => void generateImagesWithCover()}
+              onPickFromLibrary={() => void openImageLibrary('both')}
+              onSwapImage={(index, target, expected) => void swapImage(index, target, expected)}
             />}
             {step === 'publish' && <PublishStep task={selected} env={env} />}
+
+            {candidateSheet && candidateSheet.taskId === selected.id && <ImageCandidatePicker bundle={candidateSheet} busy={busy} onApply={picks => void applyCandidates(picks)} onDiscard={() => void discardCandidates()} />}
 
             <footer className="flow-panel-foot">
               {PIPELINE_STEPS.findIndex(item => item.key === step) > 0 && <button className="button button-quiet" onClick={() => setStep(PIPELINE_STEPS[PIPELINE_STEPS.findIndex(item => item.key === step) - 1].key)}>← 上一步</button>}

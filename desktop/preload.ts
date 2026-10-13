@@ -40,6 +40,12 @@ const api: SydneyApi = {
   generateContentCover: id => ipcRenderer.invoke('content:cover:generate', id),
   generateContentImages: (id, count) => ipcRenderer.invoke('content:images:generate', id, count),
   generateContentImagesWithCover: (id, count) => ipcRenderer.invoke('content:images:generate-all', id, count),
+  generateContentImageCandidates: (id, scope, count, candidates) => ipcRenderer.invoke('content:images:candidates', id, scope, count, candidates),
+  openContentImageLibrary: (id, scope) => ipcRenderer.invoke('content:images:library', id, scope),
+  listContentImageHistory: id => ipcRenderer.invoke('content:images:history', id),
+  swapContentImage: (id, index, target, expected) => ipcRenderer.invoke('content:images:swap', id, index, target, expected),
+  applyContentImageCandidates: (id, picks) => ipcRenderer.invoke('content:images:candidates:apply', id, picks),
+  discardContentImageCandidates: id => ipcRenderer.invoke('content:images:candidates:discard', id),
   cancelContentImages: id => ipcRenderer.invoke('content:images:cancel', id),
   getContentAssets: id => ipcRenderer.invoke('content:assets', id),
   renderContentPreview: (id, source) => ipcRenderer.invoke('content:preview', id, source),
@@ -61,11 +67,24 @@ const api: SydneyApi = {
   getVideoAssets: id => ipcRenderer.invoke('video:assets', id),
   exportVideoProject: id => ipcRenderer.invoke('video:export', id),
   openVideoPackage: id => ipcRenderer.invoke('video:open-package', id),
+  getSiteModule: () => ipcRenderer.invoke('site:state'),
+  saveSiteModule: (sites, activateId) => ipcRenderer.invoke('site:save', sites, activateId),
+  activateSiteModule: id => ipcRenderer.invoke('site:activate', id),
+  openSiteModule: () => ipcRenderer.invoke('site:open'),
+  closeSiteModule: () => ipcRenderer.invoke('site:close'),
+  setSiteModuleBounds: bounds => ipcRenderer.invoke('site:bounds', bounds),
+  siteModuleGo: action => ipcRenderer.invoke('site:go', action),
+  openSiteModuleInBrowser: () => ipcRenderer.invoke('site:external'),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); },
   onWeWriteChanged: callback => {
     const listener = () => callback();
     ipcRenderer.on('wewrite:changed', listener);
     return () => ipcRenderer.removeListener('wewrite:changed', listener);
+  },
+  onSiteModuleChanged: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('site:changed', listener);
+    return () => ipcRenderer.removeListener('site:changed', listener);
   }
 };
 

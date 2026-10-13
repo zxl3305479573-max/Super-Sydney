@@ -34,8 +34,8 @@ test('具体方向提示词：带上级生效模板，并要求输出能整段�
 });
 
 test('解析配图模板建议：去序号，兼容 note 字段，空结果报错', () => {
-  const parsed = parseImageStyleSuggestion(JSON.stringify({ template: '1. 扁平插画\n- 不要文字和 logo', changes: ['新增禁忌'] }));
-  assert.equal(parsed.note, '扁平插画\n不要文字和 logo');
+  const parsed = parseImageStyleSuggestion(JSON.stringify({ template: '1. 扁平插画\n- 不要 logo', changes: ['新增禁忌'] }));
+  assert.equal(parsed.note, '扁平插画\n不要 logo');
   assert.deepEqual(parsed.changes, ['新增禁忌']);
   assert.equal(parseImageStyleSuggestion('{"note":"写实"}').note, '写实');
   assert.throws(() => parseImageStyleSuggestion('{"template":" "}'), /没有给出配图模板/);
@@ -48,8 +48,12 @@ test('requestImageStyle：缺密钥不请求；正常时走 JSON 模式并解析
   let body: Record<string, unknown> = {};
   const result = await requestImageStyle(base, config, (async (_input: string, init: RequestInit) => {
     body = JSON.parse(String(init.body));
-    return reply({ template: '面向{读者}：扁平科技插画\n画面里不要出现任何文字', changes: ['从零起草'] });
+    return reply({ template: '面向{读者}：扁平科技插画\n画面里可以出现与内容相关的文字与数字，要写对写清楚', changes: ['从零起草'] });
   }) as typeof fetch);
   assert.deepEqual(body.response_format, { type: 'json_object' });
-  assert.equal(result.note, '面向{读者}：扁平科技插画\n画面里不要出现任何文字');
+  // 系统提示词已经改成「允许出现文字，但要求写对写清楚」，不能再要求 AI 加禁字一条
+  const messages = body.messages as Array<{ role: string; content: string }>;
+  assert.match(messages.find(message => message.role === 'system')!.content, /可以出现与内容相关的文字、字母、数字和图表数值/);
+  assert.doesNotMatch(messages.find(message => message.role === 'system')!.content, /不要出现任何文字/);
+  assert.equal(result.note, '面向{读者}：扁平科技插画\n画面里可以出现与内容相关的文字与数字，要写对写清楚');
 });

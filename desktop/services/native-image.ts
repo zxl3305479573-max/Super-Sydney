@@ -12,15 +12,18 @@ const PREVIEW_IMAGE_LIMIT = 4 * 1024 * 1024;
 const MIME_BY_EXTENSION: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' };
 const THUMBNAIL_WIDTH = 560;
 
-/** 给界面用的缩略图；文件缺失或不是图片时返回空串，由前端显示占位。 */
-export function imageThumbnail(source: string): string {
+/**
+ * 给界面用的缩略图；文件缺失或不是图片时返回空串，由前端显示占位。
+ * maxWidth 可调小：候选面板会一次列出十几张，缩略图小一点才不会把 IPC 塞满。
+ */
+export function imageThumbnail(source: string, maxWidth = THUMBNAIL_WIDTH): string {
   try {
     if (!source || !fs.existsSync(source)) return '';
     const image = nativeImage.createFromPath(source);
     if (image.isEmpty()) return '';
     const { width, height } = image.getSize();
-    const scaled = width > THUMBNAIL_WIDTH
-      ? image.resize({ width: THUMBNAIL_WIDTH, height: Math.max(1, Math.round(height * THUMBNAIL_WIDTH / width)), quality: 'good' })
+    const scaled = width > maxWidth
+      ? image.resize({ width: maxWidth, height: Math.max(1, Math.round(height * maxWidth / width)), quality: 'good' })
       : image;
     return `data:image/jpeg;base64,${scaled.toJPEG(78).toString('base64')}`;
   } catch {

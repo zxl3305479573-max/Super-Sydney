@@ -59,8 +59,14 @@ export class CaptureRuntime {
     this.screenCapture = { ...this.screenCapture, saved: this.countScreenFrames() };
   }
 
-  /** 启动时调用：会话监听按设置恢复，屏幕帧按保留时长清理。前台采样默认不自动恢复。 */
+  /** 启动时调用：记录总开关一律复位为未开始（每次启动都要用户手动点「开始记录」），屏幕帧按保留时长清理。 */
   start(): void {
+    const config = this.ctx.settings.read();
+    if (config.captureEnabled || config.capturePaused) {
+      config.captureEnabled = false;
+      config.capturePaused = false;
+      fs.mkdirSync(this.ctx.dataDir, { recursive: true }); this.ctx.settings.write(config);
+    }
     this.refreshCodexAdapter();
     this.refreshClaudeAdapter();
     this.retentionTimer = setInterval(() => this.cleanupScreenFrames(), 60 * 60 * 1000);

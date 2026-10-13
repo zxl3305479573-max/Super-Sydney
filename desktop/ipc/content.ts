@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dialog, ipcMain } from 'electron';
 import type { AppContext } from '../app-context';
-import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion } from '../shared';
+import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, ImageCandidateScope } from '../shared';
 import type { ImageSlot } from '../services/content-images';
-import { applyGeneratedImages, buildImagePrompt, collectTaskAssets, listInlineImages, planCoverAndInlineImages, planImageSlots } from '../services/content-images';
+import { COVER_CANDIDATE_KEY, applyGeneratedImages, articleLeadExcerpt, buildImagePrompt, classifyAssetFile, collectTaskAssets, listInlineImages, mergeCandidateOptions, placeImages, replaceInlineImage, planCoverAndInlineImages, planImageSlots, resolveCandidatePicks, slotCandidateKey } from '../services/content-images';
 import { coverImagePrompt, imagePromptScope } from '../services/content-api-config';
 import { chosenDefaultSubdirectionName, createContentTask, getContentTask, listContentTasks, optionalId, saveTaxonomyTree, updateContentTask } from '../services/content-store';
 import { findSubdirection, subdirectionNames } from '../services/content-taxonomy';
@@ -14,7 +14,8 @@ import { normalizeImageStyleRequest, requestImageStyle } from '../services/image
 import { exportContentArticle, parseContentSources } from '../services/content-export';
 import { assertContentDeliverable, assertContentStage, deliverableArticle, isContentPublishable, prepareContentEdit } from '../services/content-policy';
 import { DEFAULT_AIGC_FOOTER, makeDigest, normalizeTitle, renderWeChatHtml, toPlainText } from '../services/article-html';
-import { ImageJobs, clampImageCount, imageErrorText } from '../services/image-generation';
+import { appendEvidenceSection } from '../services/evidence-section';
+import { ImageJobs, clampCandidateCount, clampImageCount, imageErrorText } from '../services/image-generation';
 import { imageThumbnail, prepareWeChatInlineImage, previewImageSource } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import { WeChatClient, contentTypeFor } from '../services/wechat-publisher';
@@ -67,6 +68,70 @@ export function registerContentIpc(ctx: AppContext): void {
     });
     return { paths, failures };
   };
+
+  /**
+   * 候选图：AI 一次容易出一堆差不多的图，与其直接插进正文再删，不如先生成再让用户挑。
+   * 候选只放在内存里——它是「这一次挑哪张」的临时状态，重启后重新生成即可。
+   * draft 是生成那一刻的正文快照：挑图期间正文改过就不能再按旧行号插回去。
+   */
+  const pendingCandidates = new Map<number, { draft: string; slots: ImageSlot[] }>();
+
+  /** 候选面板最多回传多少张缩略图：历史图再多也只列最近的这些，避免 IPC 塞满大 base64。 */
+  const HISTORY_LIMIT = 9;
+  /** 候选缩略图比正文配图墙小一号：面板一次要列十几张。 */
+  const CANDIDATE_THUMBNAIL_WIDTH = 360;
+
+  /** 同一句提示词要 N 张候选：并发生成，个别失败就少几张，成功的仍然给用户挑。 */
+  const generateOptions = async (target: (index: number) => string, prompt: string, candidates: number, signal?: AbortSignal): Promise<{ paths: string[]; failures: string[] }> => {
+    const settled = await Promise.allSettled(Array.from({ length: candidates }, (_item, index) =>
+      generateImageFile(target(index), prompt, '1792x1024', signal)));
+    const paths: string[] = [];
+    const failures: string[] = [];
+    for (const item of settled) {
+      if (item.status === 'fulfilled') paths.push(item.value);
+      else failures.push(imageErrorText(item.reason));
+    }
+    return { paths, failures };
+  };
+
+  /**
+   * 这篇文章已经生成过的图：按修改时间倒序，封面与正文配图分开。
+   * 历史图就躺在任务的配图目录里，所以「以前生成的图能不能再挑」不需要额外落库。
+   */
+  const assetHistory = (directory: string): { cover: string[]; inline: string[] } => {
+    const found: Array<{ path: string; kind: 'cover' | 'inline'; mtime: number }> = [];
+    for (const name of fs.readdirSync(directory)) {
+      const kind = classifyAssetFile(name);
+      if (!kind) continue;
+      const target = path.join(directory, name);
+      try {
+        const stat = fs.statSync(target);
+        if (stat.isFile()) found.push({ path: target, kind, mtime: stat.mtimeMs });
+      } catch { /* 文件正好被删掉就跳过，不影响其它候选 */ }
+    }
+    found.sort((left, right) => right.mtime - left.mtime);
+    const take = (kind: 'cover' | 'inline') => found.filter(item => item.kind === kind).slice(0, HISTORY_LIMIT).map(item => item.path);
+    return { cover: take('cover'), inline: take('inline') };
+  };
+
+  /** 界面回传的路径不可信：只认这篇文章配图目录里真实存在的文件。 */
+  const isOwnAsset = (id: number, target: string) => {
+    const directory = path.resolve(assetDirectory(ctx, 'content-assets', id));
+    const resolvedTarget = path.resolve(target);
+    return resolvedTarget.startsWith(`${directory}${path.sep}`) && fs.existsSync(resolvedTarget);
+  };
+
+  /** 本次候选在前、历史图在后；缩略图统一在这里生成。 */
+  const candidateOptions = (fresh: string[], history: string[]) =>
+    mergeCandidateOptions(fresh, history).map(option => ({ ...option, thumbnail: imageThumbnail(option.path, CANDIDATE_THUMBNAIL_WIDTH) }));
+
+  const coverGroup = (fresh: string[], history: string[], excerpt: string): ImageCandidateGroup => ({
+    key: COVER_CANDIDATE_KEY, label: '封面', excerpt, options: candidateOptions(fresh, history)
+  });
+
+  const slotGroup = (index: number, slot: ImageSlot, fresh: string[], history: string[]): ImageCandidateGroup => ({
+    key: slotCandidateKey(index), label: `第 ${index + 1} 处 · ${slot.heading}`, excerpt: slot.excerpt, options: candidateOptions(fresh, history)
+  });
 
   ipcMain.handle('content:list', () => listContentTasks(db));
   ipcMain.handle('content:taxonomy', () => readContentTaxonomy(ctx));
@@ -153,6 +218,8 @@ export function registerContentIpc(ctx: AppContext): void {
     const task = getContentTask(db, id);
     assertContentDeliverable(task, { allowUnreviewed });
     const article = deliverableArticle(task, allowUnreviewed);
+    // 推送的正文同样在末尾带上来源与证据，和预览、导出保持一致。
+    const articleWithEvidence = appendEvidenceSection(article, task);
     if (!task.coverPath) throw new Error('缺少封面图：请先选择本地图片或生成封面');
     if (!fs.existsSync(task.coverPath)) throw new Error('封面图文件已不存在，请重新选择');
 
@@ -180,7 +247,7 @@ export function registerContentIpc(ctx: AppContext): void {
       title,
       author,
       digest: makeDigest(article),
-      html: renderWeChatHtml(article, {
+      html: renderWeChatHtml(articleWithEvidence, {
         theme: task.theme,
         aigcFooter: DEFAULT_AIGC_FOOTER,
         resolveImage: source => uploadedImages.get(source) ?? source
@@ -195,6 +262,7 @@ export function registerContentIpc(ctx: AppContext): void {
   }));
   ipcMain.handle('content:cover:generate', async (_event, id: number) => requests.run(id, async () => {
     const task = getContentTask(db, id);
+    pendingCandidates.delete(id);
     const signal = imageJobs.begin(id);
     try { return update(id, { coverPath: await generateCover(task, signal) }); }
     finally { imageJobs.end(id); }
@@ -206,6 +274,7 @@ export function registerContentIpc(ctx: AppContext): void {
   ipcMain.handle('content:images:generate', async (_event, id: number, count = 3) => requests.run(id, async () => {
     const task = getContentTask(db, id);
     if (!task.draft.trim()) throw new Error('请先生成或填写正文，再配正文插图');
+    pendingCandidates.delete(id);
     const slots = planImageSlots(task.draft, clampImageCount(count));
     if (!slots.length) throw new Error('正文段落太短，暂时找不到合适的配图位置');
     const signal = imageJobs.begin(id);
@@ -225,6 +294,7 @@ export function registerContentIpc(ctx: AppContext): void {
    */
   ipcMain.handle('content:images:generate-all', async (_event, id: number, count = 3) => requests.run(id, async () => {
     const task = getContentTask(db, id);
+    pendingCandidates.delete(id);
     const plan = planCoverAndInlineImages(task.draft, clampImageCount(count));
     const signal = imageJobs.begin(id);
     const [cover, inline] = await Promise.all([
@@ -252,6 +322,131 @@ export function registerContentIpc(ctx: AppContext): void {
     if (!patch.coverPath && !merged.inserted) throw new Error(signal.aborted ? '已取消生成' : warnings.join('；') || '图片生成失败');
     return { ...update(id, patch), imageWarning: warnings.join('；') };
   }));
+  /**
+   * 候选图：每处并发出 candidates 张，只落盘不成文，返回带缩略图的分组交给界面挑。
+   * scope 决定出哪几处：封面、正文配图，或一次都出（和「生成即插入」入口一一对应）。
+   */
+  ipcMain.handle('content:images:candidates', async (_event, id: number, scope: ImageCandidateScope = 'both', count = 3, candidates = 1) => requests.run(id, async () => {
+    const task = getContentTask(db, id);
+    const perSlot = clampCandidateCount(candidates);
+    if (perSlot < 2) throw new Error('候选图至少要 2 张，1 张请直接用「生成即插入」');
+    const plan = planCoverAndInlineImages(task.draft, clampImageCount(count));
+    if (scope === 'inline' && !plan.withInline) throw new Error(task.draft.trim() ? '正文段落太短，暂时找不到合适的配图位置' : '请先生成或填写正文，再配正文插图');
+    const slots = scope === 'cover' ? [] : plan.slots;
+    const directory = assetDirectory(ctx, 'content-assets', task.id);
+    const promptScope = imagePromptScope(readContentTaxonomy(ctx), task, readWeWriteFiles().styleText);
+    const stamp = Date.now();
+    const signal = imageJobs.begin(id);
+    try {
+      const [cover, perSlotResults] = await Promise.all([
+        scope === 'inline'
+          ? Promise.resolve({ paths: [] as string[], failures: [] as string[] })
+          : generateOptions(index => path.join(directory, `cover-${stamp}-${index + 1}.png`), coverImagePrompt(task, promptScope), perSlot, signal),
+        Promise.all(slots.map((slot, index) => generateOptions(
+          candidate => path.join(directory, `inline-${stamp}-${index + 1}-${candidate + 1}.png`),
+          buildImagePrompt({ articleTitle: task.title || task.topic, heading: slot.heading, excerpt: slot.excerpt, direction: promptScope.direction, style: promptScope.style }),
+          perSlot,
+          signal
+        ).then(result => ({ slot, ...result }))))
+      ]);
+      const failures = [cover.failures, ...perSlotResults.map(item => item.failures)].flat();
+      // 全失败的位置不留空组，免得界面出现「这个位置 0 张可选」的死按钮。
+      const slotCandidates = perSlotResults.map(({ slot, paths }) => ({ slot, options: paths })).filter(item => item.options.length);
+      // 历史图一起列出来：上次那批里没选中的，这次仍然能挑。
+      const history = assetHistory(directory);
+      const coverExcerpt = articleLeadExcerpt(task.draft || task.finalArticle || '');
+      const groups: ImageCandidateGroup[] = [
+        ...(cover.paths.length ? [coverGroup(cover.paths, history.cover, coverExcerpt)] : []),
+        ...slotCandidates.map((item, index) => slotGroup(index, item.slot, item.options, history.inline))
+      ];
+      if (!groups.length) throw new Error(signal.aborted ? '已取消生成' : failures[0] || '候选图生成失败');
+      pendingCandidates.set(id, { draft: task.draft, slots: slotCandidates.map(item => item.slot) });
+      const warnings = [scope === 'cover' ? '' : plan.note, failures.length ? `有 ${failures.length} 张候选没生成成功` : ''].filter(Boolean);
+      return { taskId: id, groups, warning: warnings.join('；') } satisfies ImageCandidateBundle;
+    } finally {
+      imageJobs.end(id);
+    }
+  }));
+  /**
+   * 「以前生成的图」面板：不打接口、不花钱，直接把这篇任务已经生成过的图按位置列出来。
+   * 位置沿用当前正文的配图计划，所以历史图也能插到这次的小节下。
+   */
+  ipcMain.handle('content:images:library', (_event, id: number, scope: ImageCandidateScope = 'both') => {
+    const task = getContentTask(db, id);
+    const directory = assetDirectory(ctx, 'content-assets', task.id);
+    const history = assetHistory(directory);
+    const plan = planCoverAndInlineImages(task.draft, 3);
+    const slots = scope === 'cover' || !plan.withInline ? [] : plan.slots;
+    const groups: ImageCandidateGroup[] = [
+      ...(scope !== 'inline' && history.cover.length ? [coverGroup([], history.cover, articleLeadExcerpt(task.draft || task.finalArticle || ''))] : []),
+      ...(history.inline.length ? slots.map((slot, index) => slotGroup(index, slot, [], history.inline)) : [])
+    ];
+    if (!groups.length) {
+      // 正文太短时历史配图其实还在，只是没有可以插进去的位置，得把原因说清楚。
+      const stuck = scope !== 'cover' && history.inline.length > 0;
+      return {
+        taskId: id, groups: [],
+        warning: stuck
+          ? '正文段落太短，暂时找不到可以插入配图的位置'
+          : `这篇文章还没有生成过${scope === 'cover' ? '封面' : scope === 'inline' ? '正文配图' : '图片'}，先点「AI 生成」出几张再来挑`
+      } satisfies ImageCandidateBundle;
+    }
+    pendingCandidates.set(id, { draft: task.draft, slots });
+    return { taskId: id, groups, warning: '' } satisfies ImageCandidateBundle;
+  });
+  /**
+   * 采用挑好的候选：封面进 coverPath，正文配图按位置插回初稿。
+   * 两道保险：只认这篇文章自己配图目录里的文件（界面回传的路径不能当可信输入，
+   * 但历史图也算，换图不必重新生成），正文在挑图期间改过就拒绝插入——旧行号插回去会打乱文章结构。
+   */
+  ipcMain.handle('content:images:candidates:apply', (_event, id: number, picks: Array<{ key: string; path: string }>) => requests.run(id, async () => {
+    const pending = pendingCandidates.get(id);
+    if (!pending) throw new Error('没有待选用的候选图，请先生成候选');
+    const task = getContentTask(db, id);
+    if (task.draft !== pending.draft) throw new Error('正文在挑图期间有改动，配图位置已经不准了，请重新生成候选');
+    if (!Array.isArray(picks) || !picks.length) throw new Error('还没有选择要用的图');
+    const resolved = resolveCandidatePicks(pending.slots, picks);
+    const ownAsset = (target: string) => isOwnAsset(id, target);
+    const patch: Partial<ContentTask> = {};
+    if (resolved.cover) {
+      if (!ownAsset(resolved.cover)) throw new Error('选的封面不是这篇文章生成的图，请重新选择');
+      patch.coverPath = resolved.cover;
+    }
+    if (resolved.images.length) {
+      if (!resolved.images.every(image => ownAsset(image.path))) throw new Error('选的配图不是这篇文章生成的图，请重新选择');
+      patch.draft = placeImages(task.draft, resolved.images);
+      patch.finalArticle = '';
+      patch.reviewJson = '';
+      patch.status = 'draft';
+    }
+    pendingCandidates.delete(id);
+    return update(id, patch);
+  }));
+  /**
+   * 预览里「文章配图」逐张换图用的图库：这篇文章生成过的封面与正文配图，不打接口、不花钱。
+   * 和候选面板不同，它不依赖配图计划，正文里已有的每一张都能单独换。
+   */
+  ipcMain.handle('content:images:history', (_event, id: number) => {
+    const history = assetHistory(assetDirectory(ctx, 'content-assets', getContentTask(db, id).id));
+    const options = (paths: string[]): ImageCandidateOption[] =>
+      paths.map(target => ({ path: target, origin: 'history', thumbnail: imageThumbnail(target, CANDIDATE_THUMBNAIL_WIDTH) }));
+    return { cover: options(history.cover), inline: options(history.inline) };
+  });
+  /**
+   * 把正文里第 index 张配图换成用户挑的那张（或 index 为 'cover' 时换封面）。
+   * 只认这篇文章自己配图目录里的文件；换正文配图会改动正文，旧审稿与成稿随之失效。
+   */
+  ipcMain.handle('content:images:swap', (_event, id: number, index: number | 'cover', target: string, expected?: string) => requests.run(id, async () => {
+    const task = getContentTask(db, id);
+    if (typeof target !== 'string' || !isOwnAsset(id, target)) throw new Error('选的图不是这篇文章生成的图，请重新选择');
+    if (index === 'cover') return update(id, { coverPath: path.resolve(target) });
+    if (!Number.isInteger(index) || index < 0) throw new Error('配图位置不对，请刷新后重试');
+    const draft = replaceInlineImage(task.draft, index, path.resolve(target), typeof expected === 'string' ? expected : undefined);
+    if (draft === null) throw new Error('正文里找不到这张配图，可能刚改过正文，请刷新后重试');
+    if (draft === task.draft) return task;
+    return update(id, { draft, finalArticle: '', reviewJson: '', status: 'draft' });
+  }));
+  ipcMain.handle('content:images:candidates:discard', (_event, id: number) => { pendingCandidates.delete(id); });
   /** 中断正在跑的生图：长等待时用户至少能自己退出，不必干等到超时。 */
   ipcMain.handle('content:images:cancel', (_event, id: number) => imageJobs.cancel(id));
   /** 预览走主进程：只有它能读本地图片并转成 data URI 塞进 iframe。 */
@@ -259,7 +454,8 @@ export function registerContentIpc(ctx: AppContext): void {
     const task = getContentTask(db, id);
     const markdown = source === 'final' && task.finalArticle.trim() ? task.finalArticle : task.draft;
     return {
-      html: renderWeChatHtml(markdown, {
+      // 来源与证据追加在正文末尾，预览与推送、导出看到的是同一段。
+      html: renderWeChatHtml(appendEvidenceSection(markdown, task), {
         theme: task.theme,
         aigcFooter: DEFAULT_AIGC_FOOTER,
         resolveImage: previewImageSource
