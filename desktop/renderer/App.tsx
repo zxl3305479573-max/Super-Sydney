@@ -3,6 +3,7 @@ import type { AppState, WorkEvent } from '../shared';
 import WeWritePanel from './WeWritePanel';
 import VideoPanel from './VideoPanel';
 import XianyuPanel from './XianyuPanel';
+import XiaohongshuPanel from './XiaohongshuPanel';
 import SitePanel from './SitePanel';
 import EvolutionPanel from './EvolutionPanel';
 import { TodayView } from './TodayView';
@@ -10,7 +11,7 @@ import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
 import { Icon, readableError, type IconName } from './ui';
 
-type View = 'today' | 'review' | 'evolve' | 'wewrite' | 'video' | 'xianyu' | 'site' | 'settings';
+type View = 'today' | 'review' | 'evolve' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site' | 'settings';
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
@@ -21,11 +22,11 @@ const empty: AppState = {
 const NAV: Array<{ group: string; items: Array<{ view: View; label: string; icon: IconName }> }> = [
   { group: '工作记录', items: [{ view: 'today', label: '今日工作', icon: 'today' }, { view: 'review', label: '待确认', icon: 'inbox' }] },
   { group: '成长', items: [{ view: 'evolve', label: '自我进化', icon: 'spark' }] },
-  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频', icon: 'video' }] },
+  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }] },
   { group: '变现', items: [{ view: 'xianyu', label: '闲鱼', icon: 'tag' }, { view: 'site', label: 'AI 代充', icon: 'card' }] }
 ];
 
-const HEADERS: Record<Exclude<View, 'wewrite' | 'video'>, { title: string; subtitle: string }> = {
+const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { title: string; subtitle: string }> = {
   today: { title: '今日工作', subtitle: '' },
   review: { title: '待确认', subtitle: '逐条确认或批量处理采集到的事件，确认后的内容才会沉淀到知识库。' },
   evolve: { title: '自我进化', subtitle: '从 AI 协作里找出重复劳动与返工，沉淀成项目规则和经验卡片。' },
@@ -81,8 +82,8 @@ export default function App() {
   const live = state.settings.captureEnabled && !state.settings.capturePaused;
   const pendingCount = state.events.filter(event => event.status === 'pending').length;
   const detailEvent = state.events.find(event => event.id === detailId) ?? null;
-  const fullWidth = view === 'wewrite' || view === 'video';
-  const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video'>];
+  const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
+  const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
 
   return <div className="app-shell">
     <aside className="sidebar">
@@ -121,6 +122,7 @@ export default function App() {
         : view === 'evolve' ? <EvolutionPanel notify={notifyAny} />
         : view === 'wewrite' ? <WeWritePanel notify={notifyAny} />
         : view === 'video' ? <VideoPanel notify={notifyAny} />
+        : view === 'xiaohongshu' ? <XiaohongshuPanel notify={notifyAny} overlay={manualOpen || detailId !== null} />
         : view === 'xianyu' ? <XianyuPanel />
         : view === 'site' ? <SitePanel overlay={manualOpen || detailId !== null} notify={notifyAny} />
         : <TodayView state={state} mode={view} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />}

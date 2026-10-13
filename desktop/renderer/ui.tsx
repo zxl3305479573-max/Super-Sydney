@@ -46,6 +46,7 @@ const paths: Record<string, ReactNode> = {
   video: <><rect x="3" y="5.5" width="12.5" height="13" rx="2.5" /><path d="m15.5 10.6 5.5-3.1v9l-5.5-3.1" /></>,
   mic: <><rect x="9" y="3" width="6" height="10.5" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.2" /></>,
   tag: <><path d="M4.5 4.5h6.2L20 13.8 13.8 20 4.5 10.7z" /><circle cx="8.6" cy="8.6" r="1.25" /></>,
+  note: <><rect x="4.5" y="3.5" width="15" height="17" rx="3" /><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" /></>,
   card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>
 };
 export type IconName = keyof typeof paths;

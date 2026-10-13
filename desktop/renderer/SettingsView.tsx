@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { AppState, LlmKeyStatus, Settings } from '../shared';
-import { Icon, LinesEditor, Switch, TagEditor, type IconName } from './ui';
+import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
 
 type Patch = Partial<Settings>;
 
@@ -9,7 +9,8 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'activity', label: '活动记录', icon: 'window' },
   { id: 'ai', label: 'AI 对话采集', icon: 'bot' },
   { id: 'files', label: '文件与屏幕', icon: 'folder' },
-  { id: 'llm', label: 'AI 服务', icon: 'key' }
+  { id: 'llm', label: 'AI 服务', icon: 'key' },
+  { id: 'data', label: '数据服务', icon: 'chart' }
 ];
 
 function statusBadge(status: { state: string; error: string }) {
@@ -41,6 +42,20 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
   useEffect(() => { void window.sydney.getLlmKeyStatus().then(setKeyStatus); }, []);
   const saveKey = async () => { setKeyStatus(await window.sydney.saveLlmKey(key.trim())); setKey(''); notify('DeepSeek 密钥已安全保存'); };
   const removeKey = async () => { setKeyStatus(await window.sydney.deleteLlmKey()); notify('已删除程序内保存的密钥'); };
+  const [redfoxKey, setRedfoxKey] = useState('');
+  const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
+  const [redfoxTesting, setRedfoxTesting] = useState(false);
+  /** 没保存 key、靠环境变量 REDFOX_API_KEY 时主进程会在 masked 里注明来源，这时没有可删除的东西。 */
+  const redfoxFromEnv = redfoxStatus.configured && redfoxStatus.masked.includes('环境变量');
+  useEffect(() => { void window.sydney.getRedfoxKeyStatus().then(setRedfoxStatus); }, []);
+  const saveRedfoxKey = async () => { setRedfoxStatus(await window.sydney.saveRedfoxKey(redfoxKey.trim())); setRedfoxKey(''); notify('红狐 API Key 已安全保存'); };
+  const removeRedfoxKey = async () => { setRedfoxStatus(await window.sydney.deleteRedfoxKey()); notify('已删除程序内保存的红狐 Key'); };
+  const testRedfoxKey = async () => {
+    setRedfoxTesting(true);
+    try { const result = await window.sydney.testRedfoxKey(); notify(`红狐连接正常，近 7 天全站热门共 ${result.total} 条`); }
+    catch (error) { notify(`红狐连接失败：${readableError(error)}`); }
+    finally { setRedfoxTesting(false); }
+  };
   const chooseVault = async () => { const next = await window.sydney.chooseVault(); if (next) notify(`知识库已切换到 ${next}`); };
   const jump = (id: string) => { setActive(id); document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
 
@@ -110,6 +125,19 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
             <input className="input" type="password" autoComplete="off" placeholder={keyStatus.configured ? '输入新密钥以替换' : 'sk-...'} value={key} onChange={event => setKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && key.trim()) void saveKey(); }} />
             <button className="button button-primary" disabled={!key.trim() || !keyStatus.encryptionAvailable} onClick={() => void saveKey()}>保存</button>
             {keyStatus.configured && <button className="button button-quiet" onClick={() => void removeKey()}>删除</button>}
+          </div>
+        </Row>
+      </section>
+
+      <section id="set-data" className="set-card">
+        <header><Icon name="chart" size={18} /><div><h2>数据服务（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
+        <Row title="红狐 API Key" badge={<span className={`badge ${redfoxStatus.configured ? 'badge-on' : 'badge-off'}`}>{redfoxFromEnv ? '使用环境变量' : redfoxStatus.configured ? `已保存 ${redfoxStatus.masked}` : '未保存'}</span>}
+          description={redfoxStatus.encryptionAvailable ? '使用系统安全存储加密，不写入项目、数据库或知识库；未保存时回退到环境变量 REDFOX_API_KEY。获取地址：redfox.hk/settings/api-keys' : '当前系统安全存储不可用，无法保存密钥。'}>
+          <div className="key-row">
+            <input className="input" type="password" autoComplete="off" placeholder={redfoxStatus.configured ? '输入新 Key 以替换' : 'ak_...'} value={redfoxKey} onChange={event => setRedfoxKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && redfoxKey.trim()) void saveRedfoxKey(); }} />
+            <button className="button button-primary" disabled={!redfoxKey.trim() || !redfoxStatus.encryptionAvailable} onClick={() => void saveRedfoxKey()}>保存</button>
+            <button className="button button-secondary" disabled={redfoxTesting} onClick={() => void testRedfoxKey()}>{redfoxTesting ? '测试中…' : '测试连接'}</button>
+            {redfoxStatus.configured && !redfoxFromEnv && <button className="button button-quiet" onClick={() => void removeRedfoxKey()}>删除</button>}
           </div>
         </Row>
       </section>

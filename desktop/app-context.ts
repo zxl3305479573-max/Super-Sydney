@@ -15,9 +15,13 @@ export interface AppContext {
   homeDir: string;
   settings: SettingsFile;
   secretStore: SecretStore;
+  /** 红狐（小红书热点数据）API Key，与内容 API 的密钥分文件存。 */
+  redfoxKeyStore: SecretStore;
   /** 密钥优先取系统安全存储，其次环境变量。 */
   llmApiKey(): string;
   llmConfig(): LlmConfig;
+  /** 红狐 key：优先系统安全存储，其次环境变量 REDFOX_API_KEY。 */
+  redfoxApiKey(): string;
   /** 通知渲染进程重新拉取 state:get。 */
   broadcast(): void;
   /** 通知渲染进程 ~/.wewrite 配置变了。 */

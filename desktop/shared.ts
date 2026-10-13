@@ -303,6 +303,232 @@ export type VideoProject = {
   updatedAt: string;
 };
 export type VideoAssetBundle = { cover: ContentAssetView | null };
+
+/* ── 小红书模块 ──────────────────────────────────────────────────
+ * 按「定位、选题、写作、视觉、复盘」五环节 + 总控拆分（见 docs/superpowers/specs/2026-10-13-xiaohongshu-module-design.md）。
+ * 账号级数据（定位档案、诊断、复盘）每个账号一份；笔记级数据每篇一条任务，
+ * 走 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包。
+ * 模块不代发布：终点是知识库里的发布包，由人手动发到小红书。
+ */
+export type XhsTab = 'home' | 'positioning' | 'hotspot' | 'notes' | 'audit' | 'analytics' | 'browser';
+export type XhsAccount = {
+  id: number;
+  name: string;
+  /** 定位档案（XhsPositioning 的 JSON），由「账号定位」写入；未定位时为空串。 */
+  positioningJson: string;
+  /** 定位问答记录（XhsPositioningTurn[] 的 JSON）。 */
+  positioningChatJson: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type XhsPositioning = {
+  track: { name: string; reason: string; alternatives: string[] };
+  /** 定位句：我是谁、给谁看、提供什么价值。 */
+  statement: string;
+  /** 人设三件套。 */
+  persona: { name: string; bio: string; visual: string };
+  pillars: Array<{ name: string; description: string }>;
+  /** 前 20 篇选题。 */
+  firstTopics: Array<{ title: string; pillar: string; noteType: XhsNoteType }>;
+  coldStart: Array<{ phase: string; actions: string[] }>;
+  generatedAt: string;
+};
+export type XhsPositioningTurn = { role: 'coach' | 'user'; text: string; questions?: string[] };
+
+export type XhsNoteStatus = 'idea' | 'body' | 'title' | 'visual' | 'packaged';
+export type XhsNoteType = 'review' | 'tutorial' | 'story' | 'list' | 'avoid' | 'share' | 'recap';
+export type XhsNote = {
+  id: number;
+  accountId: number;
+  topic: string;
+  noteType: XhsNoteType;
+  /** 用户自己的经验与素材：正文只能基于它写「亲身经历」，没有就按科普 / 整理口吻写。 */
+  material: string;
+  title: string;
+  body: string;
+  /** 标签数组的 JSON（不带 #）。 */
+  tagsJson: string;
+  /** 选题来源：从热点笔记转过来时记下那条笔记（XhsHotNote 的 JSON），手动建的为空串。 */
+  sourceJson: string;
+  /** 由内容推导出的进度，列表展示用；写库时按 deriveXhsStatus 重算。 */
+  status: XhsNoteStatus;
+  /** 正文写作的结构信息（XhsWriterMeta 的 JSON）。 */
+  writerJson: string;
+  /** 标题工坊结果（XhsTitleWorkshop 的 JSON）。 */
+  titleCandidatesJson: string;
+  /** 发布前检测（XhsCheckReport 的 JSON）。 */
+  checksJson: string;
+  /** 图文卡片分页内容（XhsCardPlan 的 JSON）。 */
+  cardsJson: string;
+  coverPath: string;
+  /** 封面之后的图组（XhsImageItem[] 的 JSON），顺序就是发布顺序。 */
+  imagesJson: string;
+  /** 各产物基于的内容指纹（XhsBasis 的 JSON），用来判断「上游改过、这里需复核」。 */
+  basisJson: string;
+  exportPath: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type XhsBasis = { body?: string; title?: string; cover?: string; cards?: string; checks?: string; package?: string };
+export type XhsStepKey = 'topic' | 'body' | 'title' | 'visual' | 'checks' | 'package';
+export type XhsGenerateStage = 'body' | 'revise' | 'titles' | 'checks' | 'cards';
+export type XhsWriterMeta = { opening: string[]; outline: string[]; interaction: string };
+export type XhsTitleCandidate = {
+  title: string;
+  method: string;
+  /** 各项 0-5：搜索词覆盖、人群指向、收藏动机、点击钩子。 */
+  scores: { search: number; audience: number; save: number; hook: number };
+  total: number;
+  risks: string[];
+  role: 'primary' | 'backup' | 'test';
+  reason: string;
+};
+export type XhsTitleWorkshop = {
+  candidates: XhsTitleCandidate[];
+  ab: Array<{ a: string; b: string; variable: string; how: string }>;
+  keywords: string[];
+  generatedAt: string;
+};
+export type XhsCheckItem = { id: string; label: string; ok: boolean | null; level: 'error' | 'warn' | 'info'; detail: string; source: 'local' | 'model' };
+export type XhsCheckReport = { items: XhsCheckItem[]; checkedAt: string; modelError: string };
+export type XhsCardPage = { heading: string; points: string[]; emphasis: string };
+export type XhsCardPlan = { style: string; pages: XhsCardPage[] };
+export type XhsImageItem = { path: string; source: 'card' | 'info' | 'local'; caption: string };
+export type XhsNoteAssets = { cover: ContentAssetView | null; images: Array<ContentAssetView & { source: XhsImageItem['source'] }> };
+
+/** 热点数据里的一条笔记。互动数是数据源给的原值，展示时再模糊化，不反推精确值。 */
+export type XhsHotNote = {
+  id: string;
+  title: string;
+  desc: string;
+  cover: string;
+  link: string;
+  createTime: string;
+  topics: string[];
+  author: { id: string; nickname: string; fans: number };
+  interactive: number;
+  liked: number;
+  collected: number;
+  comments: number;
+  shared: number;
+  /** 有关键词时红狐给的评分：总分 15 = 相关性 10 + 热度 3 + 时效 2；全站热门时为 null。 */
+  score: { total: number; relevance: number; popularity: number; recency: number } | null;
+  /** 联网搜索得来、没有互动数据的条目。 */
+  unverified?: boolean;
+};
+export type XhsHotspotSource = 'auto' | 'redfox' | 'web';
+export type XhsHotspotQuery = {
+  /** 空串 = 全站热门（仅红狐支持）。 */
+  keyword: string;
+  /** yyyy-MM-dd；留空时默认近 7 天。 */
+  startDate?: string;
+  endDate?: string;
+  pageSize?: number;
+  /** 跳过 24 小时缓存强制重查。 */
+  refresh?: boolean;
+  /** auto：有红狐 key 用红狐，拿不到再退联网搜索。 */
+  source?: XhsHotspotSource;
+};
+export type XhsHotspotResult = {
+  source: 'redfox' | 'web' | 'view';
+  keyword: string;
+  startDate: string;
+  endDate: string;
+  total: number;
+  notes: XhsHotNote[];
+  /** 主结果太少时数据源给的近期热门参考。 */
+  latest: XhsHotNote[];
+  relatedSearches: Array<{ keyword: string; count: number }>;
+  hotTopics: Array<{ topic: string; count: number; interactive: number }>;
+  tips: string;
+  fetchedAt: string;
+  /** 这次结果是否来自本地缓存。 */
+  cached: boolean;
+  /** 降级说明，例如「红狐 Key 无效，已改用联网搜索」。 */
+  notice?: string;
+};
+export type XhsTopicIdea = { title: string; pillar: string; noteType: XhsNoteType; angle: string; why: string };
+
+export type XhsFunnelLayer = 'exposure' | 'click' | 'depth' | 'engagement' | 'save' | 'follow';
+export type XhsRouterAdvice = {
+  chain: 'A' | 'B' | 'C';
+  layer: XhsFunnelLayer | '';
+  title: string;
+  reason: string;
+  steps: Array<{ tab: XhsTab; label: string }>;
+  source: 'rule' | 'model';
+};
+
+export type XhsAuditNote = { title: string; liked: number; collected: number; comments: number; date: string; isVideo: boolean };
+export type XhsAuditInput = {
+  target: 'self' | 'competitor';
+  name: string;
+  bio: string;
+  fans: number;
+  follows: number;
+  likesAndCollects: number;
+  notes: XhsAuditNote[];
+  /** 封面风格的文字描述（模型看不到图，只能据此判断统一性）。 */
+  coverNote: string;
+};
+export type XhsAuditMetrics = {
+  noteCount: number;
+  avgInteractions: number;
+  medianInteractions: number;
+  interactionRate: number | null;
+  hitRate: number | null;
+  postsPerWeek: number | null;
+  longestGapDays: number | null;
+};
+export type XhsAuditResult = {
+  metrics: XhsAuditMetrics;
+  dimensions: Array<{ key: string; label: string; score: number | null; evidence: string }>;
+  total: number;
+  bottleneck: string;
+  actions: Array<{ priority: number; action: string; why: string }>;
+  positioningAdvice: string;
+};
+export type XhsReport = { id: number; accountId: number; kind: 'audit' | 'analytics'; title: string; inputJson: string; resultJson: string; createdAt: string };
+
+export type XhsStatMetrics = {
+  impressions: number | null;
+  views: number | null;
+  ctr: number | null;
+  avgViewSeconds: number | null;
+  completion: number | null;
+  likes: number | null;
+  comments: number | null;
+  collects: number | null;
+  shares: number | null;
+  follows: number | null;
+};
+export type XhsNoteStat = { id: number; accountId: number; title: string; publishDate: string; metrics: XhsStatMetrics; noteId: number | null; importedAt: string };
+export type XhsFunnelRow = {
+  stat: XhsNoteStat;
+  /** 各层的值：曝光是绝对数，其余是比率；缺数据为 null。 */
+  values: Record<XhsFunnelLayer, number | null>;
+  /** 各层相对账号中位数的倍数。 */
+  ratios: Record<XhsFunnelLayer, number | null>;
+  weakest: XhsFunnelLayer | '';
+};
+export type XhsAnalyticsInterpretation = {
+  summary: string;
+  findings: Array<{ layer: XhsFunnelLayer | ''; finding: string; evidence: string }>;
+  next: Array<{ action: string; target: 'title' | 'cover' | 'writer' | 'audit' | 'positioning' }>;
+  patterns: string[];
+};
+export type XhsAnalyticsView = {
+  rows: XhsFunnelRow[];
+  medians: Record<XhsFunnelLayer, number | null>;
+  layerCounts: Record<XhsFunnelLayer, number>;
+  dominant: XhsFunnelLayer | '';
+  latestReport: XhsReport | null;
+};
+export type XhsStatsImportResult = { file: string; added: number; updated: number; view: XhsAnalyticsView };
+
+export type XhsViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
+export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
+export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
 
 /* ── 变现 · 站点模块（AI 代充） ──────────────────────────────────
@@ -416,6 +642,64 @@ export interface SydneyApi {
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
+  listXhsAccounts(): Promise<XhsAccount[]>;
+  updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson'>>): Promise<XhsAccount>;
+  /** 定位问答走一步：answer 为空表示开始 / 继续提问；finish 为 true 时让教练直接出定位档案。 */
+  stepXhsPositioning(accountId: number, answer: string, finish: boolean): Promise<XhsAccount>;
+  resetXhsPositioning(accountId: number): Promise<XhsAccount>;
+  /** 把定位档案里的前 20 篇选题（按下标）转成笔记任务，已转过的同名选题跳过。 */
+  adoptXhsPositioningTopics(accountId: number, indexes: number[]): Promise<{ created: number; skipped: number }>;
+  /** 向导：description 为空时只按规则推荐。 */
+  recommendXhsRoute(accountId: number, description: string): Promise<XhsRouterAdvice>;
+  listXhsNotes(accountId: number): Promise<XhsNote[]>;
+  /** source 为热点笔记时，用它的标题做选题并记下来源。 */
+  createXhsNote(accountId: number, topic: string, source?: XhsHotNote | null): Promise<XhsNote>;
+  updateXhsNote(id: number, patch: Partial<XhsNote>): Promise<XhsNote>;
+  deleteXhsNote(id: number): Promise<void>;
+  /** 正文 / 按检测回改 / 标题工坊 / 发布前检测 / 图文卡片分页。 */
+  generateXhsNote(id: number, stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }): Promise<XhsNote>;
+  /** 上游改过之后，人工确认某个产物仍然可用（重新盖上当前指纹）。 */
+  confirmXhsBasis(id: number, key: keyof XhsBasis): Promise<XhsNote>;
+  generateXhsCover(id: number, brief: string): Promise<XhsNote>;
+  chooseXhsCover(id: number): Promise<XhsNote | null>;
+  /** 把图文卡片逐页渲染成 3:4 PNG，替换图组里旧的卡片图。 */
+  renderXhsCards(id: number): Promise<XhsNote>;
+  /** 生图信息图：single 出 1 张总览图；pages 按卡片分页逐页出图（6–9 张）。 */
+  generateXhsInfoImages(id: number, mode: 'single' | 'pages'): Promise<XhsNote>;
+  cancelXhsImages(id: number): Promise<boolean>;
+  addXhsLocalImages(id: number): Promise<XhsNote | null>;
+  /** 图组排序 / 删除：只接受当前图组里已有的路径。 */
+  arrangeXhsImages(id: number, paths: string[]): Promise<XhsNote>;
+  getXhsNoteAssets(id: number): Promise<XhsNoteAssets>;
+  exportXhsNote(id: number): Promise<XhsNote>;
+  openXhsPackage(id: number): Promise<string>;
+  searchXhsHotspot(query: XhsHotspotQuery): Promise<XhsHotspotResult>;
+  /** 没有热度数据时，按定位档案让模型给选题建议（标明未经数据验证）。 */
+  suggestXhsTopics(accountId: number, keyword: string): Promise<XhsTopicIdea[]>;
+  runXhsAudit(accountId: number, input: XhsAuditInput): Promise<XhsReport>;
+  listXhsReports(accountId: number, kind: XhsReport['kind']): Promise<XhsReport[]>;
+  deleteXhsReport(id: number): Promise<void>;
+  getXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
+  /** 弹出文件选择框导入创作者中心导出的笔记数据；用户取消时返回 null。 */
+  importXhsStats(accountId: number): Promise<XhsStatsImportResult | null>;
+  deleteXhsStat(id: number): Promise<XhsAnalyticsView>;
+  interpretXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
+  getXhsView(): Promise<XhsViewState>;
+  openXhsView(): Promise<XhsViewState>;
+  closeXhsView(): Promise<void>;
+  setXhsViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  navigateXhsView(target: { kind: 'home' | 'search' | 'url'; value?: string }): Promise<XhsViewState>;
+  xhsViewGo(action: 'back' | 'reload'): Promise<XhsViewState>;
+  /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
+  readXhsView(): Promise<XhsPageRead>;
+  onXhsViewChanged(callback: () => void): () => void;
+  getRedfoxKeyStatus(): Promise<LlmKeyStatus>;
+  saveRedfoxKey(value: string): Promise<LlmKeyStatus>;
+  deleteRedfoxKey(): Promise<LlmKeyStatus>;
+  /** 用已保存的 key 发一次最小查询；失败时抛出可读的错误。 */
+  testRedfoxKey(): Promise<{ total: number }>;
+  /** 用系统浏览器打开笔记或搜索结果链接；只接受 http/https。 */
+  openXhsLink(url: string): Promise<void>;
   getSiteModule(): Promise<SiteModuleState>;
   /**
    * 保存整份站点列表（增、删、改名、换地址都走这里）；
