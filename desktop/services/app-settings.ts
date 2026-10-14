@@ -15,7 +15,7 @@ export function defaultSettings(defaultVaultPath: string, projectPath: string): 
     allowedApps: ['Codex', 'Codex Desktop', 'Claude', 'Code', 'Visual Studio Code', 'Obsidian', 'Google Chrome', 'Microsoft Edge', 'Terminal', 'PowerShell'],
     blockedApps: ['1Password', 'KeePass', '微信', 'WhatsApp', 'Telegram'],
     captureIntervalSeconds: 30,
-    captureAllPending: true,
+    captureAllPending: false,
     vaultPath: resolveVaultPath(undefined, defaultVaultPath, projectPath),
     screenCaptureEnabled: false,
     screenCaptureIntervalSeconds: 60,

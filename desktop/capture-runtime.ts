@@ -6,7 +6,8 @@ import type { CaptureStatus, ClaudeCaptureStatus, CodexCaptureStatus, Settings }
 import { CodexSessionAdapter, DEFAULT_CODEX_ORIGINATORS, KNOWN_CODEX_ORIGINATORS, shouldRunCodexCapture } from './services/codex-session-adapter';
 import { ClaudeSessionAdapter, defaultClaudeProjectsRoot } from './services/claude-session-adapter';
 import { persistAiMessage, persistCodexMessage } from './services/codex-event-store';
-import { insertMetadataEvent, type MetadataEventInput } from './services/event-store';
+import { extendPendingActivity, insertMetadataEvent, type MetadataEventInput } from './services/event-store';
+import { ActivitySegmenter, isSelfWindow, normalizeWindowTitle } from './services/activity-segment';
 import { ScreenFrameStore } from './services/screen-frame-store';
 import { capturePrimaryScreen } from './services/screen-capture';
 import { shouldCaptureScreen } from './services/screen-capture-policy';
@@ -32,8 +33,7 @@ export class CaptureRuntime {
   private captureTimer: NodeJS.Timeout | undefined;
   private screenTimer: NodeJS.Timeout | undefined;
   private retentionTimer: NodeJS.Timeout | undefined;
-  private activeStartedAt = 0;
-  private activeApp = '';
+  private readonly segmenter = new ActivitySegmenter();
   private codexAdapter: CodexSessionAdapter | undefined;
   private codexCapture: CodexCaptureStatus = { state: 'disabled', error: '' };
   private claudeAdapter: ClaudeSessionAdapter | undefined;
@@ -91,7 +91,7 @@ export class CaptureRuntime {
     config.captureEnabled = mode !== 'stop';
     config.capturePaused = mode === 'pause';
     fs.mkdirSync(this.ctx.dataDir, { recursive: true }); this.ctx.settings.write(config);
-    if (this.captureTimer) clearInterval(this.captureTimer); this.captureTimer = undefined; this.activeStartedAt = 0; this.activeApp = '';
+    if (this.captureTimer) clearInterval(this.captureTimer); this.captureTimer = undefined; this.segmenter.reset();
     this.captureStatus = mode === 'stop' ? { state: 'idle', appName: '', windowTitle: '', sampledAt: '', message: '记录已停止' } : this.captureStatus;
     if (config.captureEnabled && !config.capturePaused) { void this.captureTick(); this.captureTimer = setInterval(() => void this.captureTick(), Math.max(10, config.captureIntervalSeconds) * 1000); }
     this.refreshCodexAdapter();
@@ -235,23 +235,29 @@ export class CaptureRuntime {
       const sampledAt = new Date().toISOString();
       this.captureStatus = describeCaptureObservation({ appName, windowTitle: title.slice(0, 240), allowed, blocked, saveUnallowed: config.captureAllPending, sampledAt });
       this.ctx.broadcast();
-      if (!appName || blocked || (!allowed && !config.captureAllPending)) { this.activeApp = ''; this.activeStartedAt = 0; return; }
+      const windowTitle = normalizeWindowTitle(appName, title).slice(0, 240);
+      const skip = !appName || blocked || isSelfWindow(title) || (!allowed && !config.captureAllPending);
       const now = Date.now();
-      const adapted = classifyApplication(appName, title.slice(0, 240));
-      // 第一次采样记一条 0 秒事件；同一应用持续在前台时按间隔累计时长。
-      if (!this.activeStartedAt || this.activeApp === appName) {
-        this.recordMetadata({
+      // 连续两次采样都是同一窗口才算一段活动；之后的采样只延长这一条的时长。
+      const action = this.segmenter.observe(skip ? null : `${appName}\n${windowTitle}`, now, Math.max(10, config.captureIntervalSeconds) * 2500);
+      if (action.type === 'insert') {
+        const adapted = classifyApplication(appName, windowTitle);
+        this.segmenter.attach(insertMetadataEvent(this.ctx.db, {
           kind: 'adapter',
           note: adapted.note,
           summary: adapted.summary,
           source: 'adapter',
           adapter: adapted.adapter,
           appName,
-          windowTitle: title.slice(0, 240),
-          durationSeconds: this.activeStartedAt ? Math.max(1, Math.round((now - this.activeStartedAt) / 1000)) : 0
-        });
+          windowTitle,
+          durationSeconds: action.durationSeconds,
+          createdAt: new Date(action.startedAt).toISOString()
+        }));
+        this.ctx.broadcast();
+      } else if (action.type === 'update') {
+        if (extendPendingActivity(this.ctx.db, action.eventId, action.durationSeconds)) this.ctx.broadcast();
+        else this.segmenter.restart(now);
       }
-      this.activeApp = appName; this.activeStartedAt = now;
     } catch (error) {
       this.captureStatus = { state: 'error', appName: '', windowTitle: '', sampledAt: new Date().toISOString(), message: error instanceof Error ? `采样失败：${error.message}` : '采样失败' };
       this.ctx.broadcast();

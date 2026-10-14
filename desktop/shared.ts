@@ -310,6 +310,9 @@ export type VideoAssetBundle = { cover: ContentAssetView | null };
  * 走 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包。
  * 模块不代发布：终点是知识库里的发布包，由人手动发到小红书。
  */
+/** 小红书自己的模型连接（与公众号分开）；两个 key 不在这里，走系统安全存储。 */
+export type XhsApiSettings = { llmEnabled: boolean; llmBaseUrl: string; llmModel: string; imageBaseUrl: string; imageModel: string };
+export type XhsApiStatus = { settings: XhsApiSettings; llmKey: LlmKeyStatus; imageKey: LlmKeyStatus };
 export type XhsTab = 'home' | 'positioning' | 'hotspot' | 'notes' | 'audit' | 'analytics' | 'browser';
 export type XhsAccount = {
   id: number;
@@ -693,6 +696,14 @@ export interface SydneyApi {
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
   readXhsView(): Promise<XhsPageRead>;
   onXhsViewChanged(callback: () => void): () => void;
+  getXhsApiStatus(): Promise<XhsApiStatus>;
+  saveXhsApiSettings(patch: Partial<XhsApiSettings>): Promise<XhsApiStatus>;
+  saveXhsApiKey(kind: 'llm' | 'image', value: string): Promise<XhsApiStatus>;
+  deleteXhsApiKey(kind: 'llm' | 'image'): Promise<XhsApiStatus>;
+  /** 一次性把公众号现有的内容 / 图片接口配置（含 key）复制过来；之后两边各改各的。 */
+  importXhsApiFromWeWrite(): Promise<{ status: XhsApiStatus; copied: string[] }>;
+  /** 用小红书的内容模型配置发一次最小请求。 */
+  testXhsLlm(): Promise<{ model: string }>;
   getRedfoxKeyStatus(): Promise<LlmKeyStatus>;
   saveRedfoxKey(value: string): Promise<LlmKeyStatus>;
   deleteRedfoxKey(): Promise<LlmKeyStatus>;

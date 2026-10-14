@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { AppState, LlmKeyStatus, Settings } from '../shared';
+import type { AppState, LlmKeyStatus, Settings, XhsApiSettings, XhsApiStatus } from '../shared';
 import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
 
 type Patch = Partial<Settings>;
@@ -10,7 +10,8 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'ai', label: 'AI 对话采集', icon: 'bot' },
   { id: 'files', label: '文件与屏幕', icon: 'folder' },
   { id: 'llm', label: 'AI 服务', icon: 'key' },
-  { id: 'data', label: '数据服务', icon: 'chart' }
+  { id: 'xhs', label: '小红书模型', icon: 'note' },
+  { id: 'data', label: '小红书数据', icon: 'chart' }
 ];
 
 function statusBadge(status: { state: string; error: string }) {
@@ -25,6 +26,73 @@ function Row({ title, description, control, children, badge }: { title: string; 
     {control && <div className="set-row-control">{control}</div>}
     {children && <div className="set-row-wide">{children}</div>}
   </div>;
+}
+
+/** 失焦或回车时才保存的文本框：地址、模型名这类改一半不该立即写盘。 */
+function CommitInput({ value, placeholder, onCommit }: { value: string; placeholder?: string; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => { setDraft(value); }, [value]);
+  const commit = () => { if (draft.trim() !== value) onCommit(draft.trim()); };
+  return <input className="input" value={draft} placeholder={placeholder} onChange={event => setDraft(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') commit(); }} />;
+}
+
+function KeyEditor({ status, placeholder, onSave, onDelete }: { status: LlmKeyStatus; placeholder: string; onSave: (value: string) => Promise<void>; onDelete: () => Promise<void> }) {
+  const [value, setValue] = useState('');
+  const save = async () => { await onSave(value.trim()); setValue(''); };
+  return <div className="key-row">
+    <input className="input" type="password" autoComplete="off" placeholder={status.configured ? '输入新 Key 以替换' : placeholder} value={value} onChange={event => setValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && value.trim()) void save(); }} />
+    <button className="button button-primary" disabled={!value.trim() || !status.encryptionAvailable} onClick={() => void save()}>保存</button>
+    {status.configured && <button className="button button-quiet" onClick={() => void onDelete()}>删除</button>}
+  </div>;
+}
+
+const keyBadge = (status: LlmKeyStatus) => <span className={`badge ${status.configured ? 'badge-on' : 'badge-off'}`}>{status.configured ? `已保存 ${status.masked}` : '未保存'}</span>;
+
+/**
+ * 小红书自己的模型连接：内容模型 + 图片模型，和公众号的配置完全分开（各自的开关、地址、模型与 key）。
+ * 「从公众号复制」只是省得重填：复制一次，之后两边各改各的。
+ */
+function XhsApiCard({ notify }: { notify: (message: string) => void }) {
+  const [status, setStatus] = useState<XhsApiStatus | null>(null);
+  const [testing, setTesting] = useState(false);
+  useEffect(() => { void window.sydney.getXhsApiStatus().then(setStatus).catch(() => setStatus(null)); }, []);
+  const run = async (action: () => Promise<XhsApiStatus>, message?: string) => {
+    try { setStatus(await action()); if (message) notify(message); } catch (error) { notify(readableError(error)); }
+  };
+  const save = (patch: Partial<XhsApiSettings>) => run(() => window.sydney.saveXhsApiSettings(patch));
+  const importFromWeWrite = async () => {
+    if (!window.confirm('把公众号现在的内容模型、图片模型配置（含 key）复制给小红书？之后两边各自独立，改公众号不会影响小红书。')) return;
+    try { const result = await window.sydney.importXhsApiFromWeWrite(); setStatus(result.status); notify(`已复制：${result.copied.join('、')}`); }
+    catch (error) { notify(readableError(error)); }
+  };
+  const test = async () => {
+    setTesting(true);
+    try { const result = await window.sydney.testXhsLlm(); notify(`小红书内容模型连接正常（${result.model}）`); }
+    catch (error) { notify(`连接失败：${readableError(error)}`); }
+    finally { setTesting(false); }
+  };
+  if (!status) return null;
+  const { settings } = status;
+  return <section id="set-xhs" className="set-card">
+    <header><Icon name="note" size={18} /><div><h2>小红书 · 模型连接</h2><p>小红书自己的内容模型与图片模型，和公众号的配置分开：开关、地址、模型、key 各管各的。</p></div></header>
+    <Row title="从公众号复制一份" description="还没单独配置时，可以把公众号现有的接口配置复制过来，省得重填；复制后两边互不影响。"
+      control={<button className="button button-secondary" onClick={() => void importFromWeWrite()}>从公众号复制</button>} />
+    <Row title="允许小红书调用内容模型" description="关闭后小红书里所有 AI 写作、标题、检测、定位、诊断按钮都不可用。只在你点按钮时发送对应内容。"
+      control={<Switch label="允许小红书调用内容模型" checked={settings.llmEnabled} onChange={value => void save({ llmEnabled: value })} />} />
+    <Row title="内容模型地址与模型名" description="OpenAI 兼容的 chat/completions 接口。">
+      <div className="key-row"><CommitInput value={settings.llmBaseUrl} placeholder="https://api.deepseek.com/v1" onCommit={value => void save({ llmBaseUrl: value })} /><CommitInput value={settings.llmModel} placeholder="deepseek-chat" onCommit={value => void save({ llmModel: value })} /></div>
+    </Row>
+    <Row title="内容模型 API Key" badge={keyBadge(status.llmKey)} description="使用系统安全存储加密，不写入项目、数据库或知识库。">
+      <KeyEditor status={status.llmKey} placeholder="sk-..." onSave={value => run(() => window.sydney.saveXhsApiKey('llm', value), '小红书内容模型 Key 已保存')} onDelete={() => run(() => window.sydney.deleteXhsApiKey('llm'), '已删除')} />
+      <button className="button button-quiet" disabled={testing} onClick={() => void test()}>{testing ? '测试中…' : '测试连接'}</button>
+    </Row>
+    <Row title="图片模型地址与模型名" description="OpenAI 兼容的 images/generations 接口，用于封面与信息图（按张计费）。">
+      <div className="key-row"><CommitInput value={settings.imageBaseUrl} placeholder="https://api.openai.com/v1" onCommit={value => void save({ imageBaseUrl: value })} /><CommitInput value={settings.imageModel} placeholder="gpt-image-2" onCommit={value => void save({ imageModel: value })} /></div>
+    </Row>
+    <Row title="图片模型 API Key" badge={keyBadge(status.imageKey)} description="使用系统安全存储加密。">
+      <KeyEditor status={status.imageKey} placeholder="sk-..." onSave={value => run(() => window.sydney.saveXhsApiKey('image', value), '小红书图片模型 Key 已保存')} onDelete={() => run(() => window.sydney.deleteXhsApiKey('image'), '已删除')} />
+    </Row>
+  </section>;
 }
 
 function NumberInput({ value, min, onCommit, suffix }: { value: number; min: number; onCommit: (value: number) => void; suffix: string }) {
@@ -129,8 +197,10 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
         </Row>
       </section>
 
+      <XhsApiCard notify={notify} />
+
       <section id="set-data" className="set-card">
-        <header><Icon name="chart" size={18} /><div><h2>数据服务（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
+        <header><Icon name="chart" size={18} /><div><h2>小红书 · 热点数据（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
         <Row title="红狐 API Key" badge={<span className={`badge ${redfoxStatus.configured ? 'badge-on' : 'badge-off'}`}>{redfoxFromEnv ? '使用环境变量' : redfoxStatus.configured ? `已保存 ${redfoxStatus.masked}` : '未保存'}</span>}
           description={redfoxStatus.encryptionAvailable ? '使用系统安全存储加密，不写入项目、数据库或知识库；未保存时回退到环境变量 REDFOX_API_KEY。获取地址：redfox.hk/settings/api-keys' : '当前系统安全存储不可用，无法保存密钥。'}>
           <div className="key-row">

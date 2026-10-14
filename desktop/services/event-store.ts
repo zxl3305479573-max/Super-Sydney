@@ -48,15 +48,20 @@ export function insertEvent(db: DatabaseSync, event: Partial<WorkEvent>): number
 
 export type MetadataEventInput = {
   kind: 'file_change' | 'adapter'; note: string; summary: string; source: 'file' | 'adapter';
-  relatedPath?: string; adapter?: string; changeType?: string; appName?: string; windowTitle?: string; durationSeconds?: number;
+  relatedPath?: string; adapter?: string; changeType?: string; appName?: string; windowTitle?: string; durationSeconds?: number; createdAt?: string;
 };
 
 export function insertMetadataEvent(db: DatabaseSync, input: MetadataEventInput): number {
   const result = db.prepare(`INSERT INTO events
     (created_at, app_name, window_title, kind, note, duration_seconds, status, value_score, summary, category, source, related_path, adapter, change_type)
     VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?, '提效方案', ?, ?, ?, ?)`)
-    .run(new Date().toISOString(), input.appName || '', input.windowTitle || '', input.kind, input.note, input.durationSeconds || 0, input.summary, input.source, input.relatedPath || '', input.adapter || '', input.changeType || '');
+    .run(input.createdAt || new Date().toISOString(), input.appName || '', input.windowTitle || '', input.kind, input.note, input.durationSeconds || 0, input.summary, input.source, input.relatedPath || '', input.adapter || '', input.changeType || '');
   return Number(result.lastInsertRowid);
+}
+
+/** 延长仍待确认的活动片段；已确认、已拒绝或已删除时返回 false，由调用方另起片段。 */
+export function extendPendingActivity(db: DatabaseSync, id: number, durationSeconds: number): boolean {
+  return Number(db.prepare("UPDATE events SET duration_seconds=? WHERE id=? AND status='pending'").run(durationSeconds, id).changes) > 0;
 }
 
 const EVENT_STATUSES: EventStatus[] = ['pending', 'approved', 'rejected'];

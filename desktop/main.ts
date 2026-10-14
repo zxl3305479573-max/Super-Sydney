@@ -72,6 +72,8 @@ function createContext(): AppContext {
     settings: new SettingsFile(path.join(dataDir, 'settings.json'), defaultVaultPath, projectPath),
     secretStore,
     redfoxKeyStore,
+    xhsLlmKeyStore: new SecretStore(dataDir, safeStorage, 'xhs-llm-api-key.bin'),
+    xhsImageKeyStore: new SecretStore(dataDir, safeStorage, 'xhs-image-api-key.bin'),
     llmApiKey,
     redfoxApiKey: () => resolveLlmApiKey(redfoxKeyStore.read(), process.env.REDFOX_API_KEY || ''),
     llmConfig: () => ({

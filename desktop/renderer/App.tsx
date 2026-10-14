@@ -15,7 +15,7 @@ type View = 'today' | 'review' | 'evolve' | 'wewrite' | 'video' | 'xiaohongshu' 
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
-  settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: true, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
+  settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: false, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
   stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' }, claudeCapture: { state: 'disabled', error: '' }, screenCapture: { state: 'disabled', saved: 0, error: '' }, captureStatus: { state: 'idle', appName: '', windowTitle: '', sampledAt: '', message: '尚未采样' }
 };
 

@@ -43,7 +43,7 @@ export class SiteView {
       currentUrl: contents?.getURL() ?? '',
       title: contents?.getTitle() ?? '',
       loading: Boolean(active && this.live.get(active.id)?.loading),
-      canGoBack: Boolean(contents?.canGoBack()),
+      canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
       visible: Boolean(active && this.attachedId === active.id),
       error: (active && this.live.get(active.id)?.error) || ''
     };
@@ -117,7 +117,7 @@ export class SiteView {
     const running = active ? this.live.get(active.id) : undefined;
     if (contents && running) {
       if (action === 'back') {
-        if (contents.canGoBack()) contents.goBack();
+        if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
       } else if (action === 'reload') {
         contents.reload();
       } else if (active) {

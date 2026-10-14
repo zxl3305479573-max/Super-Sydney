@@ -17,6 +17,9 @@ export interface AppContext {
   secretStore: SecretStore;
   /** 红狐（小红书热点数据）API Key，与内容 API 的密钥分文件存。 */
   redfoxKeyStore: SecretStore;
+  /** 小红书自己的内容模型与图片模型 key，与公众号分开存。 */
+  xhsLlmKeyStore: SecretStore;
+  xhsImageKeyStore: SecretStore;
   /** 密钥优先取系统安全存储，其次环境变量。 */
   llmApiKey(): string;
   llmConfig(): LlmConfig;
