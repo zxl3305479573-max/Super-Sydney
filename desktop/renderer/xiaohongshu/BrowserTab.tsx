@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsHotNote, XhsViewState } from '../../shared';
+import { XHS_PUBLISH_URL } from '../../services/xhs-catalog';
 import { Icon, readableError } from '../ui';
 import type { AuditPrefill } from './AuditTab';
 import { useBusy, type XhsContext } from './common';
@@ -9,8 +10,10 @@ import { useBusy, type XhsContext } from './common';
  * 搜索结果 / 发现页 → 交给「热点选题」；博主主页 → 交给「账号诊断」。
  * 只读页面上已经显示出来的内容：不自动滚动、不翻页、不调接口；遇到验证或登录墙会停下来交给你。
  */
-export function BrowserTab({ ctx, overlay, onNotes, onProfile }: {
+export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile }: {
   ctx: XhsContext; overlay: boolean;
+  /** 从「发布包」点过来时变化一次：打开窗口后直接跳到发布页。 */
+  publishNonce?: number;
   onNotes: (notes: XhsHotNote[], url: string) => void;
   onProfile: (prefill: AuditPrefill) => void;
 }) {
@@ -44,7 +47,14 @@ export function BrowserTab({ ctx, overlay, onNotes, onProfile }: {
     };
   }, [overlay, readStage, notify]);
 
-  const navigate = (kind: 'home' | 'search') => run('nav', async () => setState(await window.sydney.navigateXhsView({ kind, value: keyword })));
+  // 放在挂载视图的 effect 之后：IPC 按顺序处理，视图先挂上再跳转。
+  useEffect(() => {
+    if (!publishNonce) return;
+    void window.sydney.navigateXhsView({ kind: 'publish' }).then(setState).catch(error => notify(readableError(error)));
+  }, [publishNonce, notify]);
+
+  const onCreator = Boolean(state?.url && /^https:\/\/creator\.xiaohongshu\.com\//.test(state.url));
+  const navigate = (kind: 'home' | 'search' | 'publish') => run('nav', async () => setState(await window.sydney.navigateXhsView({ kind, value: keyword })));
   const go = (action: 'back' | 'reload') => run('nav', async () => setState(await window.sydney.xhsViewGo(action)));
   const read = () => run('read', async () => {
     const page = await window.sydney.readXhsView();
@@ -67,6 +77,8 @@ export function BrowserTab({ ctx, overlay, onNotes, onProfile }: {
       <button className="icon-button" title="后退" disabled={locked || !state?.canGoBack} onClick={() => void go('back')}><Icon name="undo" /></button>
       <button className="icon-button" title="刷新" disabled={locked} onClick={() => void go('reload')}><Icon name="refresh" /></button>
       <button className="button button-quiet" disabled={locked} onClick={() => void navigate('home')}>发现页</button>
+      <button className="button button-quiet" disabled={locked} title="打开网页版创作者中心的图文发布页" onClick={() => void navigate('publish')}>发布页</button>
+      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL).catch(error => notify(readableError(error)))}><Icon name="window" size={14} />在浏览器打开发布页</button>
       <form className="xhs-search" onSubmit={event => { event.preventDefault(); void navigate('search'); }}>
         <input className="input" value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="在小红书里搜索（需要你在窗口里登录）" />
         <button className="button button-secondary" type="submit" disabled={locked || !keyword.trim()}><Icon name="search" />搜索</button>
@@ -74,6 +86,7 @@ export function BrowserTab({ ctx, overlay, onNotes, onProfile }: {
       <button className="button button-primary" disabled={locked || !state?.url} onClick={() => void read()}>{busy === 'read' ? '读取中…' : '读取当前页面'}</button>
     </div>
     <p className="xhs-hint">{state?.loading ? '页面加载中…' : state?.title || '小红书'} {state?.url && <code className="path">{state.url.slice(0, 90)}</code>}</p>
+    {onCreator && <p className="xhs-hint">创作者中心：把发布包目录里的 01、02… 按顺序拖进上传区（或点上传区选文件），标题和正文在「笔记创作 → 发布包」里一键复制。填好后由你自己确认并点发布，应用不会代填或代点。</p>}
     {state?.error && <p className="xhs-hint xhs-hint-warn"><Icon name="alert" size={14} />{state.error}</p>}
     <div ref={stageRef} className="site-stage xhs-stage">
       <p className="site-stage-hint">{overlay ? '有弹窗打开时，小红书窗口先收起来。' : '正在打开小红书…'}</p>

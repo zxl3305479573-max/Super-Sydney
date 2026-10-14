@@ -15,10 +15,10 @@ import { renderCardDocument, XHS_CARD_HEIGHT, XHS_CARD_WIDTH } from '../services
 import { exportXhsPackage } from '../services/xhs-export';
 import { hotspotCacheKey, isHttpLink, normalizeHotspotQuery, searchRedfox, type FetchLike } from '../services/xhs-hotspot';
 import {
-  chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, readCardPlan, readCheckReport, readImages, readPositioning,
+  chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, addCandidates, readCandidates, readCardPlan, readCheckReport, readImages, readPositioning,
   readPositioningChat, routeByRules, stampBasis
 } from '../services/xhs-pipeline';
-import { cropToThreeFour, renderHtmlPages, searchBing } from '../services/xhs-render';
+import { fitToThreeFour, renderHtmlPages, searchBing } from '../services/xhs-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
 import {
   createXhsNote, createXhsReport, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
@@ -205,11 +205,11 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
 
   /* ── 视觉 ───────────────────────────────────────────────────── */
 
-  /** 生成一张 3:4 图：接口出 2:3 竖图后居中裁成 3:4。 */
+  /** 生成一张 3:4 图：接口出 2:3 竖图后补边成 3:4（不裁切，内容不会被切掉）。 */
   const generateThreeFour = async (target: string, prompt: string, signal: AbortSignal) => {
     const config = xhsImageConfig(readXhsApiSettings(ctx.dataDir), ctx.xhsImageKeyStore.read());
     fs.writeFileSync(target, await requestGeneratedImage(config, prompt, '1024x1536', signal));
-    return cropToThreeFour(target);
+    return fitToThreeFour(target);
   };
   const withImageJob = async <T>(id: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
     const signal = imageJobs.begin(id);
@@ -226,7 +226,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const target = path.join(assetDir(id), `cover-${Date.now()}.png`);
     await withImageJob(id, signal => generateThreeFour(target, prompt, signal));
     const next = { ...note, coverPath: target };
-    return save(id, { coverPath: target, basisJson: stampBasis(next, 'cover') });
+    // 旧封面不丢：它和新封面都留在候选图库里，可以随时换回去。
+    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: 'AI 封面' }]), basisJson: stampBasis(next, 'cover') });
   }));
   ipcMain.handle('xhs:cover:choose', async (_event, id: number) => {
     assertIdle(id, '选择封面');
@@ -239,10 +240,13 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const target = path.join(assetDir(id), `cover-local-${Date.now()}${path.extname(source).toLowerCase() || '.png'}`);
     fs.copyFileSync(source, target);
     const note = getXhsNote(db, id);
-    return save(id, { coverPath: target, basisJson: stampBasis({ ...note, coverPath: target }, 'cover') });
+    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: path.basename(source) }]), basisJson: stampBasis({ ...note, coverPath: target }, 'cover') });
   });
 
-  /** 卡片图放在图组最前面（紧跟封面），替换掉旧的卡片图；信息图与本地图保持原顺序。 */
+  /**
+   * 新生成的一批先替换图组里同来源的旧图（卡片图紧跟封面，信息图排在后面），省得每次手动挑；
+   * 被替换下来的旧图仍留在候选图库里，可以再挑回来。
+   */
   const replaceImages = (note: XhsNote, source: XhsImageItem['source'], fresh: XhsImageItem[]): string => {
     const others = readImages(note).filter(item => item.source !== source);
     return JSON.stringify(source === 'card' ? [...fresh, ...others] : [...others, ...fresh]);
@@ -258,7 +262,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     await renderHtmlPages(plan.pages.map((_, index) => renderCardDocument(plan, index, title)), XHS_CARD_WIDTH, XHS_CARD_HEIGHT, targets);
     const fresh = targets.map((file, index) => ({ path: file, source: 'card' as const, caption: plan.pages[index].heading }));
     const next = { ...note, imagesJson: replaceImages(note, 'card', fresh) };
-    return save(id, { imagesJson: next.imagesJson, basisJson: stampBasis(next, 'cards') });
+    return save(id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
   }));
 
   /** 逐张生成，中途失败时保留已经生成的那几张再报错，不白花钱。 */
@@ -284,8 +288,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     });
     if (!fresh.length) throw new Error(failure || '信息图生成失败');
     const next = { ...note, imagesJson: replaceImages(note, 'info', fresh) };
-    const saved = save(id, { imagesJson: next.imagesJson, basisJson: stampBasis(next, 'cards') });
-    if (failure) throw new Error(`已生成 ${fresh.length}/${indexes.length} 张后中断：${failure}。已生成的图片保留在图组里`);
+    const saved = save(id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
+    if (failure) throw new Error(`已生成 ${fresh.length}/${indexes.length} 张后中断：${failure}。已生成的图片保留在图组和候选图库里`);
     return saved;
   }));
   ipcMain.handle('xhs:images:cancel', (_event, id: number) => imageJobs.cancel(id));
@@ -301,20 +305,52 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
       fs.copyFileSync(source, target);
       return { path: target, source: 'local' as const, caption: path.basename(source) };
     });
-    return save(id, { imagesJson: JSON.stringify([...readImages(note), ...added]) });
+    return save(id, { imagesJson: JSON.stringify([...readImages(note), ...added]), candidatesJson: addCandidates(note, added) });
   });
   ipcMain.handle('xhs:images:arrange', (_event, id: number, paths: string[]) => {
     assertIdle(id, '调整图组');
     const note = getXhsNote(db, id);
-    const current = readImages(note);
-    const ordered = (Array.isArray(paths) ? paths : []).flatMap(file => current.filter(item => item.path === file).slice(0, 1));
-    return save(id, { imagesJson: JSON.stringify([...new Map(ordered.map(item => [item.path, item])).values()]) });
+    // 图组里的图只能来自当前图组或候选图库：界面传来的路径不在其中就忽略，不会把任意文件放进发布包。
+    const pool = new Map<string, XhsImageItem>();
+    for (const item of readCandidates(note)) pool.set(item.path, { path: item.path, source: item.source === 'cover' ? 'local' : item.source, caption: item.caption });
+    for (const item of readImages(note)) pool.set(item.path, item);
+    const ordered = (Array.isArray(paths) ? paths : []).flatMap(file => pool.has(String(file)) ? [pool.get(String(file)) as XhsImageItem] : []);
+    const images = [...new Map(ordered.map(item => [item.path, item])).values()].filter(item => item.path !== note.coverPath);
+    return save(id, { imagesJson: JSON.stringify(images) });
+  });
+  ipcMain.handle('xhs:candidates:use-cover', (_event, id: number, file: string) => {
+    assertIdle(id, '更换封面');
+    const note = getXhsNote(db, id);
+    const picked = readCandidates(note).find(item => item.path === String(file));
+    if (!picked) throw new Error('这张图不在候选图库里');
+    if (!fs.existsSync(picked.path)) throw new Error('图片文件已经不在了，请重新生成');
+    // 封面不再同时出现在图组里，避免发布包里第 1 张和后面某张重复。
+    const images = readImages(note).filter(item => item.path !== picked.path);
+    const next = { ...note, coverPath: picked.path, imagesJson: JSON.stringify(images) };
+    return save(id, { coverPath: picked.path, imagesJson: next.imagesJson, basisJson: stampBasis(next, 'cover') });
+  });
+  ipcMain.handle('xhs:candidates:remove', (_event, id: number, file: string) => {
+    assertIdle(id, '整理候选图');
+    const note = getXhsNote(db, id);
+    const target = String(file);
+    if (target === note.coverPath) throw new Error('这张图正用作封面，先换一张封面再删除');
+    if (readImages(note).some(item => item.path === target)) throw new Error('这张图在发布图组里，先移出图组再删除');
+    const candidates = readCandidates(note);
+    if (!candidates.some(item => item.path === target)) throw new Error('这张图不在候选图库里');
+    // 只删应用目录里的副本：本地图片在添加时就拷进来了，原图不受影响。
+    const owned = path.resolve(target).startsWith(path.resolve(assetDir(id)) + path.sep);
+    if (owned) fs.rmSync(target, { force: true });
+    return save(id, { candidatesJson: JSON.stringify(candidates.filter(item => item.path !== target)) });
   });
   ipcMain.handle('xhs:assets', (_event, id: number): XhsNoteAssets => {
     const note = getXhsNote(db, id);
+    const inGroup = new Set(readImages(note).map(item => item.path));
     return {
       cover: note.coverPath ? { path: note.coverPath, caption: '封面', thumbnail: imageThumbnail(note.coverPath, 420) } : null,
-      images: readImages(note).map(item => ({ path: item.path, caption: item.caption, source: item.source, thumbnail: imageThumbnail(item.path, 260) }))
+      images: readImages(note).map(item => ({ path: item.path, caption: item.caption, source: item.source, thumbnail: imageThumbnail(item.path, 260) })),
+      candidates: readCandidates(note).filter(item => fs.existsSync(item.path)).map(item => ({
+        ...item, thumbnail: imageThumbnail(item.path, 200), inGroup: inGroup.has(item.path), isCover: item.path === note.coverPath
+      }))
     };
   });
 

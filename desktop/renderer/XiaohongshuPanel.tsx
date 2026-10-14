@@ -45,11 +45,13 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   useEffect(() => { setNameDraft(account?.name ?? ''); }, [account?.name]);
 
   const goTo = useCallback((next: XhsTab) => setTab(next), []);
+  const [publishNonce, setPublishNonce] = useState(0);
+  const openPublish = useCallback(() => { setPublishNonce(Date.now()); setTab('browser'); }, []);
   const openNote = useCallback((id: number, step?: XhsStepKey) => { setNoteTarget({ id, step, nonce: Date.now() }); setTab('notes'); }, []);
 
   if (!account) return <section className="xhs-panel"><p className="empty-state"><strong>正在加载小红书模块…</strong></p></section>;
 
-  const ctx: XhsContext = { account, notes, notify, goTo, openNote, refresh };
+  const ctx: XhsContext = { account, notes, notify, goTo, openPublish, openNote, refresh };
   const saveAccount = async (patch: Parameters<typeof window.sydney.updateXhsAccount>[1]) => {
     try { setAccount(await window.sydney.updateXhsAccount(account.id, patch)); }
     catch (error) { notify(readableError(error)); }
@@ -79,7 +81,7 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
     {tab === 'notes' && <NotesTab ctx={ctx} target={noteTarget} />}
     {tab === 'audit' && <AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} />}
     {tab === 'analytics' && <AnalyticsTab ctx={ctx} />}
-    {tab === 'browser' && <BrowserTab ctx={ctx} overlay={overlay}
+    {tab === 'browser' && <BrowserTab ctx={ctx} overlay={overlay} publishNonce={publishNonce}
       onNotes={(read, url) => { setViewNotes({ notes: read, url }); setTab('hotspot'); }}
       onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} />}
   </section>;

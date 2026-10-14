@@ -362,7 +362,7 @@ export function xhsCoverPrompt(note: XhsNote, positioning: XhsPositioning | null
   const title = note.title.trim() || note.topic.trim();
   const excerpt = bodyExcerpt(note.body);
   return [
-    '小红书笔记封面图，3:4 竖构图。',
+    '小红书笔记封面图，竖构图。',
     `笔记选题：${note.topic.trim() || title}（${xhsNoteTypeLabel(note.noteType)}）。`,
     excerpt ? `画面要贴住这篇笔记的正文内容：${excerpt}` : '',
     `封面主标题（大字、醒目、放在上半部分，要写对）：「${title}」。可以把标题拆成一行主标题 + 一行小字副标题，层级分明。`,

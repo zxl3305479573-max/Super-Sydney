@@ -103,6 +103,8 @@ export function NotesTab({ ctx, target }: { ctx: XhsContext; target: { id: numbe
   const cancel = () => void window.sydney.cancelXhsImages(note?.id ?? 0).then(stopped => notify(stopped ? '已取消生成' : '没有进行中的生图'));
   const addLocal = () => run('add-local', async () => { if (note) { await persist(); const saved = await window.sydney.addXhsLocalImages(note.id); if (saved) apply(saved); } });
   const arrange = (paths: string[]) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.arrangeXhsImages(note.id, paths)); } });
+  const pickCover = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.useXhsCandidateAsCover(note.id, file)); notify('已换成这张封面'); } });
+  const removeCandidate = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.removeXhsCandidate(note.id, file)); } });
   const exportPackage = () => run('export', async () => { if (note) { await persist(); const saved = await window.sydney.exportXhsNote(note.id); apply(saved); notify(`发布包已导出：${saved.exportPath}`); } });
   const openPackage = () => run('open', async () => { if (note) { const error = await window.sydney.openXhsPackage(note.id); if (error) notify(error); } });
   const copy = (kind: 'title' | 'body') => run('copy', async () => {
@@ -166,9 +168,9 @@ export function NotesTab({ ctx, target }: { ctx: XhsContext; target: { id: numbe
           {step === 'title' && <TitleStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'title')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('titles')} />}
           {step === 'visual' && <VisualStep note={note} locked={locked} busy={busy} assets={assets} coverStale={xhsStale(note, 'cover')} cardsStale={xhsStale(note, 'cards')}
             onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
-            onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onConfirm={confirmBasis} />}
+            onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
-          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} />}
+          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}
 
           <footer className="flow-panel-foot">
             {index > 0 && <button className="button button-quiet" disabled={locked} onClick={() => setStep(XHS_STEPS[index - 1].key)}>← 上一步</button>}

@@ -364,8 +364,10 @@ export type XhsNote = {
   /** 图文卡片分页内容（XhsCardPlan 的 JSON）。 */
   cardsJson: string;
   coverPath: string;
-  /** 封面之后的图组（XhsImageItem[] 的 JSON），顺序就是发布顺序。 */
+  /** 封面之后的图组（XhsImageItem[] 的 JSON），顺序就是发布顺序；导出发布包只用这一组。 */
   imagesJson: string;
+  /** 候选图库（XhsCandidate[] 的 JSON）：每次生成 / 添加的图都按批次留在这里，从中挑选封面与发布图组。 */
+  candidatesJson: string;
   /** 各产物基于的内容指纹（XhsBasis 的 JSON），用来判断「上游改过、这里需复核」。 */
   basisJson: string;
   exportPath: string;
@@ -397,7 +399,10 @@ export type XhsCheckReport = { items: XhsCheckItem[]; checkedAt: string; modelEr
 export type XhsCardPage = { heading: string; points: string[]; emphasis: string };
 export type XhsCardPlan = { style: string; pages: XhsCardPage[] };
 export type XhsImageItem = { path: string; source: 'card' | 'info' | 'local'; caption: string };
-export type XhsNoteAssets = { cover: ContentAssetView | null; images: Array<ContentAssetView & { source: XhsImageItem['source'] }> };
+/** 候选图库里的一张图。batch 是同一次生成的批次号，界面按它分组；cover 是生成 / 选过的封面。 */
+export type XhsCandidate = { path: string; source: XhsImageItem['source'] | 'cover'; caption: string; batch: string; createdAt: string };
+export type XhsCandidateView = ContentAssetView & Omit<XhsCandidate, 'path' | 'caption'> & { inGroup: boolean; isCover: boolean };
+export type XhsNoteAssets = { cover: ContentAssetView | null; images: Array<ContentAssetView & { source: XhsImageItem['source'] }>; candidates: XhsCandidateView[] };
 
 /** 热点数据里的一条笔记。互动数是数据源给的原值，展示时再模糊化，不反推精确值。 */
 export type XhsHotNote = {
@@ -675,6 +680,10 @@ export interface SydneyApi {
   addXhsLocalImages(id: number): Promise<XhsNote | null>;
   /** 图组排序 / 删除：只接受当前图组里已有的路径。 */
   arrangeXhsImages(id: number, paths: string[]): Promise<XhsNote>;
+  /** 把候选图库里的某张图设为封面。 */
+  useXhsCandidateAsCover(id: number, path: string): Promise<XhsNote>;
+  /** 从候选图库里删掉一张没在用的图（连同应用目录里的文件）。 */
+  removeXhsCandidate(id: number, path: string): Promise<XhsNote>;
   getXhsNoteAssets(id: number): Promise<XhsNoteAssets>;
   exportXhsNote(id: number): Promise<XhsNote>;
   openXhsPackage(id: number): Promise<string>;
@@ -693,7 +702,8 @@ export interface SydneyApi {
   openXhsView(): Promise<XhsViewState>;
   closeXhsView(): Promise<void>;
   setXhsViewBounds(bounds: SiteViewBounds | null): Promise<void>;
-  navigateXhsView(target: { kind: 'home' | 'search' | 'url'; value?: string }): Promise<XhsViewState>;
+  /** publish 打开网页版创作者中心的发布页（不代填、不代发，只是打开）。 */
+  navigateXhsView(target: { kind: 'home' | 'search' | 'publish' | 'url'; value?: string }): Promise<XhsViewState>;
   xhsViewGo(action: 'back' | 'reload'): Promise<XhsViewState>;
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
   readXhsView(): Promise<XhsPageRead>;

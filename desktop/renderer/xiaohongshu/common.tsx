@@ -10,6 +10,8 @@ export type XhsContext = {
   notes: XhsNote[];
   notify: (message: string) => void;
   goTo: (tab: XhsTab) => void;
+  /** 切到「小红书窗口」并打开创作者中心的发布页。 */
+  openPublish: () => void;
   openNote: (id: number, step?: XhsStepKey) => void;
   refresh: () => Promise<void>;
 };

@@ -17,7 +17,7 @@ function note(patch: Partial<XhsNote>): XhsNote {
   return {
     id: 3, accountId: 1, topic: 't', noteType: 'tutorial', material: '', title: '冬天护膝/怎么选', body: '正文第一行\n第二行', tagsJson: JSON.stringify(['护膝', '冬季']), sourceJson: '', status: 'visual',
     writerJson: '', titleCandidatesJson: '', checksJson: JSON.stringify({ items: [{ id: 'title_length', label: '标题不超过 20 字', ok: true, level: 'error', detail: '7 字', source: 'local' }], checkedAt: '', modelError: '' }),
-    cardsJson: '', coverPath: '', imagesJson: '', basisJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch
+    cardsJson: '', coverPath: '', imagesJson: '', candidatesJson: '', basisJson: '', exportPath: '', createdAt: '', updatedAt: '', ...patch
   };
 }
 

@@ -1,5 +1,5 @@
 import type {
-  XhsAccount, XhsBasis, XhsCardPlan, XhsCheckItem, XhsCheckReport, XhsFunnelLayer, XhsImageItem, XhsNote, XhsNoteStatus,
+  XhsAccount, XhsBasis, XhsCardPlan, XhsCheckItem, XhsCheckReport, XhsCandidate, XhsFunnelLayer, XhsImageItem, XhsNote, XhsNoteStatus,
   XhsPositioning, XhsPositioningTurn, XhsRouterAdvice, XhsStepKey, XhsTitleWorkshop, XhsWriterMeta
 } from '../shared.ts';
 import {
@@ -61,6 +61,36 @@ export function readImages(note: Pick<XhsNote, 'imagesJson'>): XhsImageItem[] {
     return path ? [{ path, source, caption: String(record.caption ?? '') }] : [];
   });
 }
+/**
+ * 候选图库：存下来的候选 + 当前封面与图组（老笔记没有候选图库，正在用的图也要出现在库里），按路径去重。
+ * 新的批次在前；同一批次内保持生成顺序。
+ */
+export function readCandidates(note: Pick<XhsNote, 'imagesJson' | 'coverPath'> & { candidatesJson?: string }): XhsCandidate[] {
+  const value = parse<unknown>(note.candidatesJson ?? '', []);
+  const stored = (Array.isArray(value) ? value : []).flatMap(item => {
+    if (!item || typeof item !== 'object') return [];
+    const record = item as Record<string, unknown>;
+    const path = String(record.path ?? '').trim();
+    const source = ['card', 'info', 'local', 'cover'].includes(String(record.source)) ? record.source as XhsCandidate['source'] : 'local';
+    return path ? [{ path, source, caption: String(record.caption ?? ''), batch: String(record.batch ?? '') || path, createdAt: String(record.createdAt ?? '') }] : [];
+  });
+  const legacy: XhsCandidate[] = [
+    ...(note.coverPath.trim() ? [{ path: note.coverPath, source: 'cover' as const, caption: '封面', batch: 'in-use-cover', createdAt: '' }] : []),
+    ...readImages(note).map(item => ({ ...item, batch: `in-use-${item.source}`, createdAt: '' }))
+  ];
+  const seen = new Set<string>();
+  return [...stored, ...legacy].filter(item => !seen.has(item.path) && Boolean(seen.add(item.path)));
+}
+
+/** 把一批新图放到候选图库最前面。 */
+export function addCandidates(note: Pick<XhsNote, 'imagesJson' | 'coverPath'> & { candidatesJson?: string }, fresh: Array<Omit<XhsCandidate, 'batch' | 'createdAt'>>): string {
+  const createdAt = new Date().toISOString();
+  const batch = `${fresh[0]?.source ?? 'local'}-${Date.now()}`;
+  const added = fresh.map(item => ({ ...item, batch, createdAt }));
+  const paths = new Set(added.map(item => item.path));
+  return JSON.stringify([...added, ...readCandidates(note).filter(item => !paths.has(item.path))]);
+}
+
 export function readWriterMeta(note: Pick<XhsNote, 'writerJson'>): XhsWriterMeta | null {
   const value = parse<Partial<XhsWriterMeta> | null>(note.writerJson, null);
   if (!value || typeof value !== 'object') return null;

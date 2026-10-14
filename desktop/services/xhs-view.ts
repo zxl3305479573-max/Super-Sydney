@@ -2,6 +2,7 @@ import { shell, WebContentsView, type BrowserWindow } from 'electron';
 import type { AppContext } from '../app-context';
 import type { SiteViewBounds, XhsPageRead, XhsViewState } from '../shared';
 import { clampSiteBounds } from './site-config';
+import { XHS_PUBLISH_URL } from './xhs-catalog';
 import { isXhsHost, normalizePageRead, XHS_PAGE_EXTRACT_SCRIPT, type RawPageExtract } from './xhs-page-parse';
 
 const XHS_PARTITION = 'persist:sydney-xhs';
@@ -67,6 +68,8 @@ export class XhsView {
       const keyword = String(target.value ?? '').trim();
       if (!keyword) throw new Error('请输入要搜索的关键词');
       url = `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(keyword)}&source=web_search_result_notes`;
+    } else if (target.kind === 'publish') {
+      url = XHS_PUBLISH_URL;
     } else if (target.kind === 'url') {
       url = String(target.value ?? '').trim();
       if (!isXhsHost(url)) throw new Error('只能在这个窗口里打开小红书的页面');

@@ -11,7 +11,7 @@ const config: XhsApiConfig = { apiKey: 'k', baseUrl: 'https://llm.test/v1', mode
 function note(patch: Partial<XhsNote> = {}): XhsNote {
   return {
     id: 1, accountId: 1, topic: '冬天护膝怎么选', noteType: 'tutorial', material: '', title: '', body: '', tagsJson: '', sourceJson: '', status: 'idea',
-    writerJson: '', titleCandidatesJson: '', checksJson: '', cardsJson: '', coverPath: '', imagesJson: '', basisJson: '', exportPath: '',
+    writerJson: '', titleCandidatesJson: '', checksJson: '', cardsJson: '', coverPath: '', imagesJson: '', candidatesJson: '', basisJson: '', exportPath: '',
     createdAt: '', updatedAt: '', ...patch
   };
 }
@@ -156,7 +156,8 @@ test('与公众号隔离：系统提示只有小红书定位，不带公众号�
 test('封面提示词按这篇笔记的选题与正文来画，读者来自定位档案', () => {
   const body = '租房党的收纳难题 🙂 #收纳\n第一步先清空桌面，把东西按使用频率分三类。';
   const cover = xhsCoverPrompt(note({ topic: '小户型收纳', title: '租房收纳 3 步', body }), { statement: '给刚租房的年轻人讲收纳' } as never, '桌面收纳盒');
-  assert.match(cover, /3:4/);
+  // 画面会补边成 3:4 而不是裁切；提示词里要求内容完整、离边留白，避免文字被画面边缘截断。
+  assert.match(cover, /完整地放在画面内/);
   assert.match(cover, /笔记选题：小户型收纳/);
   assert.match(cover, /正文内容：租房党的收纳难题 第一步先清空桌面/, '摘要去掉 emoji 和话题标签');
   assert.match(cover, /「租房收纳 3 步」/);

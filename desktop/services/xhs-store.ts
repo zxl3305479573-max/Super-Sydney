@@ -60,7 +60,8 @@ export function migrateXhsTables(db: DatabaseSync): void {
     writer_json: "TEXT NOT NULL DEFAULT ''",
     cards_json: "TEXT NOT NULL DEFAULT ''",
     cover_path: "TEXT NOT NULL DEFAULT ''",
-    basis_json: "TEXT NOT NULL DEFAULT ''"
+    basis_json: "TEXT NOT NULL DEFAULT ''",
+    candidates_json: "TEXT NOT NULL DEFAULT ''"
   });
   // 多账号是待定问题；先保证至少有一个账号，笔记总有归属。
   const count = db.prepare('SELECT COUNT(*) AS n FROM xhs_accounts').get() as { n: number };
@@ -117,7 +118,7 @@ export function xhsNoteFromRow(row: Record<string, unknown>): XhsNote {
     title: text('title'), body: text('body'), tagsJson: text('tags_json'), sourceJson: text('source_json'),
     status: statusSet.has(status) ? status : 'idea',
     writerJson: text('writer_json'), titleCandidatesJson: text('title_candidates_json'), checksJson: text('checks_json'),
-    cardsJson: text('cards_json'), coverPath: text('cover_path'), imagesJson: text('images_json'), basisJson: text('basis_json'),
+    cardsJson: text('cards_json'), coverPath: text('cover_path'), imagesJson: text('images_json'), candidatesJson: text('candidates_json'), basisJson: text('basis_json'),
     exportPath: text('export_path'), createdAt: text('created_at'), updatedAt: text('updated_at')
   };
 }
@@ -150,7 +151,7 @@ export function createXhsNote(db: DatabaseSync, accountId: number, topic: unknow
 const NOTE_COLUMNS: Record<string, string> = {
   topic: 'topic', noteType: 'note_type', material: 'material', title: 'title', body: 'body', tagsJson: 'tags_json', status: 'status',
   writerJson: 'writer_json', titleCandidatesJson: 'title_candidates_json', checksJson: 'checks_json', cardsJson: 'cards_json',
-  coverPath: 'cover_path', imagesJson: 'images_json', basisJson: 'basis_json', exportPath: 'export_path'
+  coverPath: 'cover_path', imagesJson: 'images_json', candidatesJson: 'candidates_json', basisJson: 'basis_json', exportPath: 'export_path'
 };
 
 /** 只写白名单字段；未知字段直接忽略，不会拼进 SQL。状态与笔记类型只接受已知取值。 */

@@ -1,10 +1,11 @@
 import fs from 'node:fs';
 import { BrowserWindow, nativeImage } from 'electron';
 import type { XhsHotNote } from '../shared';
+import { padToThreeFour } from './xhs-image-fit';
 import { BING_EXTRACT_SCRIPT, bingSearchUrls, normalizeWebResults } from './xhs-page-parse';
 
 /**
- * 依赖 Electron 的小红书渲染工具：图文卡片逐页截图、生成图裁成 3:4、必应结果页读取。
+ * 依赖 Electron 的小红书渲染工具：图文卡片逐页截图、生成图补边成 3:4、必应结果页读取。
  * 都用不显示的独立窗口完成，窗口用完即关；纯 Node 单测加载不了这个文件。
  */
 
@@ -59,19 +60,17 @@ export async function renderHtmlPages(documents: string[], width: number, height
   }, 30_000 + documents.length * 5_000, '图文卡片渲染');
 }
 
-/** 生图接口给的是 2:3 竖图，小红书按 3:4 展示：居中裁成 3:4，避免发布时被平台随意裁切。 */
-export function cropToThreeFour(file: string): string {
+/**
+ * 生图接口给的是 2:3 竖图，小红书按 3:4 展示：在短边补边成 3:4（见 xhs-image-fit）。
+ * 不裁切——以前居中裁成 3:4 会把顶部的标题、底部的要点切掉一截。
+ */
+export function fitToThreeFour(file: string): string {
   const image = nativeImage.createFromPath(file);
   if (image.isEmpty()) throw new Error('生成的图片无法读取');
   const { width, height } = image.getSize();
-  const targetHeight = Math.round(width * 4 / 3);
-  let cropped = image;
-  if (targetHeight < height) cropped = image.crop({ x: 0, y: Math.floor((height - targetHeight) / 2), width, height: targetHeight });
-  else if (targetHeight > height) {
-    const targetWidth = Math.round(height * 3 / 4);
-    cropped = image.crop({ x: Math.floor((width - targetWidth) / 2), y: 0, width: targetWidth, height });
-  }
-  fs.writeFileSync(file, cropped.toPNG());
+  const padded = padToThreeFour({ data: image.toBitmap(), width, height });
+  if (padded.width === width && padded.height === height) return file;
+  fs.writeFileSync(file, nativeImage.createFromBitmap(padded.data, { width: padded.width, height: padded.height }).toPNG());
   return file;
 }
 

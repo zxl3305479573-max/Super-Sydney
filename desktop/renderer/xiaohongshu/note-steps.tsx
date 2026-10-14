@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { XhsBasis, XhsCardPlan, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
+import type { XhsBasis, XhsCandidateView, XhsCardPlan, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
 import {
-  XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
+  XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
 } from '../../services/xhs-catalog';
 import { renderCardsPreview } from '../../services/xhs-cards';
 import {
   countChars, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, type XhsStep
 } from '../../services/xhs-pipeline';
-import { Icon, TagEditor } from '../ui';
+import { ConfirmButton, Icon, TagEditor } from '../ui';
 import { ScoreBar, sourceOf } from './common';
 
 /** 小红书笔记流水线的各步骤面板：只负责展示与收集输入，动作由 NotesTab 传入。 */
@@ -121,11 +121,12 @@ function CoverPreview({ assets, title }: { assets: XhsNoteAssets | null; title: 
   </div>;
 }
 
-export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale, onEdit, onCover, onChooseCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onConfirm }: Common & {
+export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale, onEdit, onCover, onChooseCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onUseCover, onRemoveCandidate, onConfirm }: Common & {
   assets: XhsNoteAssets | null; coverStale: boolean; cardsStale: boolean;
   onEdit: (patch: Partial<XhsNote>) => void; onCover: (brief: string) => void; onChooseCover: () => void;
   onCards: (pageCount: number, style: string) => void; onRenderCards: () => void; onInfo: (mode: 'single' | 'pages') => void; onCancel: () => void;
-  onAddLocal: () => void; onArrange: (paths: string[]) => void; onConfirm: (key: keyof XhsBasis) => void;
+  onAddLocal: () => void; onArrange: (paths: string[]) => void; onUseCover: (path: string) => void; onRemoveCandidate: (path: string) => void;
+  onConfirm: (key: keyof XhsBasis) => void;
 }) {
   const [brief, setBrief] = useState('');
   const plan = readCardPlan(note);
@@ -155,7 +156,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
           <button className="button button-secondary" disabled={locked} onClick={onChooseCover}>用本地图片</button>
           {imageBusy && <button className="button button-quiet" onClick={onCancel}>取消生成</button>}
         </div>
-        <small className="ww-muted">封面会把标题做成大字放在上半部分，画风取账号绑定的内容方向的配图模板，并参考定位档案里的视觉建议。生成后居中裁成 3:4。</small>
+        <small className="ww-muted">封面会把标题做成大字放在上半部分，画风按笔记内容与定位档案里的视觉建议。生成后在左右补边成 3:4，不裁切画面；换下来的旧封面留在下面的候选图库里。</small>
       </div>
     </div>
 
@@ -190,7 +191,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
       <small className="ww-muted">{plan ? '固定「轻盈信息图」风格：白底、紫蓝 + 青柠绿、圆角卡片、线性图标。' : '先拆好分页：信息图按卡片分页逐页出图。'}</small>
     </div>
 
-    <h4 className="xhs-step-sub">④ 发布图组<small>封面固定第 1 张，下面是之后的顺序</small></h4>
+    <h4 className="xhs-step-sub">④ 发布图组<small>封面固定第 1 张，下面是之后的顺序；导出发布包只用这一组</small></h4>
     {assets?.images.length ? <ol className="xhs-gallery">{assets.images.map((item, index) => <li key={item.path}>
       {item.thumbnail ? <img src={item.thumbnail} alt={item.caption} /> : <div className="flow-image-missing">缺图</div>}
       <span>{index + 2}. {{ card: '卡片', info: '信息图', local: '本地' }[item.source]}{item.caption ? ` · ${item.caption}` : ''}</span>
@@ -201,7 +202,58 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
       </div>
     </li>)}</ol> : <p className="flow-empty">图组还是空的：导出卡片图、生成信息图，或添加本地图片。</p>}
     <button className="button button-quiet" disabled={locked} onClick={onAddLocal}><Icon name="plus" />添加本地图片</button>
+
+    <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
   </div>;
+}
+
+const candidateSource: Record<XhsCandidateView['source'], string> = { cover: '封面', card: '卡片图', info: '信息图', local: '本地图片' };
+
+/**
+ * 候选图库：每次生成 / 添加的图按批次排开（新的在前），从这里挑出最终的封面和发布图组。
+ * 新一批生成出来时会先自动替换图组里同来源的旧图，被换下的旧图留在这里，可以整组或单张挑回去。
+ */
+function CandidateLibrary({ candidates, order, locked, onArrange, onUseCover, onRemove }: {
+  candidates: XhsCandidateView[]; order: string[]; locked: boolean;
+  onArrange: (paths: string[]) => void; onUseCover: (path: string) => void; onRemove: (path: string) => void;
+}) {
+  const batches = useMemo(() => {
+    const groups = new Map<string, XhsCandidateView[]>();
+    for (const item of candidates) groups.set(item.batch, [...(groups.get(item.batch) ?? []), item]);
+    return [...groups.values()];
+  }, [candidates]);
+  if (!candidates.length) return null;
+  const toggle = (item: XhsCandidateView) => onArrange(item.inGroup ? order.filter(file => file !== item.path) : [...order, item.path]);
+  const batchLabel = (items: XhsCandidateView[]) => {
+    const first = items[0];
+    const when = first.createdAt ? new Date(first.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '之前的版本';
+    return `${candidateSource[first.source]} · ${when} · ${items.length} 张`;
+  };
+  return <>
+    <h4 className="xhs-step-sub">⑤ 候选图库<small>历次生成的图都在这里：挑选加入发布图组，或设为封面</small></h4>
+    <div className="xhs-candidates">{batches.map(items => {
+      const usable = items.filter(item => !item.isCover);
+      const allIn = usable.length > 0 && usable.every(item => item.inGroup);
+      return <section key={items[0].batch} className="xhs-candidate-batch">
+        <header>
+          <strong>{batchLabel(items)}</strong>
+          {usable.length > 1 && <div className="btn-group">
+            <button className="button button-quiet button-small" disabled={locked || allIn} onClick={() => onArrange([...order, ...usable.map(item => item.path)])}>整组加入</button>
+            <button className="button button-quiet button-small" disabled={locked} title="发布图组只保留这一组，顺序按这一组的生成顺序" onClick={() => onArrange(usable.map(item => item.path))}>只用这一组</button>
+          </div>}
+        </header>
+        <ol className="xhs-gallery">{items.map(item => <li key={item.path} className={item.inGroup || item.isCover ? 'is-picked' : ''}>
+          <img src={item.thumbnail} alt={item.caption} />
+          <span title={item.caption}>{item.isCover ? '当前封面' : item.inGroup ? `图组第 ${order.indexOf(item.path) + 2} 张` : '未使用'}{item.caption ? ` · ${item.caption}` : ''}</span>
+          <div className="btn-group">
+            {!item.isCover && <button className="button button-quiet button-small" disabled={locked} onClick={() => toggle(item)}>{item.inGroup ? '移出图组' : '加入图组'}</button>}
+            {!item.isCover && <button className="button button-quiet button-small" disabled={locked} onClick={() => onUseCover(item.path)}>设为封面</button>}
+            {!item.isCover && !item.inGroup && <ConfirmButton className="icon-button" armedLabel="确认删除" title="从候选图库删除这张图" onConfirm={() => onRemove(item.path)}><Icon name="trash" size={13} /></ConfirmButton>}
+          </div>
+        </li>)}</ol>
+      </section>;
+    })}</div>
+  </>;
 }
 
 export function ChecksStep({ note, locked, busy, stale, onRun, onRevise }: Common & { stale: boolean; onRun: () => void; onRevise: () => void }) {
@@ -225,7 +277,9 @@ export function ChecksStep({ note, locked, busy, stale, onRun, onRevise }: Commo
   </div>;
 }
 
-export function PackageStep({ note, locked, busy, onExport, onOpen, onCopy }: Common & { onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void }) {
+export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOpen, onCopy, onPublishPage }: Common & {
+  assets: XhsNoteAssets | null; onEdit: () => void; onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void; onPublishPage: () => void;
+}) {
   const checklist = xhsExportChecklist(note);
   const ready = checklist.filter(item => !item.optional).every(item => item.ok);
   return <div className="flow-body">
@@ -233,11 +287,24 @@ export function PackageStep({ note, locked, busy, onExport, onOpen, onCopy }: Co
       <span aria-hidden="true">{item.ok ? '✓' : '○'}</span>
       <div><strong>{item.label}{item.optional && '（建议）'}</strong><small>{item.detail}</small></div>
     </li>)}</ul>
+    <div className="flow-sub-head">
+      <h4>将要导出的图组<small>{(assets?.cover ? 1 : 0) + (assets?.images.length ?? 0)} 张，按这个顺序导出为 01、02…</small></h4>
+      <button className="button button-quiet" onClick={onEdit}>去调整图组</button>
+    </div>
+    {assets?.cover || assets?.images.length ? <ol className="xhs-gallery xhs-export-strip">
+      {assets.cover && <li><img src={assets.cover.thumbnail} alt="封面" /><span>01 · 封面</span></li>}
+      {assets.images.map((item, index) => <li key={item.path}>
+        {item.thumbnail ? <img src={item.thumbnail} alt={item.caption} /> : <div className="flow-image-missing">缺图</div>}
+        <span>{String(index + 2).padStart(2, '0')}{item.caption ? ` · ${item.caption}` : ''}</span>
+      </li>)}
+    </ol> : <p className="flow-empty">还没有封面和图组。</p>}
     <div className="flow-inline-actions">
       <button className="button button-primary" disabled={locked || !ready} onClick={onExport}>{busy === 'export' ? '导出中…' : note.exportPath ? '重新导出发布包' : '导出发布包'}</button>
       {note.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开发布包目录</button>}
       <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
       <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>
+      <button className="button button-secondary" title="在「小红书窗口」里打开网页版创作者中心的发布页，由你自己上传图片、粘贴文字并发布" onClick={onPublishPage}>去创作者中心发布</button>
+      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：应用窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL)}><Icon name="window" size={14} />在浏览器打开发布页</button>
     </div>
     {note.exportPath && <p className="native-export-path">最近导出：{note.exportPath}</p>}
     <p className="ww-muted">发布包在知识库「08-小红书」下：笔记.md（标题、正文、标签、检测结果、发布提醒）+ 01.png（封面）、02.png… 按图组顺序。本模块不代发布：请在小红书 App 或网页版创作者中心手动发布；含 AI 生成内容时记得勾选平台的 AI 内容声明。</p>

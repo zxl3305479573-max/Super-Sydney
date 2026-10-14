@@ -904,7 +904,14 @@ button.chip { cursor: pointer; }
 .xhs-page-editor .input { font-size: 12.5px; }
 .xhs-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
 .xhs-gallery li { display: grid; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
-.xhs-gallery img, .xhs-gallery .flow-image-missing { width: 100%; aspect-ratio: 3 / 4; border-radius: 5px; object-fit: cover; }
+.xhs-gallery img, .xhs-gallery .flow-image-missing { width: 100%; aspect-ratio: 3 / 4; border-radius: 5px; object-fit: contain; background: var(--surface-soft); }
+.xhs-gallery li.is-picked { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.xhs-gallery .btn-group { flex-wrap: wrap; gap: 2px; }
+.xhs-candidates { display: grid; gap: 14px; }
+.xhs-candidate-batch { display: grid; gap: 8px; }
+.xhs-candidate-batch header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; color: var(--ink-soft); font-size: 12px; }
+.xhs-candidate-batch header strong { font-weight: 600; }
+.xhs-export-strip { margin-bottom: 4px; }
 .xhs-gallery span { overflow: hidden; color: var(--ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .xhs-checks .xhs-check-source { margin-left: 8px; color: var(--faint); font-size: 11px; font-style: normal; font-weight: 400; }
 

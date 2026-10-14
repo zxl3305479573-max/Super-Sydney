@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import type { XhsNote } from '../shared.ts';
 import {
   assertXhsExportable, buildXhsPipeline, checksPassed, countChars, currentXhsStepKey, deriveXhsStatus, findRiskWords, fingerprint, localChecks,
-  mergeCheckItems, normalizeTags, prepareXhsEdit, readCardPlan, routeByRules, stampBasis, xhsExportChecklist, xhsStale
+  addCandidates, mergeCheckItems, normalizeTags, prepareXhsEdit, readCandidates, readCardPlan, routeByRules, stampBasis, xhsExportChecklist, xhsStale
 } from '../services/xhs-pipeline.ts';
 
 function note(patch: Partial<XhsNote> = {}): XhsNote {
   return {
     id: 1, accountId: 1, topic: '', noteType: 'tutorial', material: '', title: '', body: '', tagsJson: '', sourceJson: '', status: 'idea',
-    writerJson: '', titleCandidatesJson: '', checksJson: '', cardsJson: '', coverPath: '', imagesJson: '', basisJson: '', exportPath: '',
+    writerJson: '', titleCandidatesJson: '', checksJson: '', cardsJson: '', coverPath: '', imagesJson: '', candidatesJson: '', basisJson: '', exportPath: '',
     createdAt: '2026-10-13T00:00:00.000Z', updatedAt: '2026-10-13T00:00:00.000Z', ...patch
   };
 }
@@ -145,4 +145,15 @@ test('向导规则：无定位 → A；复盘有卡点 → C；写了几篇没�
   assert.ok(c.steps.some(step => step.tab === 'notes'));
   assert.equal(routeByRules({ hasPositioning: true, dominantLayer: '', noteCount: 6, statCount: 0 }).chain, 'C');
   assert.equal(routeByRules({ hasPositioning: true, dominantLayer: '', noteCount: 1, statCount: 0 }).chain, 'B');
+});
+
+test('候选图库：新批次在前，正在用的封面与图组也算在库里，按路径去重', () => {
+  let item = note({ coverPath: 'old-cover.png', imagesJson: JSON.stringify([{ path: 'card-1.png', source: 'card', caption: '第 1 页' }]) });
+  // 老笔记没有候选图库：正在用的图也要出现在库里。
+  assert.deepEqual(readCandidates(item).map(entry => entry.path), ['old-cover.png', 'card-1.png']);
+  item = { ...item, candidatesJson: addCandidates(item, [{ path: 'card-2.png', source: 'card', caption: '' }, { path: 'card-1.png', source: 'card', caption: '第 1 页' }]) };
+  const pool = readCandidates(item);
+  assert.deepEqual(pool.map(entry => entry.path), ['card-2.png', 'card-1.png', 'old-cover.png']);
+  assert.equal(pool[0].batch, pool[1].batch);
+  assert.equal(readCandidates(note({ candidatesJson: 'not json' })).length, 0);
 });
