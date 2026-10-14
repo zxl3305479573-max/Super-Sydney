@@ -23,6 +23,8 @@ export class XhsView {
   private wanted = false;
   private attached = false;
   private loading = false;
+  /** 是否已经让视图打开过页面。只看 getURL() 不够：跳转途中旧页已停、新页还没提交时它是空的。 */
+  private started = false;
   private error = '';
   private lastRead = 0;
 
@@ -138,7 +140,7 @@ export class XhsView {
       const view = this.ensureView();
       if (!this.attached) { win.contentView.addChildView(view); this.attached = true; }
       view.setBounds(this.bounds);
-      if (!view.webContents.getURL() && !this.loading) void this.load(view, XHS_HOME);
+      if (!this.started) void this.load(view, XHS_HOME);
     }
     if (before !== this.attached) this.notify();
   }
@@ -169,16 +171,25 @@ export class XhsView {
     });
     contents.on('render-process-gone', () => { this.loading = false; this.error = '页面进程已退出，点「刷新」重试'; this.notify(); });
     this.view = view;
+    this.started = false;
     return view;
   }
 
   private async load(view: WebContentsView, url: string): Promise<void> {
+    this.started = true;
     try {
       await view.webContents.loadURL(url);
     } catch (error) {
+      // 被新的导航顶掉（ERR_ABORTED / -3）不算失败：新页面会接着加载，失败另有 did-fail-load 报。
+      if (isAborted(error)) return;
       this.loading = false;
       if (!this.error) this.error = `页面打不开：${error instanceof Error ? error.message : String(error)}`;
       this.notify();
     }
   }
+}
+
+function isAborted(error: unknown): boolean {
+  const record = error as { code?: unknown; errno?: unknown } | null;
+  return record?.code === 'ERR_ABORTED' || record?.errno === -3;
 }
