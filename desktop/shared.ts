@@ -654,6 +654,10 @@ export interface SydneyApi {
   openVideoPackage(id: number): Promise<string>;
   listXhsAccounts(): Promise<XhsAccount[]>;
   updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson'>>): Promise<XhsAccount>;
+  /** 新建一个小红书账号（名字不能重复）。 */
+  createXhsAccount(name: string): Promise<XhsAccount>;
+  /** 只能删没有笔记、报告和导入数据的空账号，且至少保留一个。 */
+  deleteXhsAccount(id: number): Promise<void>;
   /** 定位问答走一步：answer 为空表示开始 / 继续提问；finish 为 true 时让教练直接出定位档案。 */
   stepXhsPositioning(accountId: number, answer: string, finish: boolean): Promise<XhsAccount>;
   resetXhsPositioning(accountId: number): Promise<XhsAccount>;
@@ -699,7 +703,8 @@ export interface SydneyApi {
   deleteXhsStat(id: number): Promise<XhsAnalyticsView>;
   interpretXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
   getXhsView(): Promise<XhsViewState>;
-  openXhsView(): Promise<XhsViewState>;
+  /** 显示某个账号的小红书窗口：每个账号一个独立会话，登录状态互不相通。 */
+  openXhsView(accountId: number): Promise<XhsViewState>;
   closeXhsView(): Promise<void>;
   setXhsViewBounds(bounds: SiteViewBounds | null): Promise<void>;
   /** publish 打开网页版创作者中心的发布页（不代填、不代发，只是打开）。 */

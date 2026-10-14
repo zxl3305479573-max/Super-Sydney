@@ -106,6 +106,28 @@ export function updateXhsAccount(db: DatabaseSync, id: number, patch: Partial<Xh
   return getXhsAccount(db, id);
 }
 
+/** 新建一个账号：名字必填、最长 40 字，不和已有账号重名（切换时靠名字区分）。 */
+export function createXhsAccount(db: DatabaseSync, name: unknown): XhsAccount {
+  const clean = String(name ?? '').trim().slice(0, 40);
+  if (!clean) throw new Error('账号名不能为空');
+  if (listXhsAccounts(db).some(account => account.name === clean)) throw new Error('已经有同名账号了，换个名字');
+  const now = new Date().toISOString();
+  const result = db.prepare('INSERT INTO xhs_accounts (name, created_at, updated_at) VALUES (?, ?, ?)').run(clean, now, now);
+  return getXhsAccount(db, Number(result.lastInsertRowid));
+}
+
+/**
+ * 删除账号只允许删「空账号」（没有笔记、报告、导入的数据），用来清掉误建的账号；
+ * 有内容的账号不提供删除，避免一次误点连带删掉笔记和复盘数据。至少保留一个账号。
+ */
+export function deleteXhsAccount(db: DatabaseSync, id: number): void {
+  getXhsAccount(db, id);
+  if (listXhsAccounts(db).length <= 1) throw new Error('至少要保留一个账号');
+  const used = ['xhs_notes', 'xhs_reports', 'xhs_note_stats'].some(table => Number((db.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE account_id=?`).get(id) as { n: number }).n) > 0);
+  if (used) throw new Error('这个账号下已经有笔记或数据，不能删除');
+  db.prepare('DELETE FROM xhs_accounts WHERE id=?').run(id);
+}
+
 /* ── 笔记 ─────────────────────────────────────────────────────── */
 
 export function xhsNoteFromRow(row: Record<string, unknown>): XhsNote {

@@ -14,11 +14,17 @@ import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, Visua
 const EDITABLE: Array<keyof XhsNote> = ['topic', 'noteType', 'material', 'title', 'body', 'tagsJson', 'cardsJson'];
 const STAGE_DONE: Record<XhsGenerateStage, string> = { body: '正文已生成', revise: '已按检测意见回改正文', titles: '标题候选已生成', checks: '检测完成', cards: '图文卡片已拆好分页' };
 
-export function NotesTab({ ctx, target }: { ctx: XhsContext; target: { id: number; step?: XhsStepKey; nonce: number } | null }) {
+export function NotesTab({ ctx, target, onDirtyChange }: {
+  ctx: XhsContext; target: { id: number; step?: XhsStepKey; nonce: number } | null;
+  /** 告诉外层有没有未保存的修改：切换账号前要先确认。 */
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const { account, notes, notify } = ctx;
   const [selectedId, setSelectedId] = useState<number | null>(target?.id ?? notes[0]?.id ?? null);
   const [draft, setDraft] = useState<XhsNote | null>(null);
   const [dirty, setDirty] = useState(false);
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const [step, setStep] = useState<XhsStepKey>('topic');
   const [newTopic, setNewTopic] = useState('');
   const { busy, run, locked } = useBusy(notify);

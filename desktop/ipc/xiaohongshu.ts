@@ -21,7 +21,7 @@ import {
 import { fitToThreeFour, renderHtmlPages, searchBing } from '../services/xhs-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
 import {
-  createXhsNote, createXhsReport, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
+  createXhsAccount, createXhsNote, createXhsReport, deleteXhsAccount, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
   listXhsReports, listXhsStats, readHotspotCache, updateXhsAccount, updateXhsNote, upsertXhsStats, writeHotspotCache
 } from '../services/xhs-store';
 import type { XhsView } from '../services/xhs-view';
@@ -78,6 +78,17 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   /* ── 账号与定位 ─────────────────────────────────────────────── */
 
   ipcMain.handle('xhs:accounts:list', () => listXhsAccounts(db));
+  ipcMain.handle('xhs:accounts:create', (_event, name: string) => {
+    const account = createXhsAccount(db, name);
+    ctx.broadcast();
+    return account;
+  });
+  ipcMain.handle('xhs:accounts:delete', (_event, id: number) => accountLock.run(id, async () => {
+    deleteXhsAccount(db, id);
+    // 连同这个账号在小红书窗口里的登录状态一起清掉。
+    await view.forget(id);
+    ctx.broadcast();
+  }));
   ipcMain.handle('xhs:accounts:update', (_event, id: number, patch: Partial<XhsAccount>) => {
     const clean: Partial<XhsAccount> = {};
     if (patch.name !== undefined) clean.name = patch.name;
@@ -484,7 +495,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   /* ── 应用内小红书窗口 ───────────────────────────────────────── */
 
   ipcMain.handle('xhs:view:state', () => view.state());
-  ipcMain.handle('xhs:view:open', () => view.show());
+  ipcMain.handle('xhs:view:open', (_event, accountId: number) => view.show(accountId));
   ipcMain.handle('xhs:view:close', () => view.close());
   ipcMain.handle('xhs:view:bounds', (_event, bounds: unknown) => view.setBounds(bounds));
   ipcMain.handle('xhs:view:navigate', (_event, target: { kind?: unknown; value?: unknown }) => view.navigate(target ?? {}));

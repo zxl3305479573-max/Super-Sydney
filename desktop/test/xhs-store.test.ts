@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import type { XhsHotNote, XhsHotspotResult, XhsNoteStatus } from '../shared.ts';
-import { createXhsNote, deleteXhsNote, getXhsNote, listXhsAccounts, listXhsNotes, migrateXhsTables, readHotspotCache, updateXhsAccount, updateXhsNote, writeHotspotCache } from '../services/xhs-store.ts';
+import { createXhsAccount, createXhsNote, deleteXhsAccount, deleteXhsNote, getXhsNote, listXhsAccounts, listXhsNotes, migrateXhsTables, readHotspotCache, updateXhsAccount, updateXhsNote, writeHotspotCache } from '../services/xhs-store.ts';
 
 function database(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -75,4 +75,24 @@ test('写缓存时清理过期条目', () => {
   writeHotspotCache(db, 'new', { ...base, fetchedAt: '2026-10-13T00:00:00.000Z' });
   const keys = (db.prepare('SELECT cache_key FROM xhs_hotspot_cache').all() as Array<{ cache_key: string }>).map(row => row.cache_key);
   assert.deepEqual(keys, ['new']);
+});
+
+test('多账号：新建不重名；只能删空账号，且至少留一个', () => {
+  const db = database();
+  const [first] = listXhsAccounts(db);
+  assert.throws(() => createXhsAccount(db, '  '), /不能为空/);
+  assert.throws(() => createXhsAccount(db, first.name), /同名/);
+  const second = createXhsAccount(db, ' 副号 ');
+  assert.equal(second.name, '副号');
+  assert.deepEqual(listXhsAccounts(db).map(account => account.id), [first.id, second.id]);
+  // 笔记按账号隔离。
+  createXhsNote(db, second.id, '副号的选题');
+  assert.equal(listXhsNotes(db, first.id).length, 0);
+  assert.equal(listXhsNotes(db, second.id).length, 1);
+  assert.throws(() => deleteXhsAccount(db, second.id), /已经有笔记或数据/);
+  const empty = createXhsAccount(db, '误建的号');
+  deleteXhsAccount(db, empty.id);
+  assert.equal(listXhsAccounts(db).length, 2);
+  deleteXhsAccount(db, first.id);
+  assert.throws(() => deleteXhsAccount(db, second.id), /至少要保留一个账号/);
 });

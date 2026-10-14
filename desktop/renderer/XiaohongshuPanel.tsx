@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsAccount, XhsHotNote, XhsNote, XhsStepKey, XhsTab } from '../shared';
 import { XHS_TAB_LABELS } from '../services/xhs-catalog';
 import { readPositioning } from '../services/xhs-pipeline';
-import { readableError } from './ui';
+import { ConfirmButton, Icon, readableError } from './ui';
 import type { XhsContext } from './xiaohongshu/common';
 import { HomeTab } from './xiaohongshu/HomeTab';
 import { PositioningTab } from './xiaohongshu/PositioningTab';
@@ -22,8 +22,24 @@ import { BrowserTab } from './xiaohongshu/BrowserTab';
 
 const TABS: XhsTab[] = ['home', 'positioning', 'hotspot', 'notes', 'audit', 'analytics', 'browser'];
 
+/** 上次选中的账号只是界面偏好，存在本机 localStorage；读不到就用第一个账号。 */
+const ACCOUNT_KEY = 'sydney.xhs.accountId';
+function storedAccountId(): number {
+  try { return Number(localStorage.getItem(ACCOUNT_KEY)) || 0; } catch { return 0; }
+}
+function rememberAccountId(id: number): void {
+  try { localStorage.setItem(ACCOUNT_KEY, String(id)); } catch { /* 存不下也不影响使用 */ }
+}
+
 export default function XiaohongshuPanel({ notify, overlay }: { notify: (message: string) => void; overlay: boolean }) {
   const [account, setAccount] = useState<XhsAccount | null>(null);
+  const [accounts, setAccounts] = useState<XhsAccount[]>([]);
+  /** 当前账号 id 放在 ref 里：全局 state:changed 触发的刷新要按「现在选中的」账号拉，而不是闭包里的旧值。 */
+  const selectedRef = useRef(storedAccountId());
+  const [editing, setEditing] = useState<'' | 'add' | 'rename'>('');
+  /** 笔记创作里有没有未保存的修改：切换账号会重新挂载各分区，修改会丢。 */
+  const notesDirty = useRef(false);
+  const trackDirty = useCallback((dirty: boolean) => { notesDirty.current = dirty; }, []);
   const [notes, setNotes] = useState<XhsNote[]>([]);
   const [tab, setTab] = useState<XhsTab>('home');
   const [noteTarget, setNoteTarget] = useState<{ id: number; step?: XhsStepKey; nonce: number } | null>(null);
@@ -33,16 +49,21 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   const [nameDraft, setNameDraft] = useState('');
 
   const refresh = useCallback(async () => {
-    const accounts = await window.sydney.listXhsAccounts();
-    const current = accounts[0] ?? null;
+    const list = await window.sydney.listXhsAccounts();
+    const current = list.find(item => item.id === selectedRef.current) ?? list[0] ?? null;
+    if (current) selectedRef.current = current.id;
+    const currentNotes = current ? await window.sydney.listXhsNotes(current.id) : [];
+    // 拉取期间又切了账号：丢掉这次结果，等新账号的那次刷新。
+    if (current && current.id !== selectedRef.current) return;
+    setAccounts(list);
     setAccount(current);
-    setNotes(current ? await window.sydney.listXhsNotes(current.id) : []);
+    setNotes(currentNotes);
   }, []);
   useEffect(() => {
     void refresh().catch(error => notify(readableError(error)));
     return window.sydney.onChanged(() => void refresh().catch(() => undefined));
   }, [refresh, notify]);
-  useEffect(() => { setNameDraft(account?.name ?? ''); }, [account?.name]);
+  useEffect(() => { if (editing !== 'add') setNameDraft(account?.name ?? ''); }, [account?.name, editing]);
 
   const goTo = useCallback((next: XhsTab) => setTab(next), []);
   const [publishNonce, setPublishNonce] = useState(0);
@@ -58,6 +79,50 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   };
   const positioning = readPositioning(account);
 
+  /** 切换账号：各分区按账号重新挂载，上一个账号的笔记跳转、窗口读取结果都不带过去。 */
+  const switchAccount = (id: number) => {
+    if (id === account.id) return;
+    if (notesDirty.current && !window.confirm('当前笔记有未保存的修改，切换账号后会丢失。继续？')) return;
+    notesDirty.current = false;
+    setPublishNonce(0);
+    selectedRef.current = id;
+    rememberAccountId(id);
+    setEditing('');
+    setNoteTarget(null);
+    setViewNotes(null);
+    setViewProfile(null);
+    void refresh().catch(error => notify(readableError(error)));
+  };
+  const submitName = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = nameDraft.trim();
+    if (!name) return;
+    try {
+      if (editing === 'add') {
+        const created = await window.sydney.createXhsAccount(name);
+        setEditing('');
+        switchAccount(created.id);
+        notify(`已添加账号「${created.name}」，先去「账号定位」做定位档案`);
+        setTab('positioning');
+      } else {
+        if (name !== account.name) await saveAccount({ name });
+        setEditing('');
+      }
+    } catch (error) {
+      notify(readableError(error));
+    }
+  };
+  const removeAccount = async () => {
+    try {
+      await window.sydney.deleteXhsAccount(account.id);
+      const rest = accounts.filter(item => item.id !== account.id);
+      notify(`已删除账号「${account.name}」`);
+      if (rest[0]) switchAccount(rest[0].id);
+    } catch (error) {
+      notify(readableError(error));
+    }
+  };
+
   return <section className="xhs-panel native-content" aria-label="小红书">
     <header className="ww-page-header">
       <div>
@@ -66,8 +131,23 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
         <p>定位 → 选题 → 写作 → 视觉 → 复盘，10 个能力按链路串起来。只交付发布包，由你手动发布。</p>
       </div>
       <div className="xhs-account-bar">
-        <label><span>账号</span><input className="input" value={nameDraft} onChange={event => setNameDraft(event.target.value)} onBlur={() => { if (nameDraft.trim() && nameDraft.trim() !== account.name) void saveAccount({ name: nameDraft.trim() }); else setNameDraft(account.name); }} /></label>
-        <small>{positioning ? `定位：${positioning.statement}` : '还没有定位档案'} · {notes.length} 篇笔记</small>
+        {editing ? <form className="xhs-account-row" onSubmit={event => void submitName(event)}>
+          <label><span>{editing === 'add' ? '新账号名称' : '账号改名'}</span>
+            <input className="input" autoFocus maxLength={40} value={nameDraft} onChange={event => setNameDraft(event.target.value)} placeholder="例如：主号、职场副号" onKeyDown={event => { if (event.key === 'Escape') setEditing(''); }} />
+          </label>
+          <button className="button button-primary button-small" type="submit" disabled={!nameDraft.trim()}>{editing === 'add' ? '添加' : '保存'}</button>
+          <button className="button button-quiet button-small" type="button" onClick={() => setEditing('')}>取消</button>
+        </form> : <div className="xhs-account-row">
+          <label><span>当前账号</span>
+            <select className="input" value={account.id} onChange={event => switchAccount(Number(event.target.value))} aria-label="切换小红书账号">
+              {accounts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <button className="button button-secondary button-small" type="button" onClick={() => { setNameDraft(''); setEditing('add'); }}><Icon name="plus" size={14} />添加账号</button>
+          <button className="button button-quiet button-small" type="button" onClick={() => { setNameDraft(account.name); setEditing('rename'); }}>改名</button>
+          {accounts.length > 1 && notes.length === 0 && <ConfirmButton className="button button-danger-quiet button-small" armedLabel="确认删除" title="只能删除还没有笔记和数据的账号" onConfirm={() => void removeAccount()}>删除</ConfirmButton>}
+        </div>}
+        <small>{positioning ? `定位：${positioning.statement}` : '还没有定位档案'} · {notes.length} 篇笔记{accounts.length > 1 ? ` · 共 ${accounts.length} 个账号` : ''}</small>
       </div>
     </header>
 
@@ -75,14 +155,16 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
       {TABS.map(item => <button key={item} role="tab" aria-selected={tab === item} className={`ww-tab ${tab === item ? 'is-active' : ''}`} onClick={() => setTab(item)}>{XHS_TAB_LABELS[item]}</button>)}
     </nav>
 
-    {tab === 'home' && <HomeTab ctx={ctx} />}
-    {tab === 'positioning' && <PositioningTab ctx={ctx} onAccount={setAccount} />}
-    {tab === 'hotspot' && <HotspotTab ctx={ctx} viewNotes={viewNotes} onClearViewNotes={() => setViewNotes(null)} />}
-    {tab === 'notes' && <NotesTab ctx={ctx} target={noteTarget} />}
-    {tab === 'audit' && <AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} />}
-    {tab === 'analytics' && <AnalyticsTab ctx={ctx} />}
-    {tab === 'browser' && <BrowserTab ctx={ctx} overlay={overlay} publishNonce={publishNonce}
-      onNotes={(read, url) => { setViewNotes({ notes: read, url }); setTab('hotspot'); }}
-      onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} />}
+    <div key={account.id} className="xhs-account-scope">
+      {tab === 'home' && <HomeTab ctx={ctx} />}
+      {tab === 'positioning' && <PositioningTab ctx={ctx} onAccount={setAccount} />}
+      {tab === 'hotspot' && <HotspotTab ctx={ctx} viewNotes={viewNotes} onClearViewNotes={() => setViewNotes(null)} />}
+      {tab === 'notes' && <NotesTab ctx={ctx} target={noteTarget} onDirtyChange={trackDirty} />}
+      {tab === 'audit' && <AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} />}
+      {tab === 'analytics' && <AnalyticsTab ctx={ctx} />}
+      {tab === 'browser' && <BrowserTab ctx={ctx} overlay={overlay} publishNonce={publishNonce}
+        onNotes={(read, url) => { setViewNotes({ notes: read, url }); setTab('hotspot'); }}
+        onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} />}
+    </div>
   </section>;
 }

@@ -757,10 +757,13 @@ button.chip { cursor: pointer; }
 .xhs-panel .btn-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .xhs-panel .link-button { padding: 0; border: 0; background: none; color: var(--primary); font: inherit; cursor: pointer; }
 .xhs-panel .link-button:hover { text-decoration: underline; }
-.xhs-account-bar { display: grid; grid-template-columns: minmax(180px, 260px); gap: 6px 10px; align-items: end; }
+.xhs-account-bar { display: grid; gap: 6px; justify-items: end; align-content: end; }
+.xhs-account-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: flex-end; gap: 6px; }
+.xhs-account-row label { min-width: 180px; max-width: 240px; }
+.xhs-account-scope { display: contents; }
 .xhs-account-bar label { display: grid; gap: 4px; font-size: 11.5px; color: var(--muted); }
 .xhs-account-bar .input { padding: 6px 9px; font-size: 13px; }
-.xhs-account-bar small { grid-column: 1 / -1; max-width: 440px; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.xhs-account-bar small { max-width: 440px; overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .xhs-tabs { flex-wrap: wrap; }
 .xhs-grid { display: grid; gap: 16px; align-content: start; }
 .xhs-grid-two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
@@ -971,7 +974,8 @@ button.chip { cursor: pointer; }
   .xhs-funnel { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .xhs-hot { grid-template-columns: minmax(0, 1fr) auto; }
   .xhs-hot > .button { grid-column: 1 / -1; justify-self: start; }
-  .xhs-account-bar { grid-template-columns: minmax(0, 1fr); }
+  .xhs-account-bar { justify-items: stretch; }
+  .xhs-account-row { justify-content: flex-start; }
 }
 
 /* ── 变现 · 站点模块（AI 代充） ─────────────────────────────────

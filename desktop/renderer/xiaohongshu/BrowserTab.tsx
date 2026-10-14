@@ -18,6 +18,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   onProfile: (prefill: AuditPrefill) => void;
 }) {
   const { notify } = ctx;
+  const accountId = ctx.account.id;
   const stageRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<XhsViewState | null>(null);
   const [keyword, setKeyword] = useState('');
@@ -32,7 +33,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
 
   useEffect(() => {
     if (overlay) { void window.sydney.closeXhsView(); return; }
-    void window.sydney.openXhsView().then(setState).catch(error => notify(readableError(error)));
+    void window.sydney.openXhsView(accountId).then(setState).catch(error => notify(readableError(error)));
     const report = () => void window.sydney.setXhsViewBounds(readStage());
     report();
     const observer = new ResizeObserver(report);
@@ -45,7 +46,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
       window.removeEventListener('scroll', report, true);
       void window.sydney.closeXhsView();
     };
-  }, [overlay, readStage, notify]);
+  }, [overlay, readStage, notify, accountId]);
 
   // 放在挂载视图的 effect 之后：IPC 按顺序处理，视图先挂上再跳转。
   useEffect(() => {
@@ -91,6 +92,6 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
     <div ref={stageRef} className="site-stage xhs-stage">
       <p className="site-stage-hint">{overlay ? '有弹窗打开时，小红书窗口先收起来。' : '正在打开小红书…'}</p>
     </div>
-    <p className="ww-muted">登录在窗口里由你自己完成，登录状态只保存在这个窗口的独立会话里，应用不读取账号密码。「读取」只读当前已经显示的内容，不会自动滚动或翻页；频繁读取可能触发平台风控，请像正常浏览一样使用。</p>
+    <p className="ww-muted">登录在窗口里由你自己完成，每个账号各有一份独立的登录状态（当前：{ctx.account.name}），切换账号不用退出重登；应用不读取账号密码。「读取」只读当前已经显示的内容，不会自动滚动或翻页；频繁读取可能触发平台风控，请像正常浏览一样使用。</p>
   </div>;
 }
