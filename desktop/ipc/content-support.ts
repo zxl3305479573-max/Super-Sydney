@@ -34,6 +34,11 @@ export function assetDirectory(ctx: AppContext, kind: 'content-assets' | 'video-
   return directory;
 }
 
+/** 任务删除后清掉它在应用目录里的配图 / 封面（不创建目录，不碰知识库里导出的文件）。 */
+export function removeAssetDirectory(ctx: AppContext, kind: 'content-assets' | 'video-assets', id: number): void {
+  fs.rmSync(path.join(ctx.dataDir, kind, String(id)), { recursive: true, force: true });
+}
+
 /** 生成一张图写到 target；图片接口配置每次现读 config.yaml，改完配置无需重启。 */
 export async function generateImageFile(target: string, prompt: string, size: string, signal?: AbortSignal): Promise<string> {
   const bytes = await requestGeneratedImage(imageApiConfig(readWeWriteFiles().configText), prompt, size, signal);

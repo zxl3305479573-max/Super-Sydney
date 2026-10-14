@@ -535,11 +535,16 @@ export type XhsAnalyticsView = {
 export type XhsStatsImportResult = { file: string; added: number; updated: number; view: XhsAnalyticsView };
 
 export type XhsViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
-/** 闲鱼模块里嵌的闲鱼网页版：结构与小红书窗口一致，走单独的 xianyu:* 通道。 */
-export type XianyuViewState = XhsViewState;
+/** 变现分组里固定嵌入的站点（闲鱼、16688）：状态结构与小红书窗口一致，走 embed:* 通道、按 key 区分。 */
+export type EmbeddedSiteKey = 'xianyu' | 'site16688' | 'wechatMp';
+export type EmbeddedViewState = XhsViewState;
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
 export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
+
+/** 成长 · 链接收藏里的一条。tags 是用户自己打的分类，openedAt 为空表示存下以后还没打开过。 */
+export type LinkEntry = { id: number; url: string; title: string; note: string; tags: string[]; createdAt: string; updatedAt: string; openedAt: string };
+export type LinkInput = { url: string; title?: string; note?: string; tags?: string[] };
 
 /* ── 变现 · 站点模块（AI 代充） ──────────────────────────────────
  * 把现成的多个站点嵌进窗口，同一时刻显示选中的那个。站点是第三方页面，
@@ -601,6 +606,8 @@ export interface SydneyApi {
   /** 按内容方向与已写内容优化配图风格模板，只返回建议。 */
   optimizeImageStyle(request: ImageStyleRequest): Promise<DirectionNoteSuggestion>;
   createContentTask(directionId: number | null, subdirectionId: number | null, topic?: string): Promise<ContentTask>;
+  /** 删除文章任务与它在应用目录里的配图；已导出到知识库的文件不动。 */
+  deleteContentTask(id: number): Promise<void>;
   updateContentTask(id: number, patch: Partial<ContentTask>): Promise<ContentTask>;
   generateContentStage(id: number, stage: ContentStage): Promise<ContentTask>;
   generateContentCover(id: number): Promise<ContentTask>;
@@ -645,6 +652,8 @@ export interface SydneyApi {
   deleteArticleStat(id: number, profileId: number | null): Promise<ArticleStatsView>;
   listVideoProjects(): Promise<VideoProject[]>;
   createVideoProject(platform: VideoPlatform, topic?: string): Promise<VideoProject>;
+  /** 删除视频任务与它的封面文件；已导出的发布包不动。 */
+  deleteVideoProject(id: number): Promise<void>;
   updateVideoProject(id: number, patch: Partial<VideoProject>): Promise<VideoProject>;
   generateVideoStage(id: number, stage: VideoStage): Promise<VideoProject>;
   generateVideoCover(id: number): Promise<VideoProject>;
@@ -728,6 +737,13 @@ export interface SydneyApi {
   testRedfoxKey(): Promise<{ total: number }>;
   /** 用系统浏览器打开笔记或搜索结果链接；只接受 http/https。 */
   openXhsLink(url: string): Promise<void>;
+  listLinks(): Promise<LinkEntry[]>;
+  /** 地址只接受 http/https，没写协议补 https；同一地址不能重复收藏。 */
+  createLink(input: LinkInput): Promise<LinkEntry>;
+  updateLink(id: number, input: LinkInput): Promise<LinkEntry>;
+  deleteLink(id: number): Promise<void>;
+  /** 用系统浏览器打开库里存的地址，并记下打开时间。 */
+  openLink(id: number): Promise<LinkEntry>;
   getSiteModule(): Promise<SiteModuleState>;
   /**
    * 保存整份站点列表（增、删、改名、换地址都走这里）；
@@ -745,15 +761,15 @@ export interface SydneyApi {
   siteModuleGo(action: 'back' | 'reload' | 'home'): Promise<SiteModuleState>;
   /** 支付页、客服链接这类需要完整浏览器能力的目标，交给系统浏览器。 */
   openSiteModuleInBrowser(): Promise<void>;
-  getXianyuView(): Promise<XianyuViewState>;
-  /** 把闲鱼视图挂到窗口上；界面报位置之前不会真的显示。 */
-  openXianyuView(): Promise<XianyuViewState>;
+  getEmbeddedView(key: EmbeddedSiteKey): Promise<EmbeddedViewState>;
+  /** 把站点视图挂到窗口上；界面报位置之前不会真的显示。 */
+  openEmbeddedView(key: EmbeddedSiteKey): Promise<EmbeddedViewState>;
   /** 从窗口上摘下来，页面进程留着，切回来登录态与浏览位置都在。 */
-  closeXianyuView(): Promise<void>;
-  setXianyuViewBounds(bounds: SiteViewBounds | null): Promise<void>;
-  xianyuViewGo(action: 'back' | 'reload' | 'home'): Promise<XianyuViewState>;
-  openXianyuInBrowser(): Promise<void>;
-  onXianyuViewChanged(callback: () => void): () => void;
+  closeEmbeddedView(key: EmbeddedSiteKey): Promise<void>;
+  setEmbeddedViewBounds(key: EmbeddedSiteKey, bounds: SiteViewBounds | null): Promise<void>;
+  embeddedViewGo(key: EmbeddedSiteKey, action: 'back' | 'reload' | 'home'): Promise<EmbeddedViewState>;
+  openEmbeddedInBrowser(key: EmbeddedSiteKey): Promise<void>;
+  onEmbeddedViewChanged(key: EmbeddedSiteKey, callback: () => void): () => void;
   onChanged(callback: () => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
   onSiteModuleChanged(callback: () => void): () => void;

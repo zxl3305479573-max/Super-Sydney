@@ -10,8 +10,9 @@ import { registerVideoIpc } from './ipc/video';
 import { registerWeWriteIpc } from './ipc/wewrite';
 import { registerArticleStatsIpc } from './ipc/article-stats';
 import { registerSiteIpc } from './ipc/site';
-import { registerXianyuIpc } from './ipc/xianyu';
+import { registerEmbeddedIpc } from './ipc/embedded';
 import { registerXhsIpc } from './ipc/xiaohongshu';
+import { registerLinksIpc } from './ipc/links';
 import { migrateArticleStatTables } from './services/article-stats-store';
 import { SettingsFile } from './services/app-settings';
 import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from './services/content-api-config';
@@ -24,11 +25,11 @@ import { parseStyleSummary, yamlBlock, yamlScalar } from './services/wewrite-con
 import { readWeWriteFiles } from './services/wewrite-files';
 import { migrateVideoTables } from './services/video-store';
 import { migrateXhsTables } from './services/xhs-store';
+import { migrateLinkTables } from './services/link-store';
 import { migrateEventMetadataColumns, migrateEventTables } from './services/event-store';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
 import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
-import { XianyuView } from './services/xianyu-view';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -37,7 +38,7 @@ let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
 let siteView: SiteView | undefined;
 let xhsView: XhsView | undefined;
-let xianyuView: XianyuView | undefined;
+let embeddedViews: { dispose(): void } | undefined;
 
 /** 建表与补列。顺序有依赖：codex 迁移会给 events 加 source 列，元数据列要在它之后。 */
 function openDatabase(file: string): DatabaseSync {
@@ -47,6 +48,7 @@ function openDatabase(file: string): DatabaseSync {
   const profileColumnsAdded = migrateContentTables(db);
   migrateVideoTables(db);
   migrateXhsTables(db);
+  migrateLinkTables(db);
   migrateArticleStatTables(db);
   migrateCodexEventColumns(db);
   migrateAiDraftColumns(db);
@@ -112,9 +114,10 @@ app.whenReady().then(() => {
   registerXhsIpc(ctx, xhsView);
   registerWeWriteIpc(ctx);
   registerArticleStatsIpc(ctx);
+  registerLinksIpc(ctx);
   registerSiteIpc(ctx, siteView);
-  xianyuView = new XianyuView(ctx);
-  registerXianyuIpc(xianyuView);
+  // 变现分组里固定嵌入的站点（闲鱼、16688）：每个站点一个独立会话的视图。
+  embeddedViews = registerEmbeddedIpc(ctx);
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
@@ -123,6 +126,6 @@ app.on('window-all-closed', () => {
   capture?.dispose();
   siteView?.dispose();
   xhsView?.dispose();
-  xianyuView?.dispose();
+  embeddedViews?.dispose();
   if (process.platform !== 'darwin') app.quit();
 });

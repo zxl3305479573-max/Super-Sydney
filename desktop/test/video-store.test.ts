@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import type { VideoPlatform } from '../shared.ts';
-import { createVideoProject, getVideoProject, listVideoProjects, migrateVideoTables, updateVideoProject, videoProjectFromRow } from '../services/video-store.ts';
+import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, migrateVideoTables, updateVideoProject, videoProjectFromRow } from '../services/video-store.ts';
 
 function database(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -34,4 +34,13 @@ test('脏数据回退：未知平台按通用，非法时长按 60 秒', () => {
   assert.equal(project.platform, 'general');
   assert.equal(project.durationSeconds, 60);
   assert.equal(project.status, 'idea');
+});
+
+test('删除视频任务只删这一条，删不存在的会报错', () => {
+  const db = database();
+  const keep = createVideoProject(db, 'douyin', '留下');
+  const gone = createVideoProject(db, 'douyin', '删掉');
+  deleteVideoProject(db, gone.id);
+  assert.deepEqual(listVideoProjects(db).map(item => item.id), [keep.id]);
+  assert.throws(() => deleteVideoProject(db, gone.id), /视频任务不存在/);
 });

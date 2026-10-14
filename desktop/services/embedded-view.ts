@@ -1,19 +1,61 @@
 import { shell, WebContentsView, type BrowserWindow } from 'electron';
 import type { AppContext } from '../app-context';
-import type { SiteViewBounds, XianyuViewState } from '../shared';
+import type { EmbeddedSiteKey, EmbeddedViewState, SiteViewBounds } from '../shared';
+import { keepLoginAcrossRestarts } from './session-cookies';
 import { clampSiteBounds } from './site-config';
 
-const XIANYU_PARTITION = 'persist:sydney-xianyu';
-export const XIANYU_HOME = 'https://www.goofish.com/';
+/** 一个固定嵌入的站点（变现分组的站点、公众号后台）：自己的会话分区、首页，以及可以留在视图里打开的域名。 */
+export type EmbeddedSiteConfig = {
+  key: EmbeddedSiteKey; label: string; partition: string; home: string; hosts: string[];
+};
 
 /**
- * 闲鱼模块里嵌的闲鱼网页版（goofish.com）。
- *
- * 和小红书窗口同一个做法：主进程挂在窗口上的 WebContentsView，独立会话分区，
- * 登录由用户自己在页面里扫码完成，应用不碰账号、不读 cookie、不注入脚本。
- * 闲鱼、淘宝、支付宝的页面（商品详情、扫码登录）留在视图里，别的站点交给系统浏览器。
+ * 变现分组里固定嵌入的站点。分区名一旦用过就不要改：改了等于换一个空会话，用户得重新登录。
+ * hosts 里的域名（含子域）弹出的新窗口留在视图里打开，其它站点交给系统浏览器。
  */
-export class XianyuView {
+export const EMBEDDED_SITES: Record<EmbeddedSiteKey, EmbeddedSiteConfig> = {
+  xianyu: {
+    key: 'xianyu', label: '闲鱼', partition: 'persist:sydney-xianyu', home: 'https://www.goofish.com/',
+    // 闲鱼的扫码登录、商品详情、支付依赖这几个阿里系域名。
+    hosts: ['goofish.com', 'taobao.com', 'alipay.com', 'tmall.com']
+  },
+  site16688: {
+    key: 'site16688', label: '16688', partition: 'persist:sydney-16688', home: 'https://www.16688.com.cn/',
+    hosts: ['16688.com.cn']
+  },
+  // 公众号模块里的「公众号后台」：微信公众平台（创作者发布平台）。扫码登录、草稿编辑器、
+  // 预览都在 weixin.qq.com 下，编辑器从后台首页以新窗口打开，留在视图里继续编辑。
+  wechatMp: {
+    key: 'wechatMp', label: '公众号后台', partition: 'persist:sydney-wechat-mp', home: 'https://mp.weixin.qq.com/',
+    hosts: ['weixin.qq.com']
+  }
+};
+
+export function embeddedSite(key: unknown): EmbeddedSiteConfig {
+  const site = typeof key === 'string' ? EMBEDDED_SITES[key as EmbeddedSiteKey] : undefined;
+  if (!site) throw new Error('未知的嵌入站点');
+  return site;
+}
+
+/** 链接是不是这个站点（或它依赖的域名）下的 https 页面。 */
+export function isEmbeddedHost(site: EmbeddedSiteConfig, value: string): boolean {
+  try {
+    const { protocol, hostname } = new URL(value);
+    if (protocol !== 'https:') return false;
+    return site.hosts.some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 变现分组里嵌的一个第三方站点（闲鱼、16688 …）。
+ *
+ * 主进程挂在窗口上的 WebContentsView，每个站点一个独立会话分区：登录由用户自己在页面里完成，
+ * 应用不碰账号、不读 cookie、不注入脚本，麦克风 / 摄像头 / 定位 / 通知等权限一律拒绝。
+ * 离开模块只是摘下视图，页面进程留着，切回来登录态与浏览位置都还在。
+ */
+export class EmbeddedView {
   private view: WebContentsView | null = null;
   private bounds: SiteViewBounds | null = null;
   private wanted = false;
@@ -23,9 +65,9 @@ export class XianyuView {
   private started = false;
   private error = '';
 
-  constructor(private readonly ctx: AppContext) {}
+  constructor(private readonly ctx: AppContext, private readonly site: EmbeddedSiteConfig) {}
 
-  state(): XianyuViewState {
+  state(): EmbeddedViewState {
     const contents = this.liveContents();
     return {
       url: contents?.getURL() ?? '',
@@ -37,7 +79,7 @@ export class XianyuView {
     };
   }
 
-  show(): XianyuViewState {
+  show(): EmbeddedViewState {
     this.wanted = true;
     this.sync();
     return this.state();
@@ -58,18 +100,19 @@ export class XianyuView {
     this.sync();
   }
 
-  go(action: 'back' | 'reload' | 'home'): XianyuViewState {
+  go(action: 'back' | 'reload' | 'home'): EmbeddedViewState {
     const contents = this.liveContents();
     if (contents) {
       if (action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
       if (action === 'reload') contents.reload();
-      if (action === 'home' && this.view) { this.error = ''; void this.load(this.view, XIANYU_HOME); }
+      if (action === 'home' && this.view) { this.error = ''; void this.load(this.view, this.site.home); }
     }
     return this.state();
   }
 
+  /** 支付页、需要完整浏览器能力的页面，交给系统浏览器。 */
   openExternal(): void {
-    const target = this.liveContents()?.getURL() || XIANYU_HOME;
+    const target = this.liveContents()?.getURL() || this.site.home;
     void shell.openExternal(target);
   }
 
@@ -92,7 +135,7 @@ export class XianyuView {
   }
 
   private notify(): void {
-    this.ctx.window()?.webContents.send('xianyu:view-changed');
+    this.ctx.window()?.webContents.send('embed:changed', this.site.key);
   }
 
   private detach(): void {
@@ -112,20 +155,22 @@ export class XianyuView {
       const view = this.ensureView();
       if (!this.attached) { win.contentView.addChildView(view); this.attached = true; }
       view.setBounds(this.bounds);
-      if (!this.started) void this.load(view, XIANYU_HOME);
+      if (!this.started) void this.load(view, this.site.home);
     }
     if (before !== this.attached) this.notify();
   }
 
   private ensureView(): WebContentsView {
     if (this.view && !this.view.webContents.isDestroyed()) return this.view;
-    const view = new WebContentsView({ webPreferences: { partition: XIANYU_PARTITION, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
+    const view = new WebContentsView({ webPreferences: { partition: this.site.partition, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
     const contents = view.webContents;
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     contents.session.setPermissionCheckHandler(() => false);
+    // 重启应用后不必重新登录：站点的会话 cookie 转成持久 cookie（见 session-cookies.ts）。
+    keepLoginAcrossRestarts(contents.session, () => this.site.hosts);
     contents.setWindowOpenHandler(({ url }) => {
-      // 闲鱼的商品详情默认开新标签：同站的留在视图里打开，其它站点交给系统浏览器。
-      if (isXianyuHost(url)) void this.load(view, url);
+      // 站点自己的新标签（商品详情、订单页）留在视图里打开，其它站点交给系统浏览器。
+      if (isEmbeddedHost(this.site, url)) void this.load(view, url);
       else if (/^https?:\/\//.test(url)) void shell.openExternal(url);
       return { action: 'deny' };
     });
@@ -158,17 +203,6 @@ export class XianyuView {
       if (!this.error) this.error = `页面打不开：${error instanceof Error ? error.message : String(error)}`;
       this.notify();
     }
-  }
-}
-
-/** 闲鱼及其登录、支付依赖的阿里系域名。 */
-export function isXianyuHost(value: string): boolean {
-  try {
-    const { protocol, hostname } = new URL(value);
-    if (protocol !== 'https:') return false;
-    return ['goofish.com', 'taobao.com', 'alipay.com', 'tmall.com'].some(domain => hostname === domain || hostname.endsWith(`.${domain}`));
-  } catch {
-    return false;
   }
 }
 

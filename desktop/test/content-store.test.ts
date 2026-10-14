@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import {
-  chosenDefaultSubdirectionName, createContentTask, getContentTask, listContentTasks, migrateContentTables,
+  chosenDefaultSubdirectionName, createContentTask, deleteContentTask, getContentTask, listContentTasks, migrateContentTables,
   adoptAccountProfile, readTaxonomy, saveTaxonomyTree, seedContentTaxonomy, updateContentTask
 } from '../services/content-store.ts';
 import { DEFAULT_DIRECTION_NAME, DEFAULT_SUBDIRECTIONS } from '../services/content-taxonomy.ts';
@@ -128,4 +128,14 @@ test('公众号资料字段随分类树保存；升级时专属字段只迁给�
   assert.equal(aiAfter.audience, '程序员');
   assert.deepEqual(aiAfter.blacklistWords, ['标题党']);
   assert.deepEqual(healthAfter.blacklistWords, ['震惊']);
+});
+
+test('删除文章任务只删这一篇，删不存在的会报错', () => {
+  const db = database();
+  const taxonomy = readTaxonomy(db);
+  const keep = createContentTask(db, taxonomy, null, null, '留下');
+  const gone = createContentTask(db, taxonomy, null, null, '删掉');
+  deleteContentTask(db, gone.id);
+  assert.deepEqual(listContentTasks(db).map(item => item.id), [keep.id]);
+  assert.throws(() => deleteContentTask(db, gone.id), /文章任务不存在/);
 });

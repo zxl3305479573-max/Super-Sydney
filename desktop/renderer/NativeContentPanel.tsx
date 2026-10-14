@@ -4,7 +4,7 @@ import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html'
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
 import { profileDefaultSubdirection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
-import { readableError, shortTime } from './ui';
+import { ConfirmButton, readableError, shortTime } from './ui';
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
 import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
@@ -12,7 +12,7 @@ import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonSt
  * 创作流水线：只显示当前公众号资料下的文章任务（加上还没归类的老任务），新建任务也归到这份资料。
  * 切换资料时由父组件用 key 重建本组件，所以这里把资料当作常量处理。
  */
-export default function NativeContentPanel({ profile, notify, onOpenConfig }: { profile: ContentDirection | null; notify: (message: string) => void; onOpenConfig: () => void }) {
+export default function NativeContentPanel({ profile, notify, onOpenConfig, onOpenBackend }: { profile: ContentDirection | null; notify: (message: string) => void; onOpenConfig: () => void; onOpenBackend: () => void }) {
   const directionId = profile?.id ?? null;
   const [allTasks, setTasks] = useState<ContentTask[]>([]);
   const tasks = useMemo(() => allTasks.filter(task => task.directionId === directionId || task.directionId === null), [allTasks, directionId]);
@@ -138,6 +138,17 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     setTopicSeed('');
     say('已创建文章任务，从「选题」开始');
   });
+  /** 删除当前文章：未保存的修改一并丢弃；列表刷新后自动选中下一篇。 */
+  const remove = () => guarded('delete', async say => {
+    if (!selected) return;
+    const id = selected.id;
+    const name = selected.title || selected.topic || '新文章';
+    await window.sydney.deleteContentTask(id);
+    setDirty(false);
+    setTasks(current => current.filter(item => item.id !== id));
+    setCandidateSheet(id, null);
+    say(`已删除《${name}》；已导出到知识库的文件不受影响`);
+  });
   const runStage = (stage: ContentStage, advance = true) => guarded(stage, async (say, here) => {
     if (!selected) return;
     await persistSelected();
@@ -156,6 +167,11 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
     }
   });
   const save = () => guarded('save', async say => { replaceTask(await persistSelected()); say('已保存'); });
+  /** 切到「公众号后台」页签会卸载本面板，先把未保存的修改存下来。 */
+  const openBackend = () => {
+    if (!dirty) { onOpenBackend(); return; }
+    void guarded('save', async () => { replaceTask(await persistSelected()); onOpenBackend(); });
+  };
   /** 候选张数 > 1 时先生成候选（不落库），交给候选面板挑。 */
   const wantCandidates = candidateCount > 1;
   const generateCover = () => guarded('cover', async say => {
@@ -352,6 +368,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
                 {busy.startsWith('auto') ? `自动生成中：${autoStageLabel}…` : '自动生成'}
               </button>
               <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
+              {!locked && <ConfirmButton className="button button-danger-quiet" armedLabel="确认删除" title="删除这篇文章和它的配图；已导出到知识库的文件不受影响" onConfirm={() => void remove()}>删除</ConfirmButton>}
             </div>
           </div>
 
@@ -406,6 +423,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig }: { 
               {step === 'publish' && <>
                 <button className="button button-secondary" disabled={locked || !(selected.finalArticle.trim() || selected.draft.trim())} title="未通过审稿也能导出，导出前会二次确认" onClick={() => deliver('export')}>{busy === 'export' ? '导出中…' : '导出到 Obsidian'}</button>
                 <button className="button button-primary" disabled={locked || publishChecklist(selected, env).some(item => !item.ok)} title="推送到真实公众号草稿箱；未通过审稿也能推送，推送前会二次确认" onClick={() => deliver('publish')}>{busy === 'publish' ? '推送中…' : '推送草稿箱'}</button>
+                <button className="button button-secondary" disabled={locked} title="切到「公众号后台」页签，在应用里打开微信公众平台，到草稿箱检查排版并手动发表" onClick={openBackend}>打开公众号后台</button>
               </>}
               {nextStepKey(step) && <button className="button button-quiet" onClick={() => setStep(nextStepKey(step)!)}>下一步：{PIPELINE_STEPS.find(item => item.key === nextStepKey(step))?.label} →</button>}
             </footer>

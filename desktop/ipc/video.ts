@@ -7,10 +7,10 @@ import { videoCoverPrompt } from '../services/content-api-config';
 import { imageThumbnail } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import { assertVideoExportable, assertVideoStage, parseVideoShots, prepareVideoEdit } from '../services/video-pipeline';
-import { createVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
+import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
 import { requestVideoStage } from '../services/video-workflow';
 import { exportVideoPackage } from '../services/video-export';
-import { assetDirectory, contentApiConfig, generateImageFile } from './content-support';
+import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
  * 与公众号并列的第二条内容流水线。模型只做选题、口播脚本与分镜；
@@ -36,6 +36,13 @@ export function registerVideoIpc(ctx: AppContext): void {
     const project = createVideoProject(db, platform, topic);
     ctx.broadcast();
     return project;
+  });
+  /** 删除视频：处理中不能删；连同应用目录里的封面一起清掉，已导出的发布包不受影响。 */
+  ipcMain.handle('video:delete', (_event, id: number) => {
+    assertIdle(id, '删除');
+    deleteVideoProject(db, id);
+    removeAssetDirectory(ctx, 'video-assets', id);
+    ctx.broadcast();
   });
   ipcMain.handle('video:update', (_event, id: number, patch: Partial<VideoProject>) => {
     assertIdle(id, '保存');

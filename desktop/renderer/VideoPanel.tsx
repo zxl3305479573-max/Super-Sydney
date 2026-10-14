@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VideoPlatform, VideoProject, VideoStage } from '../shared';
-import { readableError, shortTime } from './ui';
+import { ConfirmButton, readableError, shortTime } from './ui';
 import {
   AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildSrt, buildVideoPipeline, currentVideoStepKey,
   nextVideoStepKey, parseVideoShots, videoPipelineProgress, videoPlatformLabel,
@@ -27,7 +27,7 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
   const refresh = useCallback(async () => {
     const next = await window.sydney.listVideoProjects();
     setProjects(next);
-    setSelectedId(current => current ?? next[0]?.id ?? null);
+    setSelectedId(current => (current !== null && next.some(item => item.id === current) ? current : next[0]?.id ?? null));
   }, []);
   useEffect(() => { void refresh().catch(error => notify(readableError(error))); }, [refresh, notify]);
 
@@ -68,6 +68,19 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
     setBusy(key);
     try { await run(); } catch (error) { notify(readableError(error)); } finally { setBusy(''); }
   };
+
+  /** 删除当前视频：未保存的修改一并丢弃，自动选中列表里的下一条。 */
+  const remove = () => guarded('delete', async () => {
+    if (!selected) return;
+    const id = selected.id;
+    const name = selected.title || selected.topic || '新视频';
+    await window.sydney.deleteVideoProject(id);
+    setDirty(false);
+    const rest = projects.filter(item => item.id !== id);
+    setProjects(rest);
+    setSelectedId(rest[0]?.id ?? null);
+    notify(`已删除「${name}」；已导出的发布包不受影响`);
+  });
 
   const create = () => guarded('create', async () => {
     const project = await window.sydney.createVideoProject(platform, topicSeed);
@@ -186,6 +199,7 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
                 {autoStage ? `自动生成中：${stageLabels[autoStage]}…` : '自动生成'}
               </button>
               <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
+              {!locked && <ConfirmButton className="button button-danger-quiet" armedLabel="确认删除" title="删除这条视频任务和它的封面；已导出的发布包不受影响" onConfirm={() => void remove()}>删除</ConfirmButton>}
             </div>
           </div>
 

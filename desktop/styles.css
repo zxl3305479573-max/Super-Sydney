@@ -1054,3 +1054,25 @@ button.chip { cursor: pointer; }
 .flow-candidate-history-label { color: var(--muted); font-size: 11px; }
 .flow-candidate-options.is-history button { opacity: 0.82; }
 .flow-candidate-options.is-history button.is-picked { opacity: 1; }
+
+/* ── 成长 · 链接收藏 ── */
+.links-form { display: grid; gap: 12px; padding: 0 20px 18px; }
+.links-form-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.links-title-field { flex: 0 1 260px; }
+.links-tags-field { flex: 1 1 280px; }
+.links-tags-field .tag-editor { min-height: 38px; padding: 4px 8px; }
+.links-submit { flex: none; }
+.links-filter { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 14px; }
+.links-list { display: grid; margin: 0; padding: 0; border-top: 1px solid var(--line); list-style: none; }
+.links-item { display: flex; align-items: flex-start; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.links-item:last-child { border-bottom: 0; }
+.links-item:hover { background: var(--surface-soft); }
+.links-main { display: grid; flex: 1; gap: 4px; min-width: 0; }
+.links-title { justify-self: start; max-width: 100%; padding: 0; overflow: hidden; border: 0; background: none; color: var(--ink); font-size: 14px; font-weight: 600; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.links-title:hover { color: var(--primary); text-decoration: underline; }
+.links-url { overflow: hidden; color: var(--faint); font-family: var(--mono); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.links-note { margin: 2px 0 0; color: var(--ink-soft); font-size: 12.5px; line-height: 1.6; white-space: pre-wrap; }
+.links-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 2px; }
+.links-meta small { color: var(--faint); font-size: 11.5px; }
+.links-actions { display: flex; flex: none; align-items: center; gap: 2px; }
+.links .empty { margin-top: 0; }

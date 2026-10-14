@@ -1,7 +1,12 @@
 import { shell, WebContentsView, type BrowserWindow, type WebContents } from 'electron';
 import type { AppContext } from '../app-context';
 import type { SiteEntry, SiteModuleState, SiteViewBounds } from '../shared';
+import { keepLoginAcrossRestarts } from './session-cookies';
 import { clampSiteBounds, readSiteConfig, sanitizeSiteEntries, writeSiteConfig } from './site-config';
+
+function siteHost(url: string): string {
+  try { return new URL(url).hostname; } catch { return ''; }
+}
 
 /** 站点用独立会话分区：登录态与 cookie 留在它自己那里，不跟应用共享。 */
 const SITE_PARTITION = 'persist:sydney-site';
@@ -202,6 +207,8 @@ export class SiteView {
     // 站点没有麦克风、摄像头、通知、定位这些需求，缺省全拒；要开也应该是显式配置。
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     contents.session.setPermissionCheckHandler(() => false);
+    // 列表里各站点的登录在重启应用后保留（见 session-cookies.ts）；列表改了也按最新列表判断。
+    keepLoginAcrossRestarts(contents.session, () => this.sites.map(entry => siteHost(entry.url)).filter(Boolean));
     contents.setWindowOpenHandler(({ url }) => {
       if (isHttpUrl(url)) void shell.openExternal(url);
       return { action: 'deny' };

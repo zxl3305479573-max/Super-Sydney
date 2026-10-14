@@ -140,6 +140,12 @@ export function getContentTask(db: DatabaseSync, id: number): ContentTask {
   return contentTaskFromRow(row);
 }
 
+/** 删除文章任务（只删库里这一行；配图文件由调用方清理，已导出到知识库的文件不动）。 */
+export function deleteContentTask(db: DatabaseSync, id: number): void {
+  getContentTask(db, id);
+  db.prepare('DELETE FROM content_tasks WHERE id=?').run(id);
+}
+
 /**
  * 新建任务：只传二级方向时自动带出一级方向；两者都空也允许，任务会以"未归类"存在。
  */

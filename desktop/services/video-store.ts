@@ -41,6 +41,12 @@ export function getVideoProject(db: DatabaseSync, id: number): VideoProject {
   return videoProjectFromRow(row);
 }
 
+/** 删除视频任务（只删库里这一行；封面文件由调用方清理，已导出的发布包不动）。 */
+export function deleteVideoProject(db: DatabaseSync, id: number): void {
+  getVideoProject(db, id);
+  db.prepare('DELETE FROM video_projects WHERE id=?').run(id);
+}
+
 export function createVideoProject(db: DatabaseSync, platform: VideoPlatform, topic: unknown): VideoProject {
   if (!videoPlatformSet.has(platform)) throw new Error('未知的视频平台');
   const now = new Date().toISOString();

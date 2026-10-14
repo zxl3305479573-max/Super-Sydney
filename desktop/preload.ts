@@ -35,6 +35,7 @@ const api: SydneyApi = {
   optimizeDirectionNote: request => ipcRenderer.invoke('content:direction-note:optimize', request),
   optimizeImageStyle: request => ipcRenderer.invoke('content:image-style:optimize', request),
   createContentTask: (directionId, subdirectionId, topic) => ipcRenderer.invoke('content:create', directionId, subdirectionId, topic),
+  deleteContentTask: id => ipcRenderer.invoke('content:delete', id),
   updateContentTask: (id, patch) => ipcRenderer.invoke('content:update', id, patch),
   generateContentStage: (id, stage) => ipcRenderer.invoke('content:generate', id, stage),
   generateContentCover: id => ipcRenderer.invoke('content:cover:generate', id),
@@ -60,6 +61,7 @@ const api: SydneyApi = {
   deleteArticleStat: (id, profileId) => ipcRenderer.invoke('wewrite:stats:delete', id, profileId),
   listVideoProjects: () => ipcRenderer.invoke('video:list'),
   createVideoProject: (platform, topic) => ipcRenderer.invoke('video:create', platform, topic),
+  deleteVideoProject: id => ipcRenderer.invoke('video:delete', id),
   updateVideoProject: (id, patch) => ipcRenderer.invoke('video:update', id, patch),
   generateVideoStage: (id, stage) => ipcRenderer.invoke('video:generate', id, stage),
   generateVideoCover: id => ipcRenderer.invoke('video:cover:generate', id),
@@ -120,6 +122,11 @@ const api: SydneyApi = {
   deleteRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:delete'),
   testRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:test'),
   openXhsLink: url => ipcRenderer.invoke('xhs:open-link', url),
+  listLinks: () => ipcRenderer.invoke('links:list'),
+  createLink: input => ipcRenderer.invoke('links:create', input),
+  updateLink: (id, input) => ipcRenderer.invoke('links:update', id, input),
+  deleteLink: id => ipcRenderer.invoke('links:delete', id),
+  openLink: id => ipcRenderer.invoke('links:open', id),
   getSiteModule: () => ipcRenderer.invoke('site:state'),
   saveSiteModule: (sites, activateId) => ipcRenderer.invoke('site:save', sites, activateId),
   activateSiteModule: id => ipcRenderer.invoke('site:activate', id),
@@ -128,12 +135,12 @@ const api: SydneyApi = {
   setSiteModuleBounds: bounds => ipcRenderer.invoke('site:bounds', bounds),
   siteModuleGo: action => ipcRenderer.invoke('site:go', action),
   openSiteModuleInBrowser: () => ipcRenderer.invoke('site:external'),
-  getXianyuView: () => ipcRenderer.invoke('xianyu:view:state'),
-  openXianyuView: () => ipcRenderer.invoke('xianyu:view:open'),
-  closeXianyuView: () => ipcRenderer.invoke('xianyu:view:close'),
-  setXianyuViewBounds: bounds => ipcRenderer.invoke('xianyu:view:bounds', bounds),
-  xianyuViewGo: action => ipcRenderer.invoke('xianyu:view:go', action),
-  openXianyuInBrowser: () => ipcRenderer.invoke('xianyu:view:external'),
+  getEmbeddedView: key => ipcRenderer.invoke('embed:state', key),
+  openEmbeddedView: key => ipcRenderer.invoke('embed:open', key),
+  closeEmbeddedView: key => ipcRenderer.invoke('embed:close', key),
+  setEmbeddedViewBounds: (key, bounds) => ipcRenderer.invoke('embed:bounds', key, bounds),
+  embeddedViewGo: (key, action) => ipcRenderer.invoke('embed:go', key, action),
+  openEmbeddedInBrowser: key => ipcRenderer.invoke('embed:external', key),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); },
   onWeWriteChanged: callback => {
     const listener = () => callback();
@@ -145,10 +152,11 @@ const api: SydneyApi = {
     ipcRenderer.on('xhs:view-changed', listener);
     return () => ipcRenderer.removeListener('xhs:view-changed', listener);
   },
-  onXianyuViewChanged: callback => {
-    const listener = () => callback();
-    ipcRenderer.on('xianyu:view-changed', listener);
-    return () => ipcRenderer.removeListener('xianyu:view-changed', listener);
+  onEmbeddedViewChanged: (key, callback) => {
+    // 所有嵌入站点共用一个事件，按 key 只把自己的变化交给对应面板。
+    const listener = (_event: unknown, changed: unknown) => { if (changed === key) callback(); };
+    ipcRenderer.on('embed:changed', listener);
+    return () => ipcRenderer.removeListener('embed:changed', listener);
   },
   onSiteModuleChanged: callback => {
     const listener = () => callback();

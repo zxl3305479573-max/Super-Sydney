@@ -172,6 +172,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   ipcMain.handle('xhs:notes:delete', (_event, id: number) => {
     assertIdle(id, '删除');
     deleteXhsNote(db, id);
+    // 封面、卡片图、信息图、候选图库都在这个目录里；已导出的发布包在知识库，不受影响。
+    fs.rmSync(path.join(ctx.dataDir, 'xhs-assets', String(id)), { recursive: true, force: true });
     ctx.broadcast();
   });
   ipcMain.handle('xhs:notes:confirm', (_event, id: number, key: keyof XhsBasis) => {

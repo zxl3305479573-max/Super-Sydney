@@ -6,7 +6,7 @@ import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSug
 import type { ImageSlot } from '../services/content-images';
 import { COVER_CANDIDATE_KEY, applyGeneratedImages, articleLeadExcerpt, buildImagePrompt, classifyAssetFile, collectTaskAssets, listInlineImages, mergeCandidateOptions, placeImages, replaceInlineImage, planCoverAndInlineImages, planImageSlots, resolveCandidatePicks, slotCandidateKey } from '../services/content-images';
 import { coverImagePrompt, imagePromptScope } from '../services/content-api-config';
-import { chosenDefaultSubdirectionName, createContentTask, getContentTask, listContentTasks, optionalId, saveTaxonomyTree, updateContentTask } from '../services/content-store';
+import { chosenDefaultSubdirectionName, createContentTask, deleteContentTask, getContentTask, listContentTasks, optionalId, saveTaxonomyTree, updateContentTask } from '../services/content-store';
 import { findSubdirection, subdirectionNames } from '../services/content-taxonomy';
 import { requestContentStage } from '../services/content-workflow';
 import { normalizeDirectionNoteRequest, requestDirectionNote } from '../services/direction-note';
@@ -21,7 +21,7 @@ import { RequestLock } from '../services/request-lock';
 import { WeChatClient, contentTypeFor } from '../services/wechat-publisher';
 import { yamlScalar } from '../services/wewrite-config';
 import { readWeWriteFiles, syncStyleTopics } from '../services/wewrite-files';
-import { assetDirectory, contentApiConfig, generateImageFile, readContentTaxonomy } from './content-support';
+import { assetDirectory, contentApiConfig, generateImageFile, readContentTaxonomy, removeAssetDirectory } from './content-support';
 
 /* ── 桌面端原生公众号内容管道 ─────────────────────────────────── */
 
@@ -156,6 +156,13 @@ export function registerContentIpc(ctx: AppContext): void {
     requestDirectionNote(normalizeDirectionNoteRequest(request), contentApiConfig(ctx)));
   ipcMain.handle('content:image-style:optimize', async (_event, request: unknown): Promise<DirectionNoteSuggestion> =>
     requestImageStyle(normalizeImageStyleRequest(request), contentApiConfig(ctx)));
+  /** 删除文章：生成、生图进行中不能删；连同应用目录里的配图一起清掉，已导出到知识库的文章不受影响。 */
+  ipcMain.handle('content:delete', (_event, id: number) => {
+    assertIdle(id, '删除');
+    deleteContentTask(db, id);
+    removeAssetDirectory(ctx, 'content-assets', id);
+    ctx.broadcast();
+  });
   ipcMain.handle('content:create', (_event, directionId: number | null, subdirectionId: number | null, topic = '') => {
     const taxonomy = readContentTaxonomy(ctx);
     const created = createContentTask(db, taxonomy, directionId, subdirectionId, topic);

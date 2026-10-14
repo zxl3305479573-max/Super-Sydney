@@ -6,7 +6,11 @@ import type { SiteViewBounds, XhsPageRead, XhsViewState } from '../shared';
 import { clampSiteBounds } from './site-config';
 import { XHS_PUBLISH_URL } from './xhs-catalog';
 import { isXhsHost, normalizePageRead, XHS_PAGE_EXTRACT_SCRIPT, type RawPageExtract } from './xhs-page-parse';
+import { keepLoginAcrossRestarts } from './session-cookies';
 import { listXhsAccounts } from './xhs-store';
+
+/** 小红书网页版与创作者中心的登录 cookie 都写在 xiaohongshu.com 下。 */
+const XHS_LOGIN_HOSTS = ['xiaohongshu.com'] as const;
 
 /** 早期版本所有账号共用的会话分区；启动时迁给第一个账号（见 migrateLegacyPartition）。 */
 const LEGACY_PARTITION = 'sydney-xhs';
@@ -191,6 +195,8 @@ export class XhsView {
     const contents = view.webContents;
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     contents.session.setPermissionCheckHandler(() => false);
+    // 每个账号一个分区，各自保持登录：重启应用后不必重新扫码（见 session-cookies.ts）。
+    keepLoginAcrossRestarts(contents.session, () => XHS_LOGIN_HOSTS);
     contents.setWindowOpenHandler(({ url }) => {
       // 小红书内部链接留在窗口里打开，其它站点交给系统浏览器。
       if (isXhsHost(url)) void this.load(current, url);

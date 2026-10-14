@@ -1,29 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { XianyuViewState } from '../shared';
+import type { EmbeddedSiteKey, EmbeddedViewState } from '../shared';
 import { Icon, readableError } from './ui';
 
 /**
- * 闲鱼模块：把闲鱼网页版（goofish.com）嵌进来。
+ * 变现分组里固定嵌入的站点（闲鱼、16688 …）。
  *
  * 和 AI 代充一样，页面不在 DOM 里渲染：主进程把 WebContentsView 挂在窗口上，
  * 这里只报承载区域 .site-stage 的位置、转发后退 / 刷新这些操作。
  * 视图浮在页面之上，所以弹层打开时（overlay）必须先把它摘下来。
  */
-export default function XianyuPanel({ overlay }: { overlay: boolean }) {
-  const [state, setState] = useState<XianyuViewState | null>(null);
+export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay }: { siteKey: EmbeddedSiteKey; label: string; privacy: string; overlay: boolean }) {
+  const [state, setState] = useState<EmbeddedViewState | null>(null);
   const [error, setError] = useState('');
   const stageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let alive = true;
+    setState(null);
+    setError('');
     const pull = async () => {
-      const next = await window.sydney.getXianyuView();
+      const next = await window.sydney.getEmbeddedView(siteKey);
       if (alive) setState(next);
     };
     void pull();
-    const off = window.sydney.onXianyuViewChanged(() => void pull());
+    const off = window.sydney.onEmbeddedViewChanged(siteKey, () => void pull());
     return () => { alive = false; off(); };
-  }, []);
+  }, [siteKey]);
 
   const readStage = useCallback(() => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -32,11 +34,11 @@ export default function XianyuPanel({ overlay }: { overlay: boolean }) {
 
   useEffect(() => {
     if (overlay) {
-      void window.sydney.closeXianyuView();
+      void window.sydney.closeEmbeddedView(siteKey);
       return;
     }
-    void window.sydney.openXianyuView();
-    const report = () => void window.sydney.setXianyuViewBounds(readStage());
+    void window.sydney.openEmbeddedView(siteKey);
+    const report = () => void window.sydney.setEmbeddedViewBounds(siteKey, readStage());
     report();
     const observer = new ResizeObserver(report);
     if (stageRef.current) observer.observe(stageRef.current);
@@ -47,21 +49,21 @@ export default function XianyuPanel({ overlay }: { overlay: boolean }) {
       observer.disconnect();
       window.removeEventListener('resize', report);
       window.removeEventListener('scroll', report, true);
-      void window.sydney.closeXianyuView();
+      void window.sydney.closeEmbeddedView(siteKey);
     };
-  }, [overlay, readStage]);
+  }, [siteKey, overlay, readStage]);
 
   const go = (action: 'back' | 'reload' | 'home') => {
-    void window.sydney.xianyuViewGo(action).then(next => { setState(next); setError(''); }).catch(problem => setError(readableError(problem)));
+    void window.sydney.embeddedViewGo(siteKey, action).then(next => { setState(next); setError(''); }).catch(problem => setError(readableError(problem)));
   };
 
-  return <section className="site-panel" aria-label="闲鱼">
+  return <section className="site-panel" aria-label={label}>
     <div className="site-bar">
       <div className="site-actions">
         <button className="button button-quiet button-small" type="button" onClick={() => go('back')} disabled={!state?.canGoBack}><Icon name="undo" size={14} />后退</button>
         <button className="button button-quiet button-small" type="button" onClick={() => go('reload')}><Icon name="refresh" size={14} />刷新</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => go('home')}><Icon name="link" size={14} />回到闲鱼首页</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => void window.sydney.openXianyuInBrowser()}><Icon name="window" size={14} />在浏览器打开</button>
+        <button className="button button-quiet button-small" type="button" onClick={() => go('home')}><Icon name="link" size={14} />回到{label}首页</button>
+        <button className="button button-quiet button-small" type="button" onClick={() => void window.sydney.openEmbeddedInBrowser(siteKey)}><Icon name="window" size={14} />在浏览器打开</button>
       </div>
     </div>
     {(error || state?.error) && <p className="site-error" role="alert"><Icon name="alert" size={14} /><span>{error || state?.error}</span></p>}
@@ -69,11 +71,11 @@ export default function XianyuPanel({ overlay }: { overlay: boolean }) {
       <span>当前页面</span>
       <strong>{state?.title || state?.url || '正在打开…'}</strong>
       {state?.loading && <span>载入中…</span>}
-      {overlay && <span>弹层打开时先收起闲鱼页面</span>}
+      {overlay && <span>弹层打开时先收起{label}页面</span>}
     </p>
     <div className="site-stage" ref={stageRef}>
-      <p className="site-stage-hint">{state?.loading ? '正在打开闲鱼…' : '闲鱼页面正在接管这块区域'}</p>
+      <p className="site-stage-hint">{state?.loading ? `正在打开${label}…` : `${label}页面正在接管这块区域`}</p>
     </div>
-    <p className="site-privacy">页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。</p>
+    <p className="site-privacy">{privacy}</p>
   </section>;
 }
