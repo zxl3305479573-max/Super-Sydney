@@ -30,7 +30,7 @@ const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { titl
   today: { title: '今日工作', subtitle: '' },
   review: { title: '待确认', subtitle: '逐条确认或批量处理采集到的事件，确认后的内容才会沉淀到知识库。' },
   evolve: { title: '自我进化', subtitle: '从 AI 协作里找出重复劳动与返工，沉淀成项目规则和经验卡片。' },
-  xianyu: { title: '闲鱼', subtitle: '刚建好的模块，只有入口和一块空工作区，功能还没开始做。' },
+  xianyu: { title: '闲鱼', subtitle: '闲鱼网页版直接嵌在这里：首次使用在页面里扫码登录，登录态只留在这个模块自己的会话里。' },
   site: { title: 'AI 代充', subtitle: '把常用的代充 / 发卡站点都放进来：上面选站点，下面直接操作。站点开在它自己的会话里，应用只负责给它让出这块位置。' },
   settings: { title: '隐私与设置', subtitle: '采集范围、AI 对话监听和知识库位置。所有数据默认只保存在本机。' }
 };
@@ -123,7 +123,7 @@ export default function App() {
         : view === 'wewrite' ? <WeWritePanel notify={notifyAny} />
         : view === 'video' ? <VideoPanel notify={notifyAny} />
         : view === 'xiaohongshu' ? <XiaohongshuPanel notify={notifyAny} overlay={manualOpen || detailId !== null} />
-        : view === 'xianyu' ? <XianyuPanel />
+        : view === 'xianyu' ? <XianyuPanel overlay={manualOpen || detailId !== null} />
         : view === 'site' ? <SitePanel overlay={manualOpen || detailId !== null} notify={notifyAny} />
         : <TodayView state={state} mode={view} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />}
     </main>

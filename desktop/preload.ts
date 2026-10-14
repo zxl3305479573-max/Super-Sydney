@@ -124,6 +124,12 @@ const api: SydneyApi = {
   setSiteModuleBounds: bounds => ipcRenderer.invoke('site:bounds', bounds),
   siteModuleGo: action => ipcRenderer.invoke('site:go', action),
   openSiteModuleInBrowser: () => ipcRenderer.invoke('site:external'),
+  getXianyuView: () => ipcRenderer.invoke('xianyu:view:state'),
+  openXianyuView: () => ipcRenderer.invoke('xianyu:view:open'),
+  closeXianyuView: () => ipcRenderer.invoke('xianyu:view:close'),
+  setXianyuViewBounds: bounds => ipcRenderer.invoke('xianyu:view:bounds', bounds),
+  xianyuViewGo: action => ipcRenderer.invoke('xianyu:view:go', action),
+  openXianyuInBrowser: () => ipcRenderer.invoke('xianyu:view:external'),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); },
   onWeWriteChanged: callback => {
     const listener = () => callback();
@@ -134,6 +140,11 @@ const api: SydneyApi = {
     const listener = () => callback();
     ipcRenderer.on('xhs:view-changed', listener);
     return () => ipcRenderer.removeListener('xhs:view-changed', listener);
+  },
+  onXianyuViewChanged: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('xianyu:view-changed', listener);
+    return () => ipcRenderer.removeListener('xianyu:view-changed', listener);
   },
   onSiteModuleChanged: callback => {
     const listener = () => callback();

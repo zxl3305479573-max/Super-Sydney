@@ -530,6 +530,8 @@ export type XhsAnalyticsView = {
 export type XhsStatsImportResult = { file: string; added: number; updated: number; view: XhsAnalyticsView };
 
 export type XhsViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
+/** 闲鱼模块里嵌的闲鱼网页版：结构与小红书窗口一致，走单独的 xianyu:* 通道。 */
+export type XianyuViewState = XhsViewState;
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
 export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
@@ -728,6 +730,15 @@ export interface SydneyApi {
   siteModuleGo(action: 'back' | 'reload' | 'home'): Promise<SiteModuleState>;
   /** 支付页、客服链接这类需要完整浏览器能力的目标，交给系统浏览器。 */
   openSiteModuleInBrowser(): Promise<void>;
+  getXianyuView(): Promise<XianyuViewState>;
+  /** 把闲鱼视图挂到窗口上；界面报位置之前不会真的显示。 */
+  openXianyuView(): Promise<XianyuViewState>;
+  /** 从窗口上摘下来，页面进程留着，切回来登录态与浏览位置都在。 */
+  closeXianyuView(): Promise<void>;
+  setXianyuViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  xianyuViewGo(action: 'back' | 'reload' | 'home'): Promise<XianyuViewState>;
+  openXianyuInBrowser(): Promise<void>;
+  onXianyuViewChanged(callback: () => void): () => void;
   onChanged(callback: () => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
   onSiteModuleChanged(callback: () => void): () => void;

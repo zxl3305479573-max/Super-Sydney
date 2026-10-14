@@ -10,6 +10,7 @@ import { registerVideoIpc } from './ipc/video';
 import { registerWeWriteIpc } from './ipc/wewrite';
 import { registerArticleStatsIpc } from './ipc/article-stats';
 import { registerSiteIpc } from './ipc/site';
+import { registerXianyuIpc } from './ipc/xianyu';
 import { registerXhsIpc } from './ipc/xiaohongshu';
 import { migrateArticleStatTables } from './services/article-stats-store';
 import { SettingsFile } from './services/app-settings';
@@ -27,6 +28,7 @@ import { migrateEventMetadataColumns, migrateEventTables } from './services/even
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
 import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
+import { XianyuView } from './services/xianyu-view';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -35,6 +37,7 @@ let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
 let siteView: SiteView | undefined;
 let xhsView: XhsView | undefined;
+let xianyuView: XianyuView | undefined;
 
 /** 建表与补列。顺序有依赖：codex 迁移会给 events 加 source 列，元数据列要在它之后。 */
 function openDatabase(file: string): DatabaseSync {
@@ -110,6 +113,8 @@ app.whenReady().then(() => {
   registerWeWriteIpc(ctx);
   registerArticleStatsIpc(ctx);
   registerSiteIpc(ctx, siteView);
+  xianyuView = new XianyuView(ctx);
+  registerXianyuIpc(xianyuView);
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
@@ -118,5 +123,6 @@ app.on('window-all-closed', () => {
   capture?.dispose();
   siteView?.dispose();
   xhsView?.dispose();
+  xianyuView?.dispose();
   if (process.platform !== 'darwin') app.quit();
 });

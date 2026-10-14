@@ -749,18 +749,6 @@ button.chip { cursor: pointer; }
 .flow-settings-summary b { color: var(--faint); font-weight: 600; }
 /* 设置区自带保存条，不跟着视口悬浮，避免压住下面的流水线内容 */
 
-/* ── 闲鱼模块 ───────────────────────────────────────────────────
- * 目前只有模块壳子：导航入口加一块空工作区。
- * 刻意不复用 .flow-* / .native-* 骨架，等闲鱼自己的形态定下来再单独长。
- */
-.xy-panel { display: grid; gap: 18px; }
-.xy-blank { display: grid; justify-items: center; gap: 10px; padding: 54px 28px; border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--surface); text-align: center; box-shadow: var(--shadow-sm); }
-.xy-blank-mark { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 12px; background: var(--primary-soft); color: var(--primary); font-size: 20px; font-weight: 650; }
-.xy-blank h2 { margin: 4px 0 0; font-size: 17px; font-weight: 650; }
-.xy-blank > p { max-width: 480px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
-.xy-blank-notes { display: grid; gap: 5px; max-width: 480px; margin: 4px 0 0; padding: 0; list-style: none; color: var(--faint); font-size: 12px; line-height: 1.6; }
-.xy-blank-notes li::before { content: "·"; margin-right: 7px; color: var(--line-strong); }
-
 /* ── 小红书模块 ─────────────────────────────────────────────────
  * 七个分区（向导 / 定位 / 热点 / 笔记 / 诊断 / 复盘 / 窗口）。笔记流水线复用 .flow-* 与 .native-* 骨架，
  * 这里只补小红书特有的部分：卡片区块、热点列表、标题评分表、3:4 封面与信息流预览、图组、漏斗表。
