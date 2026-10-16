@@ -16,8 +16,24 @@ export const DEFAULT_LLM_BASE_URL = 'https://api.deepseek.com/v1';
 export const DEFAULT_LLM_MODEL = 'deepseek-chat';
 
 /**
- * 内容 API 配置：公众号与视频两条流水线共用同一份 writer 配置与密钥开关。
- * 关掉开关时两条流水线一起停，避免「我在公众号里关了模型调用，视频还在偷偷花钱」。
+ * 全应用统一的内容模型地址与模型名（「设置 → 模型」里配置，存在 config.yaml 的 writer 段）。
+ * 公众号、视频、小红书、AI 整理与经验卡片都读这一处。
+ */
+export function writerEndpoint(configText: string | null, env: Env = process.env): { baseUrl: string; model: string } {
+  const writer = yamlBlock(configText, 'writer');
+  return {
+    baseUrl: yamlScalar(writer, 'base_url') || env.SYDNEY_LLM_BASE_URL || DEFAULT_LLM_BASE_URL,
+    model: yamlScalar(writer, 'model') || env.SYDNEY_LLM_MODEL || DEFAULT_LLM_MODEL
+  };
+}
+
+/** 统一模型配置所在的位置，报错时告诉用户去哪里改。 */
+export const MODEL_SETTINGS_WHERE = '「设置 → 模型」';
+
+/**
+ * 内容 API 配置：所有模块共用同一份内容模型与同一个开关（应用设置里的 llmEnabled）。
+ * 关掉开关时所有模块一起停，避免「我在这里关了模型调用，别的模块还在偷偷花钱」。
+ * config.yaml 里旧的 writer.enabled 不再参与判断——两个开关并存时总有一个会被忘掉。
  */
 export function buildContentApiConfig(input: {
   files: WeWriteFiles;
@@ -28,9 +44,7 @@ export function buildContentApiConfig(input: {
   env?: Env;
 }): ContentApiConfig {
   const env = input.env ?? process.env;
-  const writer = yamlBlock(input.files.configText, 'writer');
-  const enabled = yamlScalar(writer, 'enabled');
-  if (enabled ? enabled !== 'true' : !input.llmEnabled) throw new Error('请先在公众号配置中允许内容 API 调用');
+  if (!input.llmEnabled) throw new Error(`请先在${MODEL_SETTINGS_WHERE}里允许调用内容模型`);
   const found = input.subdirectionId !== undefined ? findSubdirection(input.taxonomy.directions, input.subdirectionId) : null;
   /**
    * 明确传了 subdirectionId 却找不到方向时不能回退到 style.yaml：
@@ -45,8 +59,7 @@ export function buildContentApiConfig(input: {
   const style = parseStyleSummary(input.files.styleText);
   return {
     apiKey: input.apiKey,
-    baseUrl: yamlScalar(writer, 'base_url') || env.SYDNEY_LLM_BASE_URL || DEFAULT_LLM_BASE_URL,
-    model: yamlScalar(writer, 'model') || env.SYDNEY_LLM_MODEL || DEFAULT_LLM_MODEL,
+    ...writerEndpoint(input.files.configText, env),
     // 只带账号表达相关的字段：topics/default_topic 属于分类范畴，已经由内容方向表达，重复注入只会互相干扰。
     // 写作配置按公众号资料取：归类了的文章只用所属资料的值（空就是空，不回退到最初那份资料的账号设定）；
     // 视频与未归类文章没有资料，才用 style.yaml。
@@ -72,7 +85,7 @@ export type ImageApiConfig = { apiKey: string; baseUrl: string; model: string };
 /** 图片 API 配置读 config.yaml 的 image 段（简单标量键）。 */
 export function imageApiConfig(configText: string | null): ImageApiConfig {
   const apiKey = yamlScalar(configText, 'api_key');
-  if (!apiKey) throw new Error('请先在公众号「环境与配置」中配置图片 API Key');
+  if (!apiKey) throw new Error(`请先在${MODEL_SETTINGS_WHERE}里配置图片模型的 API Key`);
   return {
     apiKey,
     baseUrl: (yamlScalar(configText, 'base_url') || 'https://api.openai.com/v1').replace(/\/$/, ''),

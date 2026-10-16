@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsHotNote, XhsViewState } from '../../shared';
 import { XHS_PUBLISH_URL } from '../../services/xhs-catalog';
-import { Icon, readableError } from '../ui';
+import { Icon, readableError, visibleStageBounds } from '../ui';
 import type { AuditPrefill } from './AuditTab';
 import { useBusy, type XhsContext } from './common';
 
@@ -25,8 +25,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   const { busy, run, locked } = useBusy(notify);
 
   const readStage = useCallback(() => {
-    const rect = stageRef.current?.getBoundingClientRect();
-    return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+    return visibleStageBounds(stageRef.current);
   }, []);
   const refresh = useCallback(() => void window.sydney.getXhsView().then(setState).catch(() => undefined), []);
   useEffect(() => window.sydney.onXhsViewChanged(refresh), [refresh]);

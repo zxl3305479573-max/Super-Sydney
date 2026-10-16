@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { dialog, ipcMain, shell } from 'electron';
+import { openUrl } from '../services/browser';
 import type { AppContext } from '../app-context';
 import type {
-  XhsApiSettings, XhsApiStatus, XhsAccount, XhsAnalyticsView, XhsAuditInput, XhsBasis, XhsGenerateStage, XhsHotNote, XhsHotspotQuery, XhsHotspotResult, XhsImageItem,
+  XhsAccount, XhsAnalyticsView, XhsAuditInput, XhsBasis, XhsGenerateStage, XhsHotNote, XhsHotspotQuery, XhsHotspotResult, XhsImageItem,
   XhsNote, XhsNoteAssets, XhsReport, XhsRouterAdvice
 } from '../shared';
 import { ImageJobs, imageErrorText } from '../services/image-generation';
@@ -29,12 +30,9 @@ import {
   requestPositioningStep, requestRouteChoice, requestXhsAnalyticsInterpretation, requestXhsAudit, requestXhsBody, requestXhsCardPlan,
   requestXhsModelChecks, requestXhsTitles, requestXhsTopicIdeas, xhsCoverPrompt, xhsInfoImagePrompt, type XhsApiConfig
 } from '../services/xhs-workflow';
-import { contentApiConfig } from './content-support';
 import { requestGeneratedImage } from '../services/image-generation';
-import { imageApiConfig } from '../services/content-api-config';
+import { MODEL_SETTINGS_WHERE, imageApiConfig, writerEndpoint } from '../services/content-api-config';
 import { readWeWriteFiles } from '../services/wewrite-files';
-import { requestChatContent } from '../services/llm-json';
-import { readXhsApiSettings, writeXhsApiSettings, xhsImageConfig, xhsLlmConfig } from '../services/xhs-api-config';
 
 /* ── 小红书 ──────────────────────────────────────────────────────
  * 五环节 + 总控。独立的 xhs:* 命名空间，不进 state:get；写库后照常广播，让界面重新拉取。
@@ -52,10 +50,13 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   const imageJobs = new ImageJobs();
   const redfox = (apiKey: string) => ({ apiKey, fetch: fetch as unknown as FetchLike });
 
-  /** 小红书自己的内容模型连接（xhs-api.json + 独立 key），不读公众号的任何配置。 */
-  const apiConfig = (_account?: XhsAccount): XhsApiConfig => xhsLlmConfig(readXhsApiSettings(ctx.dataDir), ctx.xhsLlmKeyStore.read());
-  const apiStatus = (): XhsApiStatus => ({ settings: readXhsApiSettings(ctx.dataDir), llmKey: ctx.xhsLlmKeyStore.getStatus(), imageKey: ctx.xhsImageKeyStore.getStatus() });
-  const keyStore = (kind: unknown) => kind === 'image' ? ctx.xhsImageKeyStore : kind === 'llm' ? ctx.xhsLlmKeyStore : null;
+  /** 内容模型用全应用统一的那一个（「设置 → 模型」）；读者与人设仍只来自小红书定位档案。 */
+  const apiConfig = (_account?: XhsAccount): XhsApiConfig => {
+    if (!ctx.settings.read().llmEnabled) throw new Error(`请先在${MODEL_SETTINGS_WHERE}里允许调用内容模型`);
+    const apiKey = ctx.llmApiKey();
+    if (!apiKey) throw new Error(`还没有配置内容模型的 API Key，请先在${MODEL_SETTINGS_WHERE}里填写`);
+    return { apiKey, ...writerEndpoint(readWeWriteFiles().configText) };
+  };
   const assetDir = (noteId: number) => {
     const directory = path.join(ctx.dataDir, 'xhs-assets', String(noteId));
     fs.mkdirSync(directory, { recursive: true });
@@ -220,7 +221,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
 
   /** 生成一张 3:4 图：接口出 2:3 竖图后补边成 3:4（不裁切，内容不会被切掉）。 */
   const generateThreeFour = async (target: string, prompt: string, signal: AbortSignal) => {
-    const config = xhsImageConfig(readXhsApiSettings(ctx.dataDir), ctx.xhsImageKeyStore.read());
+    const config = imageApiConfig(readWeWriteFiles().configText);
     fs.writeFileSync(target, await requestGeneratedImage(config, prompt, '1024x1536', signal));
     return fitToThreeFour(target);
   };
@@ -504,49 +505,6 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   ipcMain.handle('xhs:view:go', (_event, action: 'back' | 'reload') => view.go(action === 'back' ? 'back' : 'reload'));
   ipcMain.handle('xhs:view:read', () => view.read());
 
-  /* ── 小红书自己的模型连接 ───────────────────────────────────── */
-
-  ipcMain.handle('xhs:api:status', () => apiStatus());
-  ipcMain.handle('xhs:api:save', (_event, patch: Partial<XhsApiSettings>) => { writeXhsApiSettings(ctx.dataDir, patch ?? {}); return apiStatus(); });
-  ipcMain.handle('xhs:api:key:save', (_event, kind: 'llm' | 'image', value: string) => {
-    const store = keyStore(kind);
-    if (!store) throw new Error('未知的 key 类型');
-    store.save(value);
-    return apiStatus();
-  });
-  ipcMain.handle('xhs:api:key:delete', (_event, kind: 'llm' | 'image') => {
-    const store = keyStore(kind);
-    if (!store) throw new Error('未知的 key 类型');
-    store.remove();
-    return apiStatus();
-  });
-  /**
-   * 一次性复制公众号现有的连接配置：只是省得重填，复制完两边各自独立，之后改公众号不会影响小红书。
-   * key 只在主进程里搬运，不经过界面。
-   */
-  ipcMain.handle('xhs:api:import-wewrite', () => {
-    const copied: string[] = [];
-    try {
-      const { apiKey, baseUrl, model } = contentApiConfig(ctx);
-      writeXhsApiSettings(ctx.dataDir, { llmBaseUrl: baseUrl, llmModel: model, llmEnabled: true });
-      if (apiKey.trim()) ctx.xhsLlmKeyStore.save(apiKey);
-      copied.push('内容模型');
-    } catch { /* 公众号没配或关着：跳过这一项 */ }
-    try {
-      const image = imageApiConfig(readWeWriteFiles().configText);
-      writeXhsApiSettings(ctx.dataDir, { imageBaseUrl: image.baseUrl, imageModel: image.model });
-      ctx.xhsImageKeyStore.save(image.apiKey);
-      copied.push('图片模型');
-    } catch { /* 公众号没配图片接口：跳过 */ }
-    if (!copied.length) throw new Error('公众号那边也还没有可复制的内容 / 图片接口配置');
-    return { status: apiStatus(), copied };
-  });
-  ipcMain.handle('xhs:api:test', async () => {
-    const config = apiConfig();
-    await requestChatContent(config, '你是连接测试。', '只输出 JSON：{"ok":true}', { label: '小红书内容模型', timeoutMs: 30_000 });
-    return { model: config.model };
-  });
-
   /* ── 红狐 Key 与链接 ───────────────────────────────────────── */
 
   /** 没存 key 但设置了环境变量时也算已配置（搜索本身就会用它），免得界面误报「没有 Key」。 */
@@ -564,6 +522,6 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   });
   ipcMain.handle('xhs:open-link', async (_event, url: string) => {
     if (!isHttpLink(url)) throw new Error('只能打开 http / https 链接');
-    await shell.openExternal(url);
+    await openUrl(url);
   });
 }

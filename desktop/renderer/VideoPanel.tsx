@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { VideoPlatform, VideoProject, VideoStage } from '../shared';
+import type { VideoPlatform, VideoProgress, VideoProject, VideoRenderOptions, VideoStage } from '../shared';
 import { ConfirmButton, readableError, shortTime } from './ui';
 import {
-  AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildSrt, buildVideoPipeline, currentVideoStepKey,
+  AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildVideoPipeline, currentVideoStepKey,
   nextVideoStepKey, parseVideoShots, videoPipelineProgress, videoPlatformLabel,
   type VideoStepKey
 } from '../services/video-pipeline';
 import { readTopics, stageLabels, stateNames, statusNames } from './video/format';
-import { CaptionsStep, CoverStep, ExportStep, ScriptStep, Stepper, StoryboardStep, TopicStep, useVideoAssets } from './video/steps';
+import { CoverStep, ExportStep, ScriptStep, Stepper, StoryboardStep, TopicStep, useVideoAssets } from './video/steps';
+import { RenderStep, VisualsStep, VoiceStep } from './video/production';
 
 export default function VideoPanel({ notify }: { notify: (message: string) => void }) {
   const [projects, setProjects] = useState<VideoProject[]>([]);
@@ -17,12 +18,14 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
   const [step, setStep] = useState<VideoStepKey>('topic');
   const [busy, setBusy] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [progress, setProgress] = useState<VideoProgress | null>(null);
 
   const selected = projects.find(item => item.id === selectedId) ?? null;
   const pipeline = useMemo(() => (selected ? buildVideoPipeline(selected) : []), [selected]);
   const assets = useVideoAssets(selected?.id ?? 0, selected?.updatedAt ?? '');
   const shots = useMemo(() => parseVideoShots(selected?.storyboardJson ?? ''), [selected?.storyboardJson]);
-  const srt = useMemo(() => buildSrt(shots), [shots]);
+  // 配音、配图、渲染都是长操作：主进程逐步推进度，这里只保留当前选中视频的那一条。
+  useEffect(() => window.sydney.onVideoProgress(next => { if (next.id === selectedId) setProgress(next); }), [selectedId]);
 
   const refresh = useCallback(async () => {
     const next = await window.sydney.listVideoProjects();
@@ -57,7 +60,8 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
     if (!selected) throw new Error('请先选择视频任务');
     const saved = await window.sydney.updateVideoProject(selected.id, {
       platform: selected.platform, topic: selected.topic, title: selected.title, audience: selected.audience,
-      durationSeconds: selected.durationSeconds, script: selected.script, storyboardJson: selected.storyboardJson, coverPath: selected.coverPath
+      durationSeconds: selected.durationSeconds, script: selected.script, storyboardJson: selected.storyboardJson, coverPath: selected.coverPath,
+      options: selected.options
     });
     setDirty(false);
     replaceProject(saved);
@@ -66,8 +70,10 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
 
   const guarded = async (key: string, run: () => Promise<void>) => {
     setBusy(key);
-    try { await run(); } catch (error) { notify(readableError(error)); } finally { setBusy(''); }
+    setProgress(null);
+    try { await run(); } catch (error) { notify(readableError(error)); } finally { setBusy(''); setProgress(null); }
   };
+  const editOptions = (patch: Partial<VideoRenderOptions>) => { if (selected) editSelected({ options: { ...selected.options, ...patch } }); };
 
   /** 删除当前视频：未保存的修改一并丢弃，自动选中列表里的下一条。 */
   const remove = () => guarded('delete', async () => {
@@ -146,9 +152,52 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
     const error = await window.sydney.openVideoPackage(selected.id);
     if (error) notify(error);
   });
-  const copySrt = () => guarded('copy', async () => {
+  const copySrt = (srt: string) => guarded('copy', async () => {
     await navigator.clipboard.writeText(srt);
     notify('字幕已复制到剪贴板');
+  });
+  /** 配音：默认只补缺失或口播改过的镜头；force 时按当前配音设置全部重配。 */
+  const generateVoice = (force: boolean) => {
+    if (force && !window.confirm('按当前配音设置重新合成全部镜头？已有的配音会被替换。')) return;
+    void guarded('voice', async () => {
+      if (!selected) return;
+      await persistSelected();
+      replaceProject(await window.sydney.generateVideoVoice(selected.id, force));
+      notify('配音完成，镜头时长已换成真实音频长度');
+    });
+  };
+  const generateImages = (force: boolean) => {
+    if (force && !window.confirm('全部重新生成配图会按张重新计费，继续？')) return;
+    void guarded('images', async () => {
+      if (!selected) return;
+      await persistSelected();
+      replaceProject(await window.sydney.generateVideoImages(selected.id, force));
+      notify('配图已生成');
+    });
+  };
+  const renderPreview = () => guarded('preview', async () => {
+    if (!selected) return;
+    await persistSelected();
+    replaceProject(await window.sydney.renderVideoPreview(selected.id));
+  });
+  const renderVideo = () => guarded('render', async () => {
+    if (!selected) return;
+    await persistSelected();
+    const project = await window.sydney.renderVideo(selected.id);
+    replaceProject(project);
+    notify(`成片已渲染：${project.assets.video?.path ?? ''}`);
+  });
+  const chooseBgm = () => guarded('bgm', async () => {
+    if (!selected) return;
+    // 先存下未保存的修改：选曲返回的是库里的版本，不先存会把界面上的改动冲掉。
+    await persistSelected();
+    const project = await window.sydney.chooseVideoBgm(selected.id);
+    if (project) { replaceProject(project); notify('已选择背景音乐'); }
+  });
+  const openVideo = () => guarded('open-video', async () => {
+    if (!selected) return;
+    const error = await window.sydney.openVideoFile(selected.id);
+    if (error) notify(error);
   });
 
   const locked = busy !== '';
@@ -160,9 +209,9 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
       <div>
         <p className="eyebrow">内容工作区</p>
         <h1>视频</h1>
-        <p>选题 → 口播脚本 → 分镜 → 字幕 → 封面 → 制作包。模型只写脚本和分镜，字幕与成片交付物在本地生成。</p>
+        <p>选题 → 口播脚本 → 分镜 → 配音与字幕 → 画面 → 成片 → 封面 → 制作包。模型写脚本和分镜，配音按镜头合成，字幕、画面与成片在本地生成。</p>
       </div>
-      <div className="ww-page-header-note"><strong>中老年健康科普</strong><span>{projects.length} 条视频任务 · 只交付制作包，不代发布</span></div>
+      <div className="ww-page-header-note"><strong>中老年健康科普</strong><span>{projects.length} 条视频任务 · 出成片与制作包，不代发布</span></div>
     </header>
 
     <div className="native-create">
@@ -218,9 +267,14 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
               onEdit={editSelected} onRun={() => void runStage('topics')} />}
             {step === 'script' && <ScriptStep project={selected} locked={locked} busy={busy}
               onEdit={script => editSelected({ script })} onRun={() => void runStage('script')} />}
-            {step === 'storyboard' && <StoryboardStep shots={shots} raw={selected.storyboardJson} locked={locked} busy={busy}
+            {step === 'storyboard' && <StoryboardStep shots={shots} raw={selected.storyboardJson} script={selected.script} locked={locked} busy={busy}
               onEdit={storyboardJson => editSelected({ storyboardJson })} onRun={() => void runStage('storyboard')} />}
-            {step === 'captions' && <CaptionsStep shots={shots.length} srt={srt} locked={locked} onCopy={() => void copySrt()} />}
+            {step === 'voice' && <VoiceStep project={selected} shots={shots} locked={locked} busy={busy} progress={progress} notify={notify}
+              onOptions={editOptions} onGenerate={generateVoice} onCopySrt={srt => void copySrt(srt)} />}
+            {step === 'visuals' && <VisualsStep project={selected} shots={shots} assets={assets} locked={locked} busy={busy} progress={progress}
+              onOptions={editOptions} onImages={generateImages} onPreview={() => void renderPreview()} />}
+            {step === 'render' && <RenderStep project={selected} shots={shots} assets={assets} locked={locked} busy={busy} progress={progress}
+              onOptions={editOptions} onChooseBgm={() => void chooseBgm()} onRender={() => void renderVideo()} onOpen={() => void openVideo()} />}
             {step === 'cover' && <CoverStep project={selected} assets={assets} locked={locked} busy={busy}
               onChoose={() => void chooseCover()} onGenerate={() => void generateCover()} />}
             {step === 'export' && <ExportStep project={selected} locked={locked} busy={busy}
@@ -235,7 +289,7 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
               {nextVideoStepKey(step) && <button className="button button-quiet" disabled={locked} onClick={() => setStep(nextVideoStepKey(step)!)}>下一步：{VIDEO_STEPS.find(item => item.key === nextVideoStepKey(step))?.label} →</button>}
             </footer>
           </section>
-        </> : <div className="native-empty native-editor-empty"><strong>还没有视频任务</strong><span>选好平台后新建一条，按 选题 → 口播脚本 → 分镜 → 字幕 → 封面 → 制作包 推进；字幕由分镜自动排出。</span></div>}
+        </> : <div className="native-empty native-editor-empty"><strong>还没有视频任务</strong><span>选好平台后新建一条，按 选题 → 口播脚本 → 分镜 → 配音与字幕 → 画面 → 成片 → 封面 → 制作包 推进；字幕按配音自动排好时间轴。</span></div>}
       </div>
     </div>
   </section>;

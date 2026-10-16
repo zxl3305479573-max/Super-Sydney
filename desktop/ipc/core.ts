@@ -20,7 +20,7 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
   const { db } = ctx;
   const vaultPath = () => ctx.settings.read().vaultPath;
   const requireLlmEnabled = () => {
-    if (!ctx.settings.read().llmEnabled) throw new Error('请先在设置中开启允许发送到 DeepSeek');
+    if (!ctx.settings.read().llmEnabled) throw new Error('请先在「设置 → 模型」里允许调用内容模型');
   };
   const aiInsightsBetween = (from: Date, to: Date) => buildInsights(aiEventsSince(db, from), from, to);
 

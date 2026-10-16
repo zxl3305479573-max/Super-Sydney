@@ -1,7 +1,9 @@
 import type { BrowserWindow } from 'electron';
 import type { DatabaseSync } from 'node:sqlite';
 import type { SettingsFile } from './services/app-settings';
+import type { LastPages } from './services/last-pages';
 import type { LlmConfig } from './services/llm-json';
+import type { ModelPresetStore } from './services/model-presets';
 import type { SecretStore } from './services/secret-store';
 
 /**
@@ -17,9 +19,12 @@ export interface AppContext {
   secretStore: SecretStore;
   /** 红狐（小红书热点数据）API Key，与内容 API 的密钥分文件存。 */
   redfoxKeyStore: SecretStore;
-  /** 小红书自己的内容模型与图片模型 key，与公众号分开存。 */
-  xhsLlmKeyStore: SecretStore;
-  xhsImageKeyStore: SecretStore;
+  /** 视频配音（OpenAI 兼容接口）的 key。 */
+  videoTtsKeyStore: SecretStore;
+  /** 模型预设（多套内容 / 图片模型配置，在「设置 → 模型」下拉切换）。 */
+  modelPresets: ModelPresetStore;
+  /** 嵌入网页上次停在哪一页：重启应用后回到那里，而不是站点首页。 */
+  lastPages: LastPages;
   /** 密钥优先取系统安全存储，其次环境变量。 */
   llmApiKey(): string;
   llmConfig(): LlmConfig;

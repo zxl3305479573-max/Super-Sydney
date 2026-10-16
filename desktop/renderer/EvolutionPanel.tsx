@@ -87,12 +87,12 @@ export default function EvolutionPanel({ notify }: { notify: (message: string) =
         <div className="panel-title"><h2><span className="step-no">3</span>经验卡片</h2><p>把已确认的 AI 对话提炼成「坑 → 解法」卡片，按主题放进 04-工作流/经验卡片。每条对话只提炼一次，单次最多 20 条。</p></div>
         <div className="btn-group">
           <Segmented label="提炼范围" value={cardDays} onChange={setCardDays} options={[{ value: '30', label: '30 天' }, { value: '90', label: '90 天' }, { value: '180', label: '180 天' }]} />
-          <button className="button button-primary" disabled={Boolean(busy) || !state.llmEnabled || !state.pendingCardEvents} title={state.llmEnabled ? '' : '需要在设置中开启允许发送到 DeepSeek'} onClick={() => void cards()}><Icon name="layers" />{busy === 'cards' ? '提炼中…' : '提炼经验卡片'}</button>
+          <button className="button button-primary" disabled={Boolean(busy) || !state.llmEnabled || !state.pendingCardEvents} title={state.llmEnabled ? '' : '需要在「设置 → 模型」里允许调用内容模型'} onClick={() => void cards()}><Icon name="layers" />{busy === 'cards' ? '提炼中…' : '提炼经验卡片'}</button>
         </div>
       </header>
       <div className="card-status">
         <div className="big-number"><strong>{state.pendingCardEvents}</strong><span>条已确认的 AI 对话待提炼（近 90 天）</span></div>
-        <p>{state.llmEnabled ? '只发送这些对话的提示词和最终答复摘要；卡片以「待审核」状态写入。' : <><Icon name="alert" size={14} />需要先在「隐私与设置 → AI 服务」开启允许发送到 DeepSeek。</>}</p>
+        <p>{state.llmEnabled ? '只发送这些对话的提示词和最终答复摘要；卡片以「待审核」状态写入。' : <><Icon name="alert" size={14} />需要先在「设置 → 模型」里允许调用内容模型。</>}</p>
       </div>
       {cardLine && <p className="panel-note is-result"><Icon name="check" size={14} />{cardLine}</p>}
     </section>
@@ -162,7 +162,7 @@ function RuleCard({ rule, llmEnabled, busy, run, notify }: { rule: RuleCandidate
     <footer className="rule-actions">
       {editable && <button className="button button-quiet" disabled={locked} onClick={() => void reject()}>驳回</button>}
       <span className="grow" />
-      {editable && <button className="button button-secondary" disabled={locked || !llmEnabled} title={llmEnabled ? '根据依据让 DeepSeek 起草' : '需要开启允许发送到 DeepSeek'} onClick={() => void draft()}><Icon name="wand" />{busy === key('draft') ? '生成中…' : 'AI 生成规则'}</button>}
+      {editable && <button className="button button-secondary" disabled={locked || !llmEnabled} title={llmEnabled ? '根据依据让内容模型起草' : '需要在「设置 → 模型」里允许调用内容模型'} onClick={() => void draft()}><Icon name="wand" />{busy === key('draft') ? '生成中…' : 'AI 生成规则'}</button>}
       {editable && !preview && <button className="button button-primary" disabled={locked || !text.trim()} onClick={() => void showPreview()}><Icon name="eye" />预览补丁</button>}
       {editable && preview && <>
         <button className="button button-secondary" disabled={locked} onClick={() => setPreview(null)}>取消</button>

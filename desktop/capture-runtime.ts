@@ -5,7 +5,8 @@ import type { AppContext } from './app-context';
 import type { CaptureStatus, ClaudeCaptureStatus, CodexCaptureStatus, Settings } from './shared';
 import { CodexSessionAdapter, DEFAULT_CODEX_ORIGINATORS, KNOWN_CODEX_ORIGINATORS, shouldRunCodexCapture } from './services/codex-session-adapter';
 import { ClaudeSessionAdapter, defaultClaudeProjectsRoot } from './services/claude-session-adapter';
-import { persistAiMessage, persistCodexMessage } from './services/codex-event-store';
+import { persistAiMessage, persistCodexMessage, type AiSource } from './services/codex-event-store';
+import { backfillAiAnswers } from './services/ai-answer-backfill';
 import { extendPendingActivity, insertMetadataEvent, type MetadataEventInput } from './services/event-store';
 import { ActivitySegmenter, isSelfWindow, normalizeWindowTitle } from './services/activity-segment';
 import { ScreenFrameStore } from './services/screen-frame-store';
@@ -35,6 +36,7 @@ export class CaptureRuntime {
   private retentionTimer: NodeJS.Timeout | undefined;
   private readonly segmenter = new ActivitySegmenter();
   private codexAdapter: CodexSessionAdapter | undefined;
+  private codexSessionsRoot = '';
   private codexCapture: CodexCaptureStatus = { state: 'disabled', error: '' };
   private claudeAdapter: ClaudeSessionAdapter | undefined;
   private claudeAdapterKey = '';
@@ -187,8 +189,9 @@ export class CaptureRuntime {
     const originators = config.codexIncludeCli ? KNOWN_CODEX_ORIGINATORS : DEFAULT_CODEX_ORIGINATORS;
     if (!this.codexAdapter) {
       const codexHome = process.env.CODEX_HOME?.trim() || path.join(this.ctx.homeDir, '.codex');
+      this.codexSessionsRoot = path.join(codexHome, 'sessions');
       this.codexAdapter = new CodexSessionAdapter(
-        path.join(codexHome, 'sessions'),
+        this.codexSessionsRoot,
         message => { persistCodexMessage(this.ctx.db, message); this.ctx.broadcast(); },
         error => { this.codexCapture = { state: 'error', error }; this.ctx.broadcast(); },
         1_000,
@@ -196,7 +199,9 @@ export class CaptureRuntime {
       );
     }
     this.codexAdapter.setOriginators(originators);
+    const codexStarting = !this.codexAdapter.isRunning;
     this.codexAdapter.start();
+    if (codexStarting) this.backfillAnswers('codex', [this.codexSessionsRoot]);
     this.codexCapture = { state: 'listening', error: '' };
   }
 
@@ -218,8 +223,24 @@ export class CaptureRuntime {
         error => { this.claudeCapture = { state: 'error', error }; this.ctx.broadcast(); }
       );
     }
+    const claudeStarting = !this.claudeAdapter.isRunning;
     this.claudeAdapter.start();
     this.claudeCapture = { state: 'listening', error: '' };
+    if (claudeStarting) this.backfillAnswers('claude', roots);
+  }
+
+  /**
+   * 监听刚启动时补齐错过的最终答复：提问记下了、AI 跑完时记录却没开的回合（见 ai-answer-backfill.ts）。
+   * 放到下一轮事件循环里做，不拖慢「开始记录」本身；读日志失败不影响实时监听。
+   */
+  private backfillAnswers(source: AiSource, roots: string[]): void {
+    setTimeout(() => {
+      try {
+        if (backfillAiAnswers(this.ctx.db, source, roots) > 0) this.ctx.broadcast();
+      } catch (error) {
+        console.warn(`补齐 ${source} 最终答复失败`, error);
+      }
+    }, 0);
   }
 
   private async captureTick(): Promise<void> {

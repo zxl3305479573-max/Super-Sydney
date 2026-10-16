@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { session, shell, WebContentsView, type BrowserWindow } from 'electron';
+import { session, WebContentsView, type BrowserWindow } from 'electron';
+import { openUrl } from './browser';
 import type { AppContext } from '../app-context';
 import type { SiteViewBounds, XhsPageRead, XhsViewState } from '../shared';
 import { clampSiteBounds } from './site-config';
@@ -132,6 +133,7 @@ export class XhsView {
       this.views.delete(accountId);
     }
     if (this.accountId === accountId) this.accountId = 0;
+    this.ctx.lastPages.forget(`xhs:${accountId}`);
     try { await session.fromPartition(`persist:${xhsPartitionName(accountId)}`).clearStorageData(); } catch { /* 清不掉也不影响别的账号 */ }
   }
 
@@ -178,7 +180,11 @@ export class XhsView {
       if (previous && this.attachedId !== this.accountId) this.detach(previous.view);
       if (!this.attachedId) { win.contentView.addChildView(current.view); this.attachedId = this.accountId; }
       current.view.setBounds(this.bounds);
-      if (!current.started) void this.load(current, XHS_HOME);
+      if (!current.started) {
+        // 重启后第一次打开这个账号的窗口：回到上次停的小红书页面，否则首页。
+        const saved = this.ctx.lastPages.get(`xhs:${this.accountId}`);
+        void this.load(current, saved && isXhsHost(saved) ? saved : XHS_HOME);
+      }
     }
     if (before !== this.attachedId) this.notify();
   }
@@ -200,17 +206,19 @@ export class XhsView {
     contents.setWindowOpenHandler(({ url }) => {
       // 小红书内部链接留在窗口里打开，其它站点交给系统浏览器。
       if (isXhsHost(url)) void this.load(current, url);
-      else if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+      else if (/^https?:\/\//.test(url)) void openUrl(url);
       return { action: 'deny' };
     });
     contents.on('will-navigate', (event, url) => { if (!/^https:\/\//.test(url)) event.preventDefault(); });
     contents.on('did-start-loading', () => { current.loading = true; current.error = ''; changed(); });
     contents.on('did-stop-loading', () => { current.loading = false; changed(); });
-    contents.on('did-navigate', changed);
-    contents.on('did-navigate-in-page', changed);
+    const remember = (url: string) => { if (isXhsHost(url)) this.ctx.lastPages.set(`xhs:${accountId}`, url); };
+    contents.on('did-navigate', (_event, url) => { remember(url); changed(); });
+    contents.on('did-navigate-in-page', (_event, url, isMainFrame) => { if (isMainFrame) remember(url); changed(); });
     contents.on('page-title-updated', changed);
     contents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
       if (!isMainFrame || code === -3) return;
+      this.ctx.lastPages.forget(`xhs:${accountId}`);
       current.loading = false;
       current.error = `页面打不开：${description}（${code}）`;
       changed();

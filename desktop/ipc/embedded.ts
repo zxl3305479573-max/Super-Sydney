@@ -7,7 +7,7 @@ import { EMBEDDED_SITES, EmbeddedView, embeddedSite } from '../services/embedded
  * 每个站点一个 EmbeddedView，按 key 区分；渲染进程只报位置、发操作。
  * 状态不进 state:get：每次导航、标题变化都会变，变化走 embed:changed（带 key）。
  */
-export function registerEmbeddedIpc(ctx: AppContext): { dispose(): void } {
+export function registerEmbeddedIpc(ctx: AppContext): { closeAll(): void; dispose(): void } {
   const views = new Map<EmbeddedSiteKey, EmbeddedView>();
   for (const site of Object.values(EMBEDDED_SITES)) views.set(site.key, new EmbeddedView(ctx, site));
   const view = (key: unknown) => views.get(embeddedSite(key).key) as EmbeddedView;
@@ -19,5 +19,9 @@ export function registerEmbeddedIpc(ctx: AppContext): { dispose(): void } {
   ipcMain.handle('embed:go', (_event, key: EmbeddedSiteKey, action: 'back' | 'reload' | 'home') => view(key).go(action === 'back' || action === 'home' ? action : 'reload'));
   ipcMain.handle('embed:external', (_event, key: EmbeddedSiteKey) => { view(key).openExternal(); });
 
-  return { dispose: () => { for (const item of views.values()) item.dispose(); } };
+  return {
+    /** 只从窗口上拿下来，不销毁：页面登录状态和浏览位置都还在，界面重新打开时接着用。 */
+    closeAll: () => { for (const item of views.values()) item.close(); },
+    dispose: () => { for (const item of views.values()) item.dispose(); }
+  };
 }

@@ -392,7 +392,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
             {step === 'evidence' && <EvidenceStep task={selected} locked={locked} onSources={items => editSelected({ sourcesJson: JSON.stringify({ sources: items }) })} />}
             {step === 'draft' && <DraftStep task={selected} assets={assets} locked={locked} busy={busy} busySeconds={busySeconds}
               candidateCount={candidateCount} onCandidateCount={setCandidateCount}
-              onEdit={draft => editSelected({ draft })} onGenerateImages={() => void generateImages()} onGenerateImagesWithCover={() => void generateImagesWithCover()}
+              onEdit={draft => editSelected({ draft })} onTheme={theme => void changeTheme(theme)} onGenerateImages={() => void generateImages()} onGenerateImagesWithCover={() => void generateImagesWithCover()}
               onPickFromLibrary={() => void openImageLibrary('inline')} onSwapImage={(index, target, expected) => void swapImage(index, target, expected)} />}
             {step === 'review' && <ReviewStep task={selected} locked={locked} busy={busy} onRevise={() => void runStage('revise')} />}
             {step === 'cover' && <CoverStep

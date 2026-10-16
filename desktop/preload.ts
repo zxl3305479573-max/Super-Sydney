@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { SydneyApi } from './shared';
+import type { SydneyApi, VideoProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -56,6 +56,12 @@ const api: SydneyApi = {
   getWeWriteEnvironment: () => ipcRenderer.invoke('wewrite:environment'),
   getWeWriteOverview: () => ipcRenderer.invoke('wewrite:overview'),
   saveWeWriteConfig: config => ipcRenderer.invoke('wewrite:config:save', config),
+  getModelConfig: () => ipcRenderer.invoke('models:get'),
+  saveModelConfig: draft => ipcRenderer.invoke('models:save', draft),
+  testContentModel: () => ipcRenderer.invoke('models:test'),
+  saveModelPreset: input => ipcRenderer.invoke('models:preset:save', input),
+  applyModelPreset: id => ipcRenderer.invoke('models:preset:apply', id),
+  deleteModelPreset: id => ipcRenderer.invoke('models:preset:delete', id),
   getArticleStats: profileId => ipcRenderer.invoke('wewrite:stats:list', profileId),
   importArticleStats: profileId => ipcRenderer.invoke('wewrite:stats:import', profileId),
   deleteArticleStat: (id, profileId) => ipcRenderer.invoke('wewrite:stats:delete', id, profileId),
@@ -69,6 +75,16 @@ const api: SydneyApi = {
   getVideoAssets: id => ipcRenderer.invoke('video:assets', id),
   exportVideoProject: id => ipcRenderer.invoke('video:export', id),
   openVideoPackage: id => ipcRenderer.invoke('video:open-package', id),
+  generateVideoVoice: (id, force) => ipcRenderer.invoke('video:voice', id, force === true),
+  generateVideoImages: (id, force) => ipcRenderer.invoke('video:images', id, force === true),
+  renderVideoPreview: id => ipcRenderer.invoke('video:preview', id),
+  renderVideo: id => ipcRenderer.invoke('video:render', id),
+  chooseVideoBgm: id => ipcRenderer.invoke('video:bgm:choose', id),
+  openVideoFile: id => ipcRenderer.invoke('video:open-video', id),
+  getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
+  saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
+  saveVideoTtsKey: value => ipcRenderer.invoke('video:tts:key:save', value),
+  deleteVideoTtsKey: () => ipcRenderer.invoke('video:tts:key:delete'),
   listXhsAccounts: () => ipcRenderer.invoke('xhs:accounts:list'),
   updateXhsAccount: (id, patch) => ipcRenderer.invoke('xhs:accounts:update', id, patch),
   createXhsAccount: name => ipcRenderer.invoke('xhs:accounts:create', name),
@@ -111,12 +127,6 @@ const api: SydneyApi = {
   navigateXhsView: target => ipcRenderer.invoke('xhs:view:navigate', target),
   xhsViewGo: action => ipcRenderer.invoke('xhs:view:go', action),
   readXhsView: () => ipcRenderer.invoke('xhs:view:read'),
-  getXhsApiStatus: () => ipcRenderer.invoke('xhs:api:status'),
-  saveXhsApiSettings: patch => ipcRenderer.invoke('xhs:api:save', patch),
-  saveXhsApiKey: (kind, value) => ipcRenderer.invoke('xhs:api:key:save', kind, value),
-  deleteXhsApiKey: kind => ipcRenderer.invoke('xhs:api:key:delete', kind),
-  importXhsApiFromWeWrite: () => ipcRenderer.invoke('xhs:api:import-wewrite'),
-  testXhsLlm: () => ipcRenderer.invoke('xhs:api:test'),
   getRedfoxKeyStatus: () => ipcRenderer.invoke('xhs:redfox-key:status'),
   saveRedfoxKey: value => ipcRenderer.invoke('xhs:redfox-key:save', value),
   deleteRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:delete'),
@@ -141,6 +151,9 @@ const api: SydneyApi = {
   setEmbeddedViewBounds: (key, bounds) => ipcRenderer.invoke('embed:bounds', key, bounds),
   embeddedViewGo: (key, action) => ipcRenderer.invoke('embed:go', key, action),
   openEmbeddedInBrowser: key => ipcRenderer.invoke('embed:external', key),
+  getWindowChrome: () => ipcRenderer.invoke('window:chrome'),
+  windowControl: action => ipcRenderer.invoke('window:control', action),
+  setTheme: theme => ipcRenderer.invoke('window:theme', theme),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); },
   onWeWriteChanged: callback => {
     const listener = () => callback();
@@ -162,6 +175,16 @@ const api: SydneyApi = {
     const listener = () => callback();
     ipcRenderer.on('site:changed', listener);
     return () => ipcRenderer.removeListener('site:changed', listener);
+  },
+  onWindowChromeChanged: callback => {
+    const listener = (_event: unknown, state: WindowChromeState) => callback(state);
+    ipcRenderer.on('window:chrome-changed', listener);
+    return () => ipcRenderer.removeListener('window:chrome-changed', listener);
+  },
+  onVideoProgress: callback => {
+    const listener = (_event: unknown, progress: VideoProgress) => callback(progress);
+    ipcRenderer.on('video:progress', listener);
+    return () => ipcRenderer.removeListener('video:progress', listener);
   }
 };
 

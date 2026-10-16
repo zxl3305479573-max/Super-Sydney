@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppState, WorkEvent } from '../shared';
 import WeWritePanel from './WeWritePanel';
 import VideoPanel from './VideoPanel';
@@ -10,7 +10,9 @@ import LinksPanel from './LinksPanel';
 import { TodayView } from './TodayView';
 import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
-import { Icon, readableError, type IconName } from './ui';
+import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui';
+import { TitleBar, useWindowChrome } from './TitleBar';
+import { useTheme } from './theme';
 
 type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'site' | 'settings';
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
@@ -38,6 +40,30 @@ const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { titl
   settings: { title: '隐私与设置', subtitle: '采集范围、AI 对话监听和知识库位置。所有数据默认只保存在本机。' }
 };
 
+/** 标题栏里的位置：分组 › 页面。 */
+function crumbsOf(view: View): string[] {
+  if (view === 'settings') return ['系统', '隐私与设置'];
+  for (const group of NAV) {
+    const item = group.items.find(entry => entry.view === view);
+    if (item) return [group.group, item.label];
+  }
+  return [];
+}
+
+const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'site', 'settings'];
+const VIEW_KEY = 'sydney.view';
+
+/** 上次退出时停在哪个模块，重新打开应用就回到那里。 */
+function initialView(): View {
+  try {
+    const saved = localStorage.getItem(VIEW_KEY) as View | null;
+    if (saved && VIEWS.includes(saved)) return saved;
+  } catch { /* 读不到就从今日工作开始 */ }
+  return 'today';
+}
+
+const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
 function greeting(): string {
   const hour = new Date().getHours();
   const date = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
@@ -46,11 +72,28 @@ function greeting(): string {
 
 export default function App() {
   const [state, setState] = useState<AppState>(empty);
-  const [view, setView] = useState<View>('today');
+  const [view, setView] = useState<View>(initialView);
+  // 进过的模块都留着不卸载，只是隐藏：切走时正在跑的生成、表单里没存的内容、子页签都原样保留。
+  const mounted = useVisited(view);
+  const scrollByView = useRef<Partial<Record<View, number>>>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [drafting, setDrafting] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const chrome = useWindowChrome();
+  const [theme, toggleTheme] = useTheme();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+
+  // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置，并淡入一下（只动透明度，不影响嵌入网页的定位）。
+  useLayoutEffect(() => {
+    try { localStorage.setItem(VIEW_KEY, view); } catch { /* 存不了就下次从今日工作开始 */ }
+    const top = scrollByView.current[view] ?? 0;
+    scrollRef.current?.scrollTo({ top });
+    setScrolled(top > 2);
+    if (!reduceMotion()) mainRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  }, [view]);
 
   const refresh = useCallback(async () => setState(await window.sydney.getState()), []);
   useEffect(() => { void refresh(); return window.sydney.onChanged(() => void refresh()); }, [refresh]);
@@ -88,7 +131,30 @@ export default function App() {
   const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
   const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
 
-  return <div className="app-shell">
+  const covered = manualOpen || detailId !== null;
+  /**
+   * 嵌入网页是主进程浮在界面之上的视图：模块被隐藏或有弹层时把它摘下来（overlay），
+   * 页面进程本身留着，切回来登录态、浏览位置、表单内容都还在。
+   */
+  const renderView = (name: View) => {
+    const hideWeb = covered || name !== view;
+    switch (name) {
+      case 'settings': return <SettingsView state={state} onSetting={setting} onChooseFiles={chooseFiles} notify={notifyAny} />;
+      case 'evolve': return <EvolutionPanel notify={notifyAny} />;
+      case 'links': return <LinksPanel notify={notifyAny} />;
+      case 'wewrite': return <WeWritePanel notify={notifyAny} overlay={hideWeb} />;
+      case 'video': return <VideoPanel notify={notifyAny} />;
+      case 'xiaohongshu': return <XiaohongshuPanel notify={notifyAny} overlay={hideWeb} />;
+      case 'xianyu': return <EmbeddedSitePanel siteKey="xianyu" label="闲鱼" overlay={hideWeb} covered={covered}
+        privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />;
+      case 'site16688': return <EmbeddedSitePanel siteKey="site16688" label="16688" overlay={hideWeb} covered={covered}
+        privacy="页面由 16688 提供，登录请在页面里完成；应用不读它的 cookie，也不往页面里注入脚本，订单与账号问题以站点为准。" />;
+      case 'site': return <SitePanel overlay={hideWeb} notify={notifyAny} />;
+      default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />;
+    }
+  };
+
+  return <div className={`app-shell platform-${chrome.platform} ${chrome.focused ? '' : 'is-blurred'}`}>
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
       <nav className="nav" aria-label="主导航">
@@ -111,29 +177,23 @@ export default function App() {
       </div>
     </aside>
 
-    <main className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
-      {header && <header className="topbar">
-        <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
-        <div className="top-actions">
-          {view === 'review' && <button className="button button-secondary" onClick={() => setManualOpen(true)}><Icon name="plus" />手动记录</button>}
-          {view !== 'today' && view !== 'settings' && (state.settings.captureEnabled
-            ? <span className={`live-tag ${live ? 'is-live' : ''}`}><span className="rec-dot" />{live ? '正在记录' : '已暂停'}</span>
-            : <button className="button button-primary" onClick={() => capture('start')}><Icon name="play" />开始记录</button>)}
-        </div>
-      </header>}
-      {view === 'settings' ? <SettingsView state={state} onSetting={setting} onChooseFiles={chooseFiles} notify={notifyAny} />
-        : view === 'evolve' ? <EvolutionPanel notify={notifyAny} />
-        : view === 'links' ? <LinksPanel notify={notifyAny} />
-        : view === 'wewrite' ? <WeWritePanel notify={notifyAny} overlay={manualOpen || detailId !== null} />
-        : view === 'video' ? <VideoPanel notify={notifyAny} />
-        : view === 'xiaohongshu' ? <XiaohongshuPanel notify={notifyAny} overlay={manualOpen || detailId !== null} />
-        : view === 'xianyu' ? <EmbeddedSitePanel key="xianyu" siteKey="xianyu" label="闲鱼" overlay={manualOpen || detailId !== null}
-          privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />
-        : view === 'site16688' ? <EmbeddedSitePanel key="site16688" siteKey="site16688" label="16688" overlay={manualOpen || detailId !== null}
-          privacy="页面由 16688 提供，登录请在页面里完成；应用不读它的 cookie，也不往页面里注入脚本，订单与账号问题以站点为准。" />
-        : view === 'site' ? <SitePanel overlay={manualOpen || detailId !== null} notify={notifyAny} />
-        : <TodayView state={state} mode={view} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />}
-    </main>
+    <div className="workspace">
+      <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} />
+      <div className="main-scroll" ref={scrollRef} onScroll={event => { scrollByView.current[view] = event.currentTarget.scrollTop; setScrolled(event.currentTarget.scrollTop > 2); }}>
+        <main ref={mainRef} className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
+          {header && <header className="topbar">
+            <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
+            <div className="top-actions">
+              {view === 'review' && <button className="button button-secondary" onClick={() => setManualOpen(true)}><Icon name="plus" />手动记录</button>}
+              {view !== 'today' && view !== 'settings' && (state.settings.captureEnabled
+                ? <span className={`live-tag ${live ? 'is-live' : ''}`}><span className="rec-dot" />{live ? '正在记录' : '已暂停'}</span>
+                : <button className="button button-primary" onClick={() => capture('start')}><Icon name="play" />开始记录</button>)}
+            </div>
+          </header>}
+          {mounted.map(name => <KeepAlive key={name} show={name === view}>{renderView(name)}</KeepAlive>)}
+        </main>
+      </div>
+    </div>
 
     <EventDetails event={detailEvent} drafting={drafting === detailId} actions={actions} onClose={() => setDetailId(null)} />
     <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />

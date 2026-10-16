@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ContentAssetBundle, ContentAssetView, ContentTask, ContentTaxonomy, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption } from '../../shared';
+import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../../services/article-html';
 import { countInlineImages } from '../../services/content-images';
 import { renderEvidenceSection } from '../../services/evidence-section';
 import { FEATURED_SOURCE_LIMIT, pickFeaturedSources } from '../../services/content-sources';
@@ -121,10 +122,10 @@ export function EvidenceStep({ task, locked, onSources }: { task: ContentTask; l
   </div>;
 }
 
-export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onEdit, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage }: {
+export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onEdit, onTheme, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage }: {
   task: ContentTask; assets: ContentAssetBundle | null; locked: boolean; busy: string; busySeconds: number;
   candidateCount: number; onCandidateCount: (count: number) => void;
-  onEdit: (draft: string) => void; onGenerateImages: () => void; onGenerateImagesWithCover: () => void;
+  onEdit: (draft: string) => void; onTheme: (theme: string) => void; onGenerateImages: () => void; onGenerateImagesWithCover: () => void;
   onPickFromLibrary: () => void; onSwapImage: (index: number, path: string, expected: string) => void;
 }) {
   const [preview, setPreview] = useState(false);
@@ -132,6 +133,7 @@ export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCo
   return <div className="flow-body">
     <div className="flow-sub-head"><h4>{preview ? '正文预览（公众号排版）' : '文章正文（Markdown）'}<small>约 {countChars(task.draft)} 字</small></h4>
       <div className="flow-mode"><button className={!preview ? 'is-active' : ''} onClick={() => setPreview(false)}>编辑</button><button className={preview ? 'is-active' : ''} onClick={() => setPreview(true)}>预览</button></div></div>
+    <ThemePicker value={task.theme} locked={locked} onPick={theme => { onTheme(theme); setPreview(true); }} />
     <div className="flow-inline-actions">
       <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? `重新生成正文配图（现有 ${images} 张）` : 'AI 生成正文配图'}</button>
       <button className="button button-secondary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
@@ -142,6 +144,29 @@ export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCo
     <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
     {preview ? <ArticlePreview taskId={task.id} source="draft" revision={task.updatedAt} title="文章预览" />
       : <textarea className="flow-draft" disabled={locked} value={task.draft} onChange={event => onEdit(event.target.value)} placeholder="生成初稿后在这里编辑；也可以直接粘贴自己写的正文。改动正文会使之前的审稿结论失效。" />}
+  </div>;
+}
+
+/** 主题卡片上的色点：取小标题的主色，让人不打开预览也能分清几套排版。 */
+function themeAccent(style: string): string {
+  return /(?:^|;)color:(#[0-9a-f]{3,8})/i.exec(style)?.[1] ?? '#1a1a1a';
+}
+
+/**
+ * 公众号排版：选中即保存并切到预览看效果。
+ * 排版只影响呈现，不使审稿失效；推送与导出都按这篇文章选的主题渲染。
+ */
+function ThemePicker({ value, locked, onPick }: { value: string; locked: boolean; onPick: (theme: string) => void }) {
+  const current = value || DEFAULT_ARTICLE_THEME;
+  return <div className="flow-theme-picker" role="radiogroup" aria-label="公众号排版">
+    <span className="flow-theme-picker-label">公众号排版</span>
+    {ARTICLE_THEMES.map(theme => <button key={theme.name} type="button" role="radio" aria-checked={theme.name === current}
+      className={theme.name === current ? 'is-active' : ''} disabled={locked} title={theme.description}
+      onClick={() => { if (theme.name !== current) onPick(theme.name); }}>
+      <i style={{ background: themeAccent(theme.h2) }} aria-hidden="true" />
+      <strong>{theme.label}</strong>
+      <small>{theme.description}</small>
+    </button>)}
   </div>;
 }
 

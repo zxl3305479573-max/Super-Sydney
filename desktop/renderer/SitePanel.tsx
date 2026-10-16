@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SiteEntry, SiteModuleState } from '../shared';
-import { ConfirmButton, Icon, readableError } from './ui';
+import { ConfirmButton, Icon, readableError, visibleStageBounds } from './ui';
 
 /**
  * 变现 · 站点模块（AI 代充）。
@@ -42,8 +42,7 @@ export default function SitePanel({ overlay, notify }: { overlay: boolean; notif
   }, [active?.id, active?.name, active?.url]);
 
   const readStage = useCallback(() => {
-    const rect = stageRef.current?.getBoundingClientRect();
-    return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+    return visibleStageBounds(stageRef.current);
   }, []);
 
   useEffect(() => {

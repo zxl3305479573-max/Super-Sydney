@@ -4,3 +4,4 @@ dist/
 .sydney/
 *.db-shm
 *.db-wal
+.pi/tmp/

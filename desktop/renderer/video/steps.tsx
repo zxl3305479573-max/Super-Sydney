@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { VideoAssetBundle, VideoPlatform, VideoProject } from '../../shared';
-import { VIDEO_PLATFORMS, formatDuration, parseVideoShots, videoExportChecklist, type VideoStep, type VideoStepKey } from '../../services/video-pipeline';
+import { VIDEO_PLATFORMS, formatDuration, narrationCoverage, parseVideoShots, videoExportChecklist, type VideoStep, type VideoStepKey } from '../../services/video-pipeline';
+import { shotRoleLabel } from '../../services/video-production';
 import { estimatedSeconds, stateNames, type TopicSuggestion } from './format';
 
 /** 视频流水线的各步骤面板。只负责展示与收集输入，动作由 VideoPanel 传入。 */
@@ -60,37 +61,29 @@ export function ScriptStep({ project, locked, busy, onEdit, onRun }: {
   </div>;
 }
 
-export function StoryboardStep({ shots, raw, locked, busy, onEdit, onRun }: {
-  shots: ReturnType<typeof parseVideoShots>; raw: string; locked: boolean; busy: string;
+export function StoryboardStep({ shots, raw, script, locked, busy, onEdit, onRun }: {
+  shots: ReturnType<typeof parseVideoShots>; raw: string; script: string; locked: boolean; busy: string;
   onEdit: (storyboardJson: string) => void; onRun: () => void;
 }) {
   const total = shots.reduce((sum, shot) => sum + shot.seconds, 0);
+  const coverage = narrationCoverage(script, shots);
   return <div className="flow-body">
     <div className="flow-sub-head">
       <h4>镜头清单<small>{shots.length} 个镜头 · 共 {formatDuration(total)}</small></h4>
       <button className="button button-secondary" disabled={locked} onClick={onRun}>{busy === 'storyboard' ? '拆解中…' : shots.length ? '重新生成分镜' : 'AI 拆分镜'}</button>
     </div>
-    {shots.length ? <table className="flow-table"><thead><tr><th>镜号</th><th>秒</th><th>画面</th><th>口播</th><th>字幕</th></tr></thead><tbody>
+    {shots.length > 0 && coverage < 0.8 && <p className="flow-attention-note">分镜口播只覆盖了脚本 {Math.round(coverage * 100)}% 的句子，配音和字幕都从口播来，漏掉的句子成片里不会出现。可以重新拆分镜，或在下方 JSON 里补上。</p>}
+    {shots.length ? <table className="flow-table"><thead><tr><th>镜号</th><th>作用</th><th>秒</th><th>画面大字</th><th>口播</th><th>画面 / 配图提示词</th></tr></thead><tbody>
       {shots.map((shot, position) => <tr key={position}>
-        <td>{shot.index}</td><td>{shot.seconds}</td>
-        <td>{shot.visual || '—'}</td><td>{shot.narration || '—'}</td><td>{shot.caption || '（同口播）'}</td>
+        <td>{shot.index}</td><td>{shotRoleLabel(shot.role) || '—'}</td><td>{shot.seconds}</td>
+        <td>{shot.caption || '—'}</td><td>{shot.narration || '—'}</td>
+        <td>{shot.visual || '—'}{shot.imagePrompt && <small className="video-prompt">配图：{shot.imagePrompt}</small>}</td>
       </tr>)}
-    </tbody></table> : <p className="flow-empty">还没有分镜。分镜决定每个镜头拍什么、说多久，字幕和制作包都从它推出来。</p>}
+    </tbody></table> : <p className="flow-empty">还没有分镜。分镜决定每个镜头讲什么、画面上放哪几个大字；配音、字幕和画面都从它推出来。</p>}
     {raw.trim() && <details className="native-json"><summary>直接编辑分镜 JSON（进阶）</summary>
       <textarea className="flow-draft" style={{ minHeight: 220 }} disabled={locked} value={raw} onChange={event => onEdit(event.target.value)} />
-      <p className="ww-muted">字段：shots 数组，每项含 index、seconds、visual、narration、caption。保存时会按时长与编号归一化；JSON 无效会拒绝保存。</p>
+      <p className="ww-muted">字段：shots 数组，每项含 index、seconds、role、caption（画面大字）、visual、narration、imagePrompt。保存时会按时长与编号归一化；JSON 无效会拒绝保存。</p>
     </details>}
-  </div>;
-}
-
-export function CaptionsStep({ shots, srt, locked, onCopy }: { shots: number; srt: string; locked: boolean; onCopy: () => void }) {
-  return <div className="flow-body">
-    <div className="flow-sub-head">
-      <h4>字幕（SRT）<small>{shots} 条 · 由分镜时长累加</small></h4>
-      <button className="button button-secondary" disabled={locked || !srt} onClick={onCopy}>复制字幕</button>
-    </div>
-    {srt ? <pre className="video-srt">{srt}</pre> : <p className="flow-empty">先生成分镜，字幕会自动排好时间轴。</p>}
-    <p className="ww-muted">时间轴直接由分镜秒数算出，不回模型、不额外花钱。导出制作包时会写入 captions.srt；改分镜后这里同步变化，需要重新导出。</p>
   </div>;
 }
 
@@ -106,7 +99,7 @@ export function CoverStep({ project, assets, locked, busy, onChoose, onGenerate 
       <div className="flow-cover-actions">
         <button className="button button-secondary" disabled={locked} onClick={onChoose}>选择本地图片</button>
         <button className="button button-primary" disabled={locked} onClick={onGenerate}>{busy === 'cover' ? '生成中…' : 'AI 生成竖版封面'}</button>
-        <small>竖版 9:16，导出时连同脚本、分镜表、字幕一起拷进制作包。封面不是导出的硬门槛，但发布到平台时基本都要。</small>
+        <small>竖版 9:16，导出时连同成片、脚本、分镜表、字幕一起拷进制作包。封面不是导出的硬门槛，但发布到平台时基本都要。</small>
       </div>
     </div>
   </div>;
@@ -127,7 +120,7 @@ export function ExportStep({ project, locked, busy, onExport, onOpen }: {
       {project.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开制作包目录</button>}
     </div>
     {project.exportPath && <p className="native-export-path">最近导出：{project.exportPath}</p>}
-    <p className="ww-muted">制作包里是 制作包.md（脚本 + 分镜表）、shotlist.csv、captions.srt 与封面图。成片需要人工剪辑合成；本模块不上传、不发布到任何平台。</p>
+    <p className="ww-muted">制作包里是 制作包.md（脚本 + 分镜表）、shotlist.csv、captions.srt、成片 video.mp4（渲染过且没过期时）与封面图。本模块不上传、不发布到任何平台。</p>
   </div>;
 }
 

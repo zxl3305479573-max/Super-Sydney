@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EmbeddedSiteKey, EmbeddedViewState } from '../shared';
-import { Icon, readableError } from './ui';
+import { Icon, readableError, visibleStageBounds } from './ui';
 
 /**
  * 变现分组里固定嵌入的站点（闲鱼、16688 …）。
  *
  * 和 AI 代充一样，页面不在 DOM 里渲染：主进程把 WebContentsView 挂在窗口上，
  * 这里只报承载区域 .site-stage 的位置、转发后退 / 刷新这些操作。
- * 视图浮在页面之上，所以弹层打开时（overlay）必须先把它摘下来。
+ * 视图浮在页面之上，所以模块被隐藏或弹层打开时（overlay）必须先把它摘下来；
+ * covered 只表示「是弹层挡住了」，用来给出提示。
  */
-export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay }: { siteKey: EmbeddedSiteKey; label: string; privacy: string; overlay: boolean }) {
+export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay, covered = overlay }: { siteKey: EmbeddedSiteKey; label: string; privacy: string; overlay: boolean; covered?: boolean }) {
   const [state, setState] = useState<EmbeddedViewState | null>(null);
   const [error, setError] = useState('');
   const stageRef = useRef<HTMLDivElement>(null);
@@ -28,8 +29,7 @@ export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay }: 
   }, [siteKey]);
 
   const readStage = useCallback(() => {
-    const rect = stageRef.current?.getBoundingClientRect();
-    return rect ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+    return visibleStageBounds(stageRef.current);
   }, []);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay }: 
       <span>当前页面</span>
       <strong>{state?.title || state?.url || '正在打开…'}</strong>
       {state?.loading && <span>载入中…</span>}
-      {overlay && <span>弹层打开时先收起{label}页面</span>}
+      {covered && <span>弹层打开时先收起{label}页面</span>}
     </p>
     <div className="site-stage" ref={stageRef}>
       <p className="site-stage-hint">{state?.loading ? `正在打开${label}…` : `${label}页面正在接管这块区域`}</p>

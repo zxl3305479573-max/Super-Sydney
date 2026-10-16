@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsAccount, XhsHotNote, XhsNote, XhsStepKey, XhsTab } from '../shared';
 import { XHS_TAB_LABELS } from '../services/xhs-catalog';
 import { readPositioning } from '../services/xhs-pipeline';
-import { ConfirmButton, Icon, readableError } from './ui';
+import { ConfirmButton, Icon, KeepAlive, readableError, useVisited } from './ui';
 import type { XhsContext } from './xiaohongshu/common';
 import { HomeTab } from './xiaohongshu/HomeTab';
 import { PositioningTab } from './xiaohongshu/PositioningTab';
@@ -24,6 +24,16 @@ const TABS: XhsTab[] = ['home', 'positioning', 'hotspot', 'notes', 'audit', 'ana
 
 /** 上次选中的账号只是界面偏好，存在本机 localStorage；读不到就用第一个账号。 */
 const ACCOUNT_KEY = 'sydney.xhs.accountId';
+const TAB_KEY = 'sydney.xhs.tab';
+
+/** 上次停在哪个分区，重新打开应用回到那里。 */
+function storedTab(): XhsTab {
+  try {
+    const saved = localStorage.getItem(TAB_KEY) as XhsTab | null;
+    if (saved && TABS.includes(saved)) return saved;
+  } catch { /* 读不到就从首页开始 */ }
+  return 'home';
+}
 function storedAccountId(): number {
   try { return Number(localStorage.getItem(ACCOUNT_KEY)) || 0; } catch { return 0; }
 }
@@ -41,7 +51,9 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   const notesDirty = useRef(false);
   const trackDirty = useCallback((dirty: boolean) => { notesDirty.current = dirty; }, []);
   const [notes, setNotes] = useState<XhsNote[]>([]);
-  const [tab, setTab] = useState<XhsTab>('home');
+  const [tab, setTab] = useState<XhsTab>(storedTab);
+  const visited = useVisited(tab);
+  useEffect(() => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 存不下也不影响使用 */ } }, [tab]);
   const [noteTarget, setNoteTarget] = useState<{ id: number; step?: XhsStepKey; nonce: number } | null>(null);
   /** 小红书窗口里读到的笔记，交给「热点选题」展示；读到的主页交给「账号诊断」。 */
   const [viewNotes, setViewNotes] = useState<{ notes: XhsHotNote[]; url: string } | null>(null);
@@ -156,15 +168,15 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
     </nav>
 
     <div key={account.id} className="xhs-account-scope">
-      {tab === 'home' && <HomeTab ctx={ctx} />}
-      {tab === 'positioning' && <PositioningTab ctx={ctx} onAccount={setAccount} />}
-      {tab === 'hotspot' && <HotspotTab ctx={ctx} viewNotes={viewNotes} onClearViewNotes={() => setViewNotes(null)} />}
-      {tab === 'notes' && <NotesTab ctx={ctx} target={noteTarget} onDirtyChange={trackDirty} />}
-      {tab === 'audit' && <AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} />}
-      {tab === 'analytics' && <AnalyticsTab ctx={ctx} />}
-      {tab === 'browser' && <BrowserTab ctx={ctx} overlay={overlay} publishNonce={publishNonce}
+      {visited.includes('home') && <KeepAlive show={tab === 'home'}><HomeTab ctx={ctx} /></KeepAlive>}
+      {visited.includes('positioning') && <KeepAlive show={tab === 'positioning'}><PositioningTab ctx={ctx} onAccount={setAccount} /></KeepAlive>}
+      {visited.includes('hotspot') && <KeepAlive show={tab === 'hotspot'}><HotspotTab ctx={ctx} viewNotes={viewNotes} onClearViewNotes={() => setViewNotes(null)} /></KeepAlive>}
+      {visited.includes('notes') && <KeepAlive show={tab === 'notes'}><NotesTab ctx={ctx} target={noteTarget} onDirtyChange={trackDirty} /></KeepAlive>}
+      {visited.includes('audit') && <KeepAlive show={tab === 'audit'}><AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} /></KeepAlive>}
+      {visited.includes('analytics') && <KeepAlive show={tab === 'analytics'}><AnalyticsTab ctx={ctx} /></KeepAlive>}
+      {visited.includes('browser') && <KeepAlive show={tab === 'browser'}><BrowserTab ctx={ctx} overlay={overlay || tab !== 'browser'} publishNonce={publishNonce}
         onNotes={(read, url) => { setViewNotes({ notes: read, url }); setTab('hotspot'); }}
-        onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} />}
+        onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} /></KeepAlive>}
     </div>
   </section>;
 }

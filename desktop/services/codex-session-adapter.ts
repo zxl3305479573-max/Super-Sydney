@@ -70,6 +70,11 @@ export class CodexSessionAdapter {
     this.originators = new Set(originators.length ? originators : DEFAULT_CODEX_ORIGINATORS);
   }
 
+  /** 监听是否在运行；刚启动时由调用方补齐错过的最终答复。 */
+  get isRunning(): boolean {
+    return this.running;
+  }
+
   start(): void {
     if (this.running) return;
     this.running = true;

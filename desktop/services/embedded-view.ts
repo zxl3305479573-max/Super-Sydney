@@ -1,4 +1,5 @@
-import { shell, WebContentsView, type BrowserWindow } from 'electron';
+import { WebContentsView, type BrowserWindow } from 'electron';
+import { openUrl } from './browser';
 import type { AppContext } from '../app-context';
 import type { EmbeddedSiteKey, EmbeddedViewState, SiteViewBounds } from '../shared';
 import { keepLoginAcrossRestarts } from './session-cookies';
@@ -113,7 +114,7 @@ export class EmbeddedView {
   /** 支付页、需要完整浏览器能力的页面，交给系统浏览器。 */
   openExternal(): void {
     const target = this.liveContents()?.getURL() || this.site.home;
-    void shell.openExternal(target);
+    void openUrl(target);
   }
 
   dispose(): void {
@@ -155,7 +156,7 @@ export class EmbeddedView {
       const view = this.ensureView();
       if (!this.attached) { win.contentView.addChildView(view); this.attached = true; }
       view.setBounds(this.bounds);
-      if (!this.started) void this.load(view, this.site.home);
+      if (!this.started) void this.load(view, this.resumeUrl());
     }
     if (before !== this.attached) this.notify();
   }
@@ -171,17 +172,19 @@ export class EmbeddedView {
     contents.setWindowOpenHandler(({ url }) => {
       // 站点自己的新标签（商品详情、订单页）留在视图里打开，其它站点交给系统浏览器。
       if (isEmbeddedHost(this.site, url)) void this.load(view, url);
-      else if (/^https?:\/\//.test(url)) void shell.openExternal(url);
+      else if (/^https?:\/\//.test(url)) void openUrl(url);
       return { action: 'deny' };
     });
     contents.on('will-navigate', (event, url) => { if (!/^https?:\/\//.test(url)) event.preventDefault(); });
     contents.on('did-start-loading', () => { this.loading = true; this.error = ''; this.notify(); });
     contents.on('did-stop-loading', () => { this.loading = false; this.notify(); });
-    contents.on('did-navigate', () => this.notify());
-    contents.on('did-navigate-in-page', () => this.notify());
+    contents.on('did-navigate', (_event, url) => { this.remember(url); this.notify(); });
+    contents.on('did-navigate-in-page', (_event, url, isMainFrame) => { if (isMainFrame) this.remember(url); this.notify(); });
     contents.on('page-title-updated', () => this.notify());
     contents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
       if (!isMainFrame || code === -3) return;
+      // 上次的页面打不开了：下次启动从首页开始。
+      this.ctx.lastPages.forget(this.pageKey);
       this.loading = false;
       this.error = `页面打不开：${description}（${code}）`;
       this.notify();
@@ -190,6 +193,18 @@ export class EmbeddedView {
     this.view = view;
     this.started = false;
     return view;
+  }
+
+  private get pageKey(): string { return `embed:${this.site.key}`; }
+
+  /** 重启后第一次打开：回到上次停的页面（仍在这个站点之内），否则首页。 */
+  private resumeUrl(): string {
+    const saved = this.ctx.lastPages.get(this.pageKey);
+    return saved && isEmbeddedHost(this.site, saved) ? saved : this.site.home;
+  }
+
+  private remember(url: string): void {
+    if (isEmbeddedHost(this.site, url)) this.ctx.lastPages.set(this.pageKey, url);
   }
 
   private async load(view: WebContentsView, url: string): Promise<void> {

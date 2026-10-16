@@ -29,6 +29,32 @@ test('updateVideoProject 只写白名单字段', () => {
   assert.equal(listVideoProjects(db).length, 1);
 });
 
+test('成片选项与素材账本以 JSON 存取，旧库补列后按默认值读出', () => {
+  const db = new DatabaseSync(':memory:');
+  // 模拟 2026-10-14 之前的库：没有 options_json / assets_json 两列。
+  db.exec(`CREATE TABLE video_projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, platform TEXT NOT NULL DEFAULT 'general', topic TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '',
+    audience TEXT NOT NULL DEFAULT '', duration_seconds INTEGER NOT NULL DEFAULT 60, status TEXT NOT NULL DEFAULT 'idea',
+    topics_json TEXT NOT NULL DEFAULT '', script TEXT NOT NULL DEFAULT '', storyboard_json TEXT NOT NULL DEFAULT '',
+    cover_path TEXT NOT NULL DEFAULT '', export_path TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+  );`);
+  db.prepare("INSERT INTO video_projects (created_at, updated_at) VALUES ('t', 't')").run();
+  migrateVideoTables(db);
+  const legacy = getVideoProject(db, 1);
+  assert.equal(legacy.options.voiceMode, 'tts');
+  assert.deepEqual(legacy.assets.audio, []);
+  const updated = updateVideoProject(db, 1, {
+    options: { ...legacy.options, template: 'night', bgmPath: 'D:/音乐/轻音乐.mp3' },
+    assets: { ...legacy.assets, voiceProfile: 'p', audio: [{ key: 'k', path: 'a.wav', seconds: 2.5 }] }
+  });
+  assert.equal(updated.options.template, 'night');
+  assert.equal(updated.options.bgmPath, 'D:/音乐/轻音乐.mp3');
+  assert.deepEqual(updated.assets.audio, [{ key: 'k', path: 'a.wav', seconds: 2.5 }]);
+  // 迁移可以重复跑。
+  migrateVideoTables(db);
+  assert.equal(getVideoProject(db, 1).options.template, 'night');
+});
+
 test('脏数据回退：未知平台按通用，非法时长按 60 秒', () => {
   const project = videoProjectFromRow({ id: 1, platform: 'weird', duration_seconds: -5 });
   assert.equal(project.platform, 'general');

@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { AppState, LlmKeyStatus, Settings, XhsApiSettings, XhsApiStatus } from '../shared';
+import type { AppState, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPresetKind, ModelPresetView, Settings } from '../shared';
+import ModelPresetBar from './ModelPresetBar';
 import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
 
 type Patch = Partial<Settings>;
@@ -9,8 +10,7 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'activity', label: '活动记录', icon: 'window' },
   { id: 'ai', label: 'AI 对话采集', icon: 'bot' },
   { id: 'files', label: '文件与屏幕', icon: 'folder' },
-  { id: 'llm', label: 'AI 服务', icon: 'key' },
-  { id: 'xhs', label: '小红书模型', icon: 'note' },
+  { id: 'models', label: '模型', icon: 'key' },
   { id: 'data', label: '小红书数据', icon: 'chart' }
 ];
 
@@ -28,70 +28,94 @@ function Row({ title, description, control, children, badge }: { title: string; 
   </div>;
 }
 
-/** 失焦或回车时才保存的文本框：地址、模型名这类改一半不该立即写盘。 */
-function CommitInput({ value, placeholder, onCommit }: { value: string; placeholder?: string; onCommit: (value: string) => void }) {
-  const [draft, setDraft] = useState(value);
-  useEffect(() => { setDraft(value); }, [value]);
-  const commit = () => { if (draft.trim() !== value) onCommit(draft.trim()); };
-  return <input className="input" value={draft} placeholder={placeholder} onChange={event => setDraft(event.target.value)} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') commit(); }} />;
-}
-
-function KeyEditor({ status, placeholder, onSave, onDelete }: { status: LlmKeyStatus; placeholder: string; onSave: (value: string) => Promise<void>; onDelete: () => Promise<void> }) {
-  const [value, setValue] = useState('');
-  const save = async () => { await onSave(value.trim()); setValue(''); };
-  return <div className="key-row">
-    <input className="input" type="password" autoComplete="off" placeholder={status.configured ? '输入新 Key 以替换' : placeholder} value={value} onChange={event => setValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && value.trim()) void save(); }} />
-    <button className="button button-primary" disabled={!value.trim() || !status.encryptionAvailable} onClick={() => void save()}>保存</button>
-    {status.configured && <button className="button button-quiet" onClick={() => void onDelete()}>删除</button>}
-  </div>;
-}
-
 const keyBadge = (status: LlmKeyStatus) => <span className={`badge ${status.configured ? 'badge-on' : 'badge-off'}`}>{status.configured ? `已保存 ${status.masked}` : '未保存'}</span>;
 
+const IMAGE_PROVIDERS = ['openai', 'doubao', 'dashscope', 'jimeng', 'minimax', 'gemini', 'openrouter', 'replicate', 'azure_openai', 'sub2api'];
+
+const draftFromView = (view: ModelConfigView): ModelConfigDraft => ({
+  writer: { baseUrl: view.writer.baseUrl, model: view.writer.model, apiKey: '' },
+  image: { provider: view.image.provider, model: view.image.model, baseUrl: view.image.baseUrl, apiKey: '', estimatedCost: view.image.estimatedCost }
+});
+
 /**
- * 小红书自己的模型连接：内容模型 + 图片模型，和公众号的配置完全分开（各自的开关、地址、模型与 key）。
- * 「从公众号复制」只是省得重填：复制一次，之后两边各改各的。
+ * 统一模型配置：全应用一个内容模型、一个图片模型，公众号、视频、小红书、AI 整理与经验卡片都用它。
+ * 每种模型可以存多套预设，下拉切换；表单改完点「保存」才生效，key 留空表示保留现有的。
  */
-function XhsApiCard({ notify }: { notify: (message: string) => void }) {
-  const [status, setStatus] = useState<XhsApiStatus | null>(null);
+function ModelsCard({ enabled, onToggle, notify }: { enabled: boolean; onToggle: (value: boolean) => void; notify: (message: string) => void }) {
+  const [view, setView] = useState<ModelConfigView | null>(null);
+  const [draft, setDraft] = useState<ModelConfigDraft | null>(null);
+  const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
-  useEffect(() => { void window.sydney.getXhsApiStatus().then(setStatus).catch(() => setStatus(null)); }, []);
-  const run = async (action: () => Promise<XhsApiStatus>, message?: string) => {
-    try { setStatus(await action()); if (message) notify(message); } catch (error) { notify(readableError(error)); }
+  const load = (next: ModelConfigView) => { setView(next); setDraft(draftFromView(next)); };
+  useEffect(() => { void window.sydney.getModelConfig().then(load).catch(error => notify(readableError(error))); }, [notify]);
+  if (!view || !draft) return null;
+
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftFromView(view));
+  const run = async (action: () => Promise<ModelConfigView>, message: string) => {
+    setBusy(true);
+    try { load(await action()); notify(message); } catch (error) { notify(readableError(error)); } finally { setBusy(false); }
   };
-  const save = (patch: Partial<XhsApiSettings>) => run(() => window.sydney.saveXhsApiSettings(patch));
-  const importFromWeWrite = async () => {
-    if (!window.confirm('把公众号现在的内容模型、图片模型配置（含 key）复制给小红书？之后两边各自独立，改公众号不会影响小红书。')) return;
-    try { const result = await window.sydney.importXhsApiFromWeWrite(); setStatus(result.status); notify(`已复制：${result.copied.join('、')}`); }
-    catch (error) { notify(readableError(error)); }
+  const patchWriter = (patch: Partial<ModelConfigDraft['writer']>) => setDraft({ ...draft, writer: { ...draft.writer, ...patch } });
+  const patchImage = (patch: Partial<ModelConfigDraft['image']>) => setDraft({ ...draft, image: { ...draft.image, ...patch } });
+  const applyPreset = (preset: ModelPresetView) => {
+    if (dirty && !window.confirm('表单里有未保存的修改，切换预设会丢掉这些修改。继续？')) return;
+    void run(() => window.sydney.applyModelPreset(preset.id), `已切换到「${preset.name}」，所有模块之后都用这套模型`);
   };
+  const savePreset = (kind: ModelPresetKind, name: string) => {
+    const values = kind === 'writer' ? { ...draft.writer } : { ...draft.image };
+    void run(() => window.sydney.saveModelPreset({ kind, name, ...values }), `已存为预设「${name || values.model}」`);
+  };
+  const deletePreset = (preset: ModelPresetView) => {
+    if (!window.confirm(`删除预设「${preset.name}」？当前在用的配置不受影响。`)) return;
+    void run(() => window.sydney.deleteModelPreset(preset.id), `已删除预设「${preset.name}」`);
+  };
+  const presetBar = (kind: ModelPresetKind) => <ModelPresetBar kind={kind} presets={view.presets.filter(item => item.kind === kind)}
+    activeId={view.activePresets[kind]} defaultName={kind === 'writer' ? draft.writer.model : draft.image.model} busy={busy}
+    onApply={applyPreset} onSave={name => savePreset(kind, name)} onDelete={deletePreset} />;
   const test = async () => {
     setTesting(true);
-    try { const result = await window.sydney.testXhsLlm(); notify(`小红书内容模型连接正常（${result.model}）`); }
+    try { const result = await window.sydney.testContentModel(); notify(`内容模型连接正常（${result.model}）`); }
     catch (error) { notify(`连接失败：${readableError(error)}`); }
     finally { setTesting(false); }
   };
-  if (!status) return null;
-  const { settings } = status;
-  return <section id="set-xhs" className="set-card">
-    <header><Icon name="note" size={18} /><div><h2>小红书 · 模型连接</h2><p>小红书自己的内容模型与图片模型，和公众号的配置分开：开关、地址、模型、key 各管各的。</p></div></header>
-    <Row title="从公众号复制一份" description="还没单独配置时，可以把公众号现有的接口配置复制过来，省得重填；复制后两边互不影响。"
-      control={<button className="button button-secondary" onClick={() => void importFromWeWrite()}>从公众号复制</button>} />
-    <Row title="允许小红书调用内容模型" description="关闭后小红书里所有 AI 写作、标题、检测、定位、诊断按钮都不可用。只在你点按钮时发送对应内容。"
-      control={<Switch label="允许小红书调用内容模型" checked={settings.llmEnabled} onChange={value => void save({ llmEnabled: value })} />} />
-    <Row title="内容模型地址与模型名" description="OpenAI 兼容的 chat/completions 接口。">
-      <div className="key-row"><CommitInput value={settings.llmBaseUrl} placeholder="https://api.deepseek.com/v1" onCommit={value => void save({ llmBaseUrl: value })} /><CommitInput value={settings.llmModel} placeholder="deepseek-chat" onCommit={value => void save({ llmModel: value })} /></div>
+
+  return <section id="set-models" className="set-card">
+    <header><Icon name="key" size={18} /><div><h2>模型</h2><p>全应用统一的内容模型与图片模型：公众号、视频、小红书、AI 整理与经验卡片都用这里的配置，各模块不再单独设置。</p></div></header>
+    <Row title="允许调用内容模型" description="关闭后所有模块的 AI 写作、整理、检测按钮都不可用。只在你点击时发送对应内容。"
+      control={<Switch label="允许调用内容模型" checked={enabled} onChange={onToggle} />} />
+
+    <Row title="内容模型" badge={keyBadge(view.writer.key)} description="OpenAI 兼容的 chat/completions 接口；key 使用系统安全存储加密，未保存时回退到环境变量。">
+      {presetBar('writer')}
+      <div className="ww-grid">
+        <label className="ww-input"><span>接口地址</span><input value={draft.writer.baseUrl} onChange={event => patchWriter({ baseUrl: event.target.value })} placeholder="https://api.deepseek.com/v1" /></label>
+        <label className="ww-input"><span>模型</span><input value={draft.writer.model} onChange={event => patchWriter({ model: event.target.value })} placeholder="deepseek-chat" /></label>
+        <label className="ww-input ww-wide"><span>API Key</span><input type="password" autoComplete="off" value={draft.writer.apiKey} onChange={event => patchWriter({ apiKey: event.target.value })} placeholder={view.writer.key.configured ? `已配置 ${view.writer.key.masked}，留空保留` : 'sk-...'} /></label>
+      </div>
+      <button className="button button-quiet" disabled={testing || dirty} title={dirty ? '先保存再测试' : '用当前在用的内容模型发一条最小请求'} onClick={() => void test()}>{testing ? '测试中…' : '测试连接'}</button>
     </Row>
-    <Row title="内容模型 API Key" badge={keyBadge(status.llmKey)} description="使用系统安全存储加密，不写入项目、数据库或知识库。">
-      <KeyEditor status={status.llmKey} placeholder="sk-..." onSave={value => run(() => window.sydney.saveXhsApiKey('llm', value), '小红书内容模型 Key 已保存')} onDelete={() => run(() => window.sydney.deleteXhsApiKey('llm'), '已删除')} />
-      <button className="button button-quiet" disabled={testing} onClick={() => void test()}>{testing ? '测试中…' : '测试连接'}</button>
+
+    <Row title="图片模型" badge={<span className={`badge ${view.image.apiKeyMasked ? 'badge-on' : 'badge-off'}`}>{view.image.apiKeyMasked ? `已保存 ${view.image.apiKeyMasked}` : '未保存'}</span>}
+      description="OpenAI 兼容的 images/generations 接口，用于封面、配图与信息图（按张计费）。">
+      {presetBar('image')}
+      <div className="ww-grid ww-grid-three">
+        <label className="ww-input"><span>Provider</span>
+          <select value={draft.image.provider} onChange={event => patchImage({ provider: event.target.value })}>
+            <option value="">未选择</option>
+            {IMAGE_PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="ww-input"><span>模型</span><input value={draft.image.model} onChange={event => patchImage({ model: event.target.value })} placeholder="gpt-image-2" /></label>
+        <label className="ww-input"><span>预估单价</span><input value={draft.image.estimatedCost} onChange={event => patchImage({ estimatedCost: event.target.value })} placeholder="0.04" /></label>
+        <label className="ww-input ww-wide"><span>接口地址</span><input value={draft.image.baseUrl} onChange={event => patchImage({ baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" /></label>
+        <label className="ww-input ww-wide"><span>API Key</span><input type="password" autoComplete="off" value={draft.image.apiKey} onChange={event => patchImage({ apiKey: event.target.value })} placeholder={view.image.apiKeyMasked ? `已配置 ${view.image.apiKeyMasked}，留空保留` : '输入图片服务 API Key'} /></label>
+      </div>
     </Row>
-    <Row title="图片模型地址与模型名" description="OpenAI 兼容的 images/generations 接口，用于封面与信息图（按张计费）。">
-      <div className="key-row"><CommitInput value={settings.imageBaseUrl} placeholder="https://api.openai.com/v1" onCommit={value => void save({ imageBaseUrl: value })} /><CommitInput value={settings.imageModel} placeholder="gpt-image-2" onCommit={value => void save({ imageModel: value })} /></div>
-    </Row>
-    <Row title="图片模型 API Key" badge={keyBadge(status.imageKey)} description="使用系统安全存储加密。">
-      <KeyEditor status={status.imageKey} placeholder="sk-..." onSave={value => run(() => window.sydney.saveXhsApiKey('image', value), '小红书图片模型 Key 已保存')} onDelete={() => run(() => window.sydney.deleteXhsApiKey('image'), '已删除')} />
-    </Row>
+
+    <div className="set-model-actions">
+      <span>{dirty ? '有未保存的修改' : '配置写入本机 ~/.wewrite/config.yaml，内容模型 key 在系统安全存储'}</span>
+      <button className="button button-secondary" disabled={busy || !dirty} onClick={() => setDraft(draftFromView(view))}>放弃修改</button>
+      <button className="button button-primary" disabled={busy || !dirty} onClick={() => void run(() => window.sydney.saveModelConfig(draft), '模型配置已保存，所有模块立即生效')}>{busy ? '保存中…' : '保存'}</button>
+    </div>
   </section>;
 }
 
@@ -104,12 +128,7 @@ function NumberInput({ value, min, onCommit, suffix }: { value: number; min: num
 
 export function SettingsView({ state, onSetting, onChooseFiles, notify }: { state: AppState; onSetting: (patch: Patch) => Promise<void>; onChooseFiles: () => Promise<void>; notify: (message: string) => void }) {
   const settings = state.settings;
-  const [key, setKey] = useState('');
-  const [keyStatus, setKeyStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [active, setActive] = useState('vault');
-  useEffect(() => { void window.sydney.getLlmKeyStatus().then(setKeyStatus); }, []);
-  const saveKey = async () => { setKeyStatus(await window.sydney.saveLlmKey(key.trim())); setKey(''); notify('DeepSeek 密钥已安全保存'); };
-  const removeKey = async () => { setKeyStatus(await window.sydney.deleteLlmKey()); notify('已删除程序内保存的密钥'); };
   const [redfoxKey, setRedfoxKey] = useState('');
   const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [redfoxTesting, setRedfoxTesting] = useState(false);
@@ -184,20 +203,7 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
         </>}
       </section>
 
-      <section id="set-llm" className="set-card">
-        <header><Icon name="key" size={18} /><div><h2>AI 服务（DeepSeek）</h2><p>用于单条 AI 整理、规则生成和经验卡片；只在你点击时发送对应内容。</p></div></header>
-        <Row title="允许发送到 DeepSeek" description="关闭后所有 AI 按钮不可用。" control={<Switch label="允许发送到 DeepSeek" checked={settings.llmEnabled} onChange={value => void onSetting({ llmEnabled: value })} />} />
-        <Row title="API Key" badge={<span className={`badge ${keyStatus.configured ? 'badge-on' : 'badge-off'}`}>{keyStatus.configured ? `已保存 ${keyStatus.masked}` : '未保存'}</span>}
-          description={keyStatus.encryptionAvailable ? '使用系统安全存储加密，不写入项目、数据库或知识库；未保存时回退到环境变量。' : '当前系统安全存储不可用，无法保存密钥。'}>
-          <div className="key-row">
-            <input className="input" type="password" autoComplete="off" placeholder={keyStatus.configured ? '输入新密钥以替换' : 'sk-...'} value={key} onChange={event => setKey(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && key.trim()) void saveKey(); }} />
-            <button className="button button-primary" disabled={!key.trim() || !keyStatus.encryptionAvailable} onClick={() => void saveKey()}>保存</button>
-            {keyStatus.configured && <button className="button button-quiet" onClick={() => void removeKey()}>删除</button>}
-          </div>
-        </Row>
-      </section>
-
-      <XhsApiCard notify={notify} />
+      <ModelsCard enabled={settings.llmEnabled} onToggle={value => void onSetting({ llmEnabled: value })} notify={notify} />
 
       <section id="set-data" className="set-card">
         <header><Icon name="chart" size={18} /><div><h2>小红书 · 热点数据（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>

@@ -50,7 +50,8 @@ function assertConfig(config: XhsApiConfig): void {
 
 async function ask(config: XhsApiConfig, systemText: string, prompt: string, temperature: number, fetchImpl: typeof fetch): Promise<Record<string, unknown>> {
   assertConfig(config);
-  const content = await requestChatContent(config, systemText, prompt, { label: '内容 API', timeoutMs: 180_000, temperature, fetchImpl });
+  // 流式接收：定位、选题、正文这些长输出在模型繁忙时整段要等很久，只要还在出字就不算超时（见 llm-json.ts）。
+  const content = await requestChatContent(config, systemText, prompt, { label: '内容 API', stream: true, timeoutMs: 6 * 60_000, idleMs: 60_000, temperature, fetchImpl });
   return parseJsonObject(content, '内容 API');
 }
 

@@ -5,7 +5,7 @@ import NativeContentPanel from './NativeContentPanel';
 import ProfileConfig from './ProfileConfig';
 import WeWriteStats from './WeWriteStats';
 import { findDirectionById, initialProfileId } from './content-taxonomy';
-import { readableError } from './ui';
+import { KeepAlive, readableError, useVisited } from './ui';
 
 /** 上次选中的公众号资料只是界面便利，存在本机；读写失败时退回默认资料。 */
 const PROFILE_KEY = 'sydney.wewrite.profile';
@@ -20,8 +20,23 @@ function rememberProfile(id: number | null): void {
  * 公众号工作区。每个一级内容方向就是一份「公众号资料」：页面顶部切换当前资料，
  * 创作流水线、文章数据、环境与配置都只显示和修改这份资料的内容。
  */
+type WeWriteTab = 'native' | 'stats' | 'config' | 'mp';
+const TAB_KEY = 'sydney.wewrite.tab';
+const TABS: WeWriteTab[] = ['native', 'stats', 'config', 'mp'];
+
+/** 上次停在哪个子页签，重新打开应用回到那里。 */
+function storedTab(): WeWriteTab {
+  try {
+    const saved = localStorage.getItem(TAB_KEY) as WeWriteTab | null;
+    if (saved && TABS.includes(saved)) return saved;
+  } catch { /* 读不到就从创作流水线开始 */ }
+  return 'native';
+}
+
 export default function WeWritePanel({ notify, overlay }: { notify: (message: string) => void; overlay: boolean }) {
-  const [tab, setTab] = useState<'native' | 'stats' | 'config' | 'mp'>('native');
+  const [tab, setTab] = useState<WeWriteTab>(storedTab);
+  const visited = useVisited(tab);
+  useEffect(() => { try { localStorage.setItem(TAB_KEY, tab); } catch { /* 存不下也不影响使用 */ } }, [tab]);
   const [taxonomy, setTaxonomy] = useState<ContentTaxonomy | null>(null);
   const [profileId, setProfileId] = useState<number | null>(null);
 
@@ -59,11 +74,12 @@ export default function WeWritePanel({ notify, overlay }: { notify: (message: st
       <button className={`ww-tab ${tab === 'mp' ? 'is-active' : ''}`} title="在应用里打开微信公众平台（创作者发布平台）" onClick={() => setTab('mp')}>公众号后台</button>
     </div>
     {/* key 绑定资料：切换资料时子面板整体重建，不会把上一份资料的选中状态带过来。 */}
-    {tab === 'native' && <NativeContentPanel key={profileId ?? 0} profile={profile} notify={notify} onOpenConfig={() => setTab('config')} onOpenBackend={() => setTab('mp')} />}
-    {tab === 'stats' && <WeWriteStats key={profileId ?? 0} profile={profile} notify={notify} />}
-    {tab === 'config' && <ProfileConfig profileId={profileId} notify={notify} onSaved={(next, activate) => applyTaxonomy(next, activate)} />}
+    {/* 子页签进过就常驻，切走只隐藏：写到一半的稿子、正在跑的步骤都还在。 */}
+    {visited.includes('native') && <KeepAlive show={tab === 'native'}><NativeContentPanel key={profileId ?? 0} profile={profile} notify={notify} onOpenConfig={() => setTab('config')} onOpenBackend={() => setTab('mp')} /></KeepAlive>}
+    {visited.includes('stats') && <KeepAlive show={tab === 'stats'}><WeWriteStats key={profileId ?? 0} profile={profile} notify={notify} /></KeepAlive>}
+    {visited.includes('config') && <KeepAlive show={tab === 'config'}><ProfileConfig profileId={profileId} notify={notify} onSaved={(next, activate) => applyTaxonomy(next, activate)} /></KeepAlive>}
     {/* 不随资料切换重建：后台登录的是哪个公众号由页面里的扫码决定，与当前资料无关。 */}
-    {tab === 'mp' && <EmbeddedSitePanel key="wechatMp" siteKey="wechatMp" label="公众号后台" overlay={overlay}
-      privacy="页面由微信公众平台提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本，发表、群发都由你在页面里自己操作。" />}
+    {visited.includes('mp') && <KeepAlive show={tab === 'mp'}><EmbeddedSitePanel key="wechatMp" siteKey="wechatMp" label="公众号后台" overlay={overlay || tab !== 'mp'} covered={overlay}
+      privacy="页面由微信公众平台提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本，发表、群发都由你在页面里自己操作。" /></KeepAlive>}
   </section>;
 }

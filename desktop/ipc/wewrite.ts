@@ -3,7 +3,7 @@ import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { AppContext } from '../app-context';
 import type { WeWriteConfigDraft, WeWriteEnvironment, WeWriteOverview } from '../shared';
-import { DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL } from '../services/content-api-config';
+import { writerEndpoint } from '../services/content-api-config';
 import { resolveDefaultSubdirection, subdirectionNames } from '../services/content-taxonomy';
 import {
   maskSecret, normalizeWeWriteDraft, parseChecks, parseDiagnoseFiles, parseDiagnoseFlags, parseImageConfig, parseRecommendations,
@@ -26,16 +26,14 @@ function collectOverview(ctx: AppContext): WeWriteOverview {
     { group: 'config', name: '公众号资料', status: styleText ? 'PASS' : 'WARN', detail: styleText ? '已保存到本机' : '请填写公众号资料' },
     { group: 'config', name: 'Wechat Credentials', status: yamlScalar(configText, 'appid') && yamlScalar(configText, 'secret') ? 'PASS' : 'WARN', detail: '配置状态；实际连接由推送时验证' },
     { group: 'config', name: 'Image Api Key', status: yamlScalar(configText, 'api_key') ? 'PASS' : 'WARN', detail: '配置状态；实际连接由生图时验证' },
-    { group: 'config', name: '内容生成 API', status: apiKey ? 'PASS' : 'WARN', detail: llmEnabled ? '已允许主动调用' : '请开启“允许发送到 DeepSeek”' }
+    { group: 'config', name: '内容生成 API', status: apiKey ? 'PASS' : 'WARN', detail: llmEnabled ? '已允许主动调用' : '请在「设置 → 模型」里允许调用内容模型' }
   ];
-  const writer = yamlBlock(configText, 'writer');
-  const writerEnabled = yamlScalar(writer, 'enabled');
+  const writer = writerEndpoint(configText);
   return {
     writer: {
-      baseUrl: yamlScalar(writer, 'base_url') || process.env.SYDNEY_LLM_BASE_URL || DEFAULT_LLM_BASE_URL,
-      model: yamlScalar(writer, 'model') || process.env.SYDNEY_LLM_MODEL || DEFAULT_LLM_MODEL,
+      ...writer,
       apiKeyMasked: maskSecret(apiKey),
-      enabled: writerEnabled ? writerEnabled === 'true' : llmEnabled
+      enabled: llmEnabled
     },
     home,
     checks: parseChecks(checks),
@@ -54,26 +52,45 @@ function collectOverview(ctx: AppContext): WeWriteOverview {
   };
 }
 
+/**
+ * 用当前文件内容拼出一份完整草稿：只改 writer 或 image 一段时，其余（微信凭证、主题等）原样写回。
+ * 密钥字段留空，由 normalizeWeWriteDraft 从 config.yaml 补回。
+ */
+function currentDraft(ctx: AppContext): WeWriteConfigDraft {
+  const overview = collectOverview(ctx);
+  return {
+    style: overview.style,
+    wechat: { appid: '', secret: '', author: overview.wechat.author },
+    writer: { baseUrl: overview.writer.baseUrl, model: overview.writer.model, apiKey: '', enabled: overview.writer.enabled },
+    image: { provider: overview.image.provider, model: overview.image.model, baseUrl: overview.image.baseUrl, apiKey: '', estimatedCost: overview.image.estimatedCost }
+  };
+}
+
+/**
+ * 改写 config.yaml 里的模型段（「设置 → 模型」用）：mutate 只动 writer / image，其余照当前文件写回。
+ * image.apiKey 留空表示保留 config.yaml 里现有的 key。
+ */
+export function rewriteModelConfig(ctx: AppContext, mutate: (draft: WeWriteConfigDraft) => void): void {
+  const home = weWriteHome();
+  const draft = currentDraft(ctx);
+  mutate(draft);
+  writeWeWriteFile(path.join(home, 'config.yaml'), serializeCliConfig(normalizeWeWriteDraft(draft, readWeWriteFiles(home))));
+  ctx.notifyWeWriteChanged();
+}
+
 export function registerWeWriteIpc(ctx: AppContext): void {
   ipcMain.handle('wewrite:overview', () => collectOverview(ctx));
 
   ipcMain.handle('wewrite:config:save', async (_event, draft: WeWriteConfigDraft): Promise<WeWriteOverview> => {
     const home = weWriteHome();
-    const normalized = normalizeWeWriteDraft(draft, readWeWriteFiles(home));
+    // 模型段统一在「设置 → 模型」维护：这里一律按当前文件写回，不拿表单里可能过期的值覆盖。
+    const current = currentDraft(ctx);
+    const normalized = normalizeWeWriteDraft({ ...draft, writer: current.writer, image: current.image }, readWeWriteFiles(home));
     // topics / default_topic 已经由「内容方向」统一维护，这里不拿表单里的旧值覆盖它。
     const taxonomy = readContentTaxonomy(ctx);
     normalized.style = { ...normalized.style, topics: subdirectionNames(taxonomy.directions), defaultTopic: resolveDefaultSubdirection(taxonomy).name };
-    // 先落盘配置文件，再写入密钥：密钥保存失败不该让用户填的整套配置一起丢掉。
     writeWeWriteFile(path.join(home, 'style.yaml'), serializeStyleConfig(normalized.style));
     writeWeWriteFile(path.join(home, 'config.yaml'), serializeCliConfig(normalized));
-    if (draft.writer?.apiKey.trim()) {
-      try {
-        ctx.secretStore.save(draft.writer.apiKey);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`配置已保存，但内容 API Key 未能写入系统安全存储：${detail}`);
-      }
-    }
     ctx.notifyWeWriteChanged();
     return collectOverview(ctx);
   });

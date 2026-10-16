@@ -16,7 +16,7 @@ const style = 'target_audience: "55-75岁读者"\ntone: "平和"\n';
 test('内容 API：config.yaml 的 writer 段优先于环境变量，并注入内容方向', () => {
   const config = buildContentApiConfig({
     files: { styleText: style, configText: 'writer:\n  enabled: true\n  base_url: "https://llm.example/v1"\n  model: "m1"\n' },
-    llmEnabled: false, apiKey: 'sk-test', taxonomy, subdirectionId: 11, env: { SYDNEY_LLM_MODEL: 'env-model' }
+    llmEnabled: true, apiKey: 'sk-test', taxonomy, subdirectionId: 11, env: { SYDNEY_LLM_MODEL: 'env-model' }
   });
   assert.equal(config.baseUrl, 'https://llm.example/v1');
   assert.equal(config.model, 'm1');
@@ -55,21 +55,22 @@ test('内容 API：未归类或方向已被删除的文章不再悄悄用账号�
   assert.equal(buildContentApiConfig({ files, llmEnabled: true, apiKey: '', taxonomy: fresh, env: {} }).style?.targetAudience, '55-75岁读者');
 });
 
-test('内容 API：writer.enabled 缺省时跟随应用开关；视频不传方向', () => {
+test('内容 API：只认应用的统一开关；视频不传方向', () => {
   const files = { styleText: null, configText: null };
-  assert.throws(() => buildContentApiConfig({ files, llmEnabled: false, apiKey: '', taxonomy, env: {} }), /允许内容 API 调用/);
+  assert.throws(() => buildContentApiConfig({ files, llmEnabled: false, apiKey: '', taxonomy, env: {} }), /允许调用内容模型/);
   const config = buildContentApiConfig({ files, llmEnabled: true, apiKey: '', taxonomy, env: {} });
   assert.equal(config.model, 'deepseek-chat');
   assert.equal(config.direction, undefined);
 });
 
-test('内容 API：writer.enabled=false 时即使应用开关打开也拒绝', () => {
+test('内容 API：config.yaml 里旧的 writer.enabled 不再参与判断', () => {
   const files = { styleText: null, configText: 'writer:\n  enabled: false\n' };
-  assert.throws(() => buildContentApiConfig({ files, llmEnabled: true, apiKey: '', taxonomy, env: {} }), /允许内容 API 调用/);
+  assert.equal(buildContentApiConfig({ files, llmEnabled: true, apiKey: '', taxonomy, env: {} }).model, 'deepseek-chat');
+  assert.throws(() => buildContentApiConfig({ files: { styleText: null, configText: 'writer:\n  enabled: true\n' }, llmEnabled: false, apiKey: '', taxonomy, env: {} }), /允许调用内容模型/);
 });
 
 test('图片 API：缺密钥直接报错，地址去掉末尾斜杠', () => {
-  assert.throws(() => imageApiConfig(null), /图片 API Key/);
+  assert.throws(() => imageApiConfig(null), /图片模型的 API Key/);
   assert.deepEqual(imageApiConfig('image:\n  api_key: "k"\n  base_url: "https://img.example/v1/"\n'), { apiKey: 'k', baseUrl: 'https://img.example/v1', model: 'gpt-image-2' });
 });
 

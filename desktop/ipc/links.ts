@@ -1,4 +1,5 @@
-import { ipcMain, shell } from 'electron';
+import { ipcMain } from 'electron';
+import { openUrl } from '../services/browser';
 import type { AppContext } from '../app-context';
 import type { LinkInput } from '../shared';
 import { createLink, deleteLink, getLink, listLinks, markLinkOpened, updateLink } from '../services/link-store';
@@ -14,7 +15,7 @@ export function registerLinksIpc(ctx: AppContext): void {
   ipcMain.handle('links:update', (_event, id: number, input: LinkInput) => updateLink(db, Number(id), input));
   ipcMain.handle('links:delete', (_event, id: number) => { deleteLink(db, Number(id)); });
   ipcMain.handle('links:open', async (_event, id: number) => {
-    await shell.openExternal(getLink(db, Number(id)).url);
+    await openUrl(getLink(db, Number(id)).url);
     return markLinkOpened(db, Number(id));
   });
 }

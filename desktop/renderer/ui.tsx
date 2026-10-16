@@ -126,6 +126,38 @@ export function LinesEditor({ values, onChange, placeholder }: { values: string[
     onBlur={() => { const next = text.split(/\r?\n/).map(item => item.trim()).filter(Boolean); if (next.join('\n') !== values.join('\n')) onChange(next); }} />;
 }
 
+/**
+ * 嵌入网页（主进程的 WebContentsView）承载区在窗口里真正露出来的那一块。
+ * 视图浮在界面之上、不受 DOM 裁剪：承载区滚到标题栏底下时，必须按滚动区的可视范围裁掉，
+ * 否则网页会盖住标题栏和窗口按钮。露出来太少时主进程会把视图摘下。
+ */
+/**
+ * 进过的页面 / 子页签常驻不卸载：返回到目前为止显示过的那些，配合 <KeepAlive> 只隐藏没在看的。
+ * 切走时正在跑的生成、没保存的表单、滚动位置都原样留着。
+ */
+export function useVisited<T>(current: T): T[] {
+  const [visited, setVisited] = useState<T[]>([current]);
+  useEffect(() => { setVisited(list => list.includes(current) ? list : [...list, current]); }, [current]);
+  return visited.includes(current) ? visited : [...visited, current];
+}
+
+export function KeepAlive({ show, children }: { show: boolean; children: ReactNode }) {
+  return <div className="keep-alive" hidden={!show}>{children}</div>;
+}
+
+export function visibleStageBounds(element: HTMLElement | null): { x: number; y: number; width: number; height: number } | null {
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  const scroller = element.closest<HTMLElement>('.main-scroll');
+  const box = scroller?.getBoundingClientRect();
+  const view = box && scroller
+    ? { left: box.left + scroller.clientLeft, top: box.top + scroller.clientTop, right: box.left + scroller.clientLeft + scroller.clientWidth, bottom: box.top + scroller.clientTop + scroller.clientHeight }
+    : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  const left = Math.max(rect.left, view.left);
+  const top = Math.max(rect.top, view.top);
+  return { x: left, y: top, width: Math.max(0, Math.min(rect.right, view.right) - left), height: Math.max(0, Math.min(rect.bottom, view.bottom) - top) };
+}
+
 export function EmptyState({ icon, title, children }: { icon: IconName; title: string; children?: ReactNode }) {
   return <div className="empty"><span className="empty-icon"><Icon name={icon} size={22} /></span><strong>{title}</strong>{children && <p>{children}</p>}</div>;
 }

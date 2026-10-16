@@ -6,10 +6,8 @@ import { readableError } from './ui';
 const STATUS_TEXT: Record<string, string> = { PASS: '通过', WARN: '警告', FAIL: '失败', SKIP: '跳过' };
 const STATUS_CLASS: Record<string, string> = { PASS: 'approved', WARN: 'pending', FAIL: 'rejected', SKIP: 'rejected' };
 
-const PROVIDERS = ['openai', 'doubao', 'dashscope', 'jimeng', 'minimax', 'gemini', 'openrouter', 'replicate', 'azure_openai', 'sub2api'];
-
 /**
- * 「全局服务」：整个应用共用的一份配置——内容生成 API、图片服务、微信草稿箱凭证与自检。
+ * 「全局服务」：微信草稿箱凭证与自检。内容模型与图片模型已统一到「设置 → 模型」，这里不再单独配置。
  * 写作相关的配置（资料、读者、模板、禁忌等）已按公众号资料隔离，在 ProfileConfig 里编辑；
  * 这里保存时 style.yaml 原样带回，不会改动资料同步过去的值。
  */
@@ -36,9 +34,6 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
   }, [load]);
 
   const patchWechat = (patch: Partial<WeWriteConfigDraft['wechat']>) => setDraft(current => ({ ...current, wechat: { ...current.wechat, ...patch } }));
-  const patchWriter = (patch: Partial<NonNullable<WeWriteConfigDraft['writer']>>) => setDraft(current => ({ ...current, writer: { baseUrl: '', model: '', apiKey: '', enabled: false, ...current.writer, ...patch } }));
-  const patchImage = (patch: Partial<WeWriteConfigDraft['image']>) => setDraft(current => ({ ...current, image: { ...current.image, ...patch } }));
-
   const save = async () => {
     setSaving(true);
     try {
@@ -70,34 +65,7 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
       <span><b>微信草稿箱</b>{flags.skipPublish ? '未配置' : '可用'}</span>
     </div>
 
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>内容生成 API</h3><small>直接由桌面端调用，无需 pi</small></div>
-      <label className="ww-writer-toggle"><input type="checkbox" checked={draft.writer?.enabled ?? false} onChange={event => patchWriter({ enabled: event.target.checked })} />允许在主动点击生成、写作或审稿时发送该文章内容</label>
-      <div className="ww-grid">
-        <label className="ww-input"><span>接口地址</span><input value={draft.writer?.baseUrl ?? ''} onChange={event => patchWriter({ baseUrl: event.target.value })} placeholder="https://api.deepseek.com/v1" /></label>
-        <label className="ww-input"><span>模型</span><input value={draft.writer?.model ?? ''} onChange={event => patchWriter({ model: event.target.value })} placeholder="deepseek-chat" /></label>
-        <label className="ww-input ww-wide"><span>内容 API Key</span><input type="password" value={draft.writer?.apiKey ?? ''} onChange={event => patchWriter({ apiKey: event.target.value })} placeholder={overview.writer.apiKeyMasked ? `已配置 ${overview.writer.apiKeyMasked}，留空保留` : '填写新的密钥'} /><small>使用系统安全存储，复用现有 DeepSeek 密钥；不会写入 YAML 或回传明文。</small></label>
-      </div>
-    </div>
-
-    <div className="ww-group">
-      <div className="ww-group-head"><h3>图片服务</h3><small>{flags.skipImageGen ? '当前不可用' : '当前可用'}</small></div>
-      <div className="ww-grid ww-grid-three">
-        <label className="ww-input"><span>Provider</span>
-          <select value={draft.image.provider} onChange={event => patchImage({ provider: event.target.value })}>
-            <option value="">未选择</option>
-            {PROVIDERS.map(item => <option key={item} value={item}>{item}</option>)}
-          </select>
-        </label>
-        <label className="ww-input"><span>模型</span><input value={draft.image.model} onChange={event => patchImage({ model: event.target.value })} placeholder="gpt-image-2" /></label>
-        <label className="ww-input"><span>预估单价</span><input value={draft.image.estimatedCost} onChange={event => patchImage({ estimatedCost: event.target.value })} placeholder="0.04" /></label>
-        <label className="ww-input ww-wide"><span>接口地址</span><input value={draft.image.baseUrl} onChange={event => patchImage({ baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
-        <label className="ww-input ww-wide"><span>API Key</span>
-          <input type="password" value={draft.image.apiKey} onChange={event => patchImage({ apiKey: event.target.value })} placeholder={overview.image.apiKeyMasked ? `已配置 ${overview.image.apiKeyMasked}，留空则保留` : '输入图片服务 API Key'} />
-          <small>留空表示保留现有密钥；密钥只写入本机 ~/.wewrite/config.yaml，不会回传到界面。</small>
-        </label>
-      </div>
-    </div>
+    <p className="ww-muted">内容模型与图片模型在「设置 → 模型」统一配置，公众号、视频、小红书共用同一套。</p>
 
     <div className="ww-group">
       <div className="ww-group-head"><h3>微信草稿箱</h3><small>{flags.skipPublish ? '未配置，推送会降级为本地预览' : '已配置'}</small></div>
@@ -136,3 +104,4 @@ export default function WeWriteOverviewPanel({ notify }: { notify: (message: str
     </details>
   </section>;
 }
+

@@ -219,6 +219,29 @@ export type WeWriteOverview = {
   };
   themes: WeWriteTheme[];
 };
+/**
+ * 全应用统一的模型配置（「设置 → 模型」）：一个内容模型、一个图片模型，所有模块共用。
+ * 预设：内容模型（writer）与图片模型（image）各自可以存多套，用下拉切换。
+ */
+export type ModelConfigView = {
+  /** 允许调用内容模型（应用设置 llmEnabled）。 */
+  enabled: boolean;
+  writer: { baseUrl: string; model: string; key: LlmKeyStatus };
+  image: { provider: string; model: string; baseUrl: string; apiKeyMasked: string; estimatedCost: string };
+  presets: ModelPresetView[];
+  /** 当前在用的配置对应哪个预设；空串表示「自定义」。 */
+  activePresets: Record<ModelPresetKind, string>;
+};
+/** key 留空表示保留现有的。 */
+export type ModelConfigDraft = {
+  writer: { baseUrl: string; model: string; apiKey: string };
+  image: { provider: string; model: string; baseUrl: string; apiKey: string; estimatedCost: string };
+};
+export type ModelPresetKind = 'writer' | 'image';
+export type ModelPreset = { id: string; kind: ModelPresetKind; name: string; baseUrl: string; model: string; provider: string; estimatedCost: string };
+export type ModelPresetView = ModelPreset & { apiKeyMasked: string };
+/** apiKey 留空表示沿用当前在用的 key。 */
+export type ModelPresetInput = { kind: ModelPresetKind; name: string; baseUrl: string; model: string; provider?: string; estimatedCost?: string; apiKey?: string };
 export type WeWriteEnvironment = {
   home: string;
   theme: string;
@@ -268,23 +291,58 @@ export type ArticleStatsView = {
 export type ArticleStatsImportResult = { file: string; added: number; updated: number; view: ArticleStatsView };
 /* ── 视频模块 ────────────────────────────────────────────────────
  * 面向中老年健康科普账号的短视频流水线：选题 → 口播脚本 → 分镜 →
- * 字幕 → 封面 → 制作包。
- * 模型只负责选题、脚本与分镜；字幕与制作包由本地确定性生成，
+ * 配音与字幕 → 画面 → 成片 → 封面 → 制作包。
+ * 模型负责选题、脚本与分镜（和可选的逐镜配图）；配音走 TTS，字幕、画面帧与成片在本地确定性生成；
  * 导出前必须由人确认，模块不代替任何平台做发布。
+ * 设计见 docs/superpowers/specs/2026-10-14-video-production-design.md。
  */
 export type VideoPlatform = 'douyin' | 'shipinhao' | 'xiaohongshu' | 'bilibili' | 'general';
 export type VideoStage = 'topics' | 'script' | 'storyboard';
 export type VideoProjectStatus = 'idea' | 'script' | 'storyboard' | 'exported';
+/** 镜头在讲解里的作用：开场钩子、讲问题、讲概念、步骤、证据、结论、行动建议。 */
+export type VideoShotRole = 'hook' | 'problem' | 'concept' | 'step' | 'evidence' | 'takeaway' | 'cta';
 export type VideoShot = {
   index: number;
-  /** 该镜头时长（秒），字幕时间轴由它累加算出。 */
+  /** 分镜给的估计时长（秒）；配音之后以真实音频时长为准。 */
   seconds: number;
   /** 画面：拍什么、用什么素材。 */
   visual: string;
-  /** 口播词，进 TTS 或人声。 */
+  /** 口播词，进 TTS 或人声；字幕也从它切句。 */
   narration: string;
-  /** 屏幕字幕；留空时用口播词。 */
+  /** 画面大字：这一镜的要点（≤12 字），不是逐句字幕。 */
   caption: string;
+  /** 旧分镜没有这个字段，归一化后为空串。 */
+  role?: VideoShotRole | '';
+  /** AI 配图用的提示词；为空时退回 visual。 */
+  imagePrompt?: string;
+};
+export type VideoVoiceMode = 'tts' | 'silent';
+export type VideoTemplate = 'warm' | 'clean' | 'night';
+export type VideoImageMode = 'none' | 'ai';
+/** 用户可改的成片选项，走 video:update 保存。 */
+export type VideoRenderOptions = {
+  voiceMode: VideoVoiceMode;
+  template: VideoTemplate;
+  imageMode: VideoImageMode;
+  /** 背景音乐（本地文件）；空串表示不加。 */
+  bgmPath: string;
+  /** 背景音乐音量，百分比 0–100。 */
+  bgmVolume: number;
+  /** 画面底部固定的一行：账号名或合规提示。 */
+  footer: string;
+};
+export type VideoAudioAsset = { key: string; path: string; seconds: number };
+export type VideoImageAsset = { key: string; path: string };
+export type VideoRenderedFile = { path: string; signature: string; seconds: number; renderedAt: string };
+/** 素材账本：只由主进程写。配音、配图按内容哈希登记，改一镜只重做一镜。 */
+export type VideoRenderAssets = {
+  /** 上次生成配音时快照的声音参数；配音的键由它和口播文本算出。 */
+  voiceProfile: string;
+  audio: VideoAudioAsset[];
+  images: VideoImageAsset[];
+  /** 每镜一帧的预览图，渲染成片前自查用。 */
+  preview: { signature: string; paths: string[] } | null;
+  video: VideoRenderedFile | null;
 };
 export type VideoProject = {
   id: number;
@@ -299,10 +357,30 @@ export type VideoProject = {
   storyboardJson: string;
   coverPath: string;
   exportPath: string;
+  options: VideoRenderOptions;
+  assets: VideoRenderAssets;
   createdAt: string;
   updatedAt: string;
 };
-export type VideoAssetBundle = { cover: ContentAssetView | null };
+/** shotImages / preview 是缩略图 data URL，按镜头顺序；没有的镜头为空串。 */
+export type VideoAssetBundle = { cover: ContentAssetView | null; shotImages: string[]; preview: string[]; videoPath: string };
+export type VideoTtsProvider = 'system' | 'openai';
+/** 全局配音设置：userData/video-tts.json；OpenAI 兼容接口的 key 另存系统安全存储。 */
+export type VideoTtsSettings = {
+  provider: VideoTtsProvider;
+  baseUrl: string;
+  model: string;
+  voice: string;
+  /** 接口语速倍率 0.5–2。 */
+  speed: number;
+  /** Windows 系统语音名，空串表示系统默认。 */
+  systemVoice: string;
+  /** 系统语音语速 -5～5，0 为正常。 */
+  systemRate: number;
+};
+export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
+export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
+export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
 
 /* ── 小红书模块 ──────────────────────────────────────────────────
  * 按「定位、选题、写作、视觉、复盘」五环节 + 总控拆分（见 docs/superpowers/specs/2026-10-13-xiaohongshu-module-design.md）。
@@ -311,8 +389,6 @@ export type VideoAssetBundle = { cover: ContentAssetView | null };
  * 模块不代发布：终点是知识库里的发布包，由人手动发到小红书。
  */
 /** 小红书自己的模型连接（与公众号分开）；两个 key 不在这里，走系统安全存储。 */
-export type XhsApiSettings = { llmEnabled: boolean; llmBaseUrl: string; llmModel: string; imageBaseUrl: string; imageModel: string };
-export type XhsApiStatus = { settings: XhsApiSettings; llmKey: LlmKeyStatus; imageKey: LlmKeyStatus };
 export type XhsTab = 'home' | 'positioning' | 'hotspot' | 'notes' | 'audit' | 'analytics' | 'browser';
 export type XhsAccount = {
   id: number;
@@ -568,6 +644,11 @@ export type SiteModuleState = {
   error: string;
 };
 
+/** 自绘标题栏要的窗口状态：最大化决定按钮图标，失焦时标题栏变淡，macOS 要给红绿灯让位。 */
+export type WindowChromeState = { maximized: boolean; fullscreen: boolean; focused: boolean; platform: string };
+export type WindowControl = 'minimize' | 'toggle-maximize' | 'close';
+export type AppTheme = 'light' | 'dark';
+
 export interface SydneyApi {
   getState(): Promise<AppState>;
   createEvent(event: Partial<WorkEvent>): Promise<number>;
@@ -645,6 +726,14 @@ export interface SydneyApi {
   getWeWriteEnvironment(): Promise<WeWriteEnvironment>;
   getWeWriteOverview(): Promise<WeWriteOverview>;
   saveWeWriteConfig(config: WeWriteConfigDraft): Promise<WeWriteOverview>;
+  getModelConfig(): Promise<ModelConfigView>;
+  saveModelConfig(draft: ModelConfigDraft): Promise<ModelConfigView>;
+  testContentModel(): Promise<{ model: string }>;
+  /** 把表单里的模型配置存成预设（同类型同名覆盖），不改动当前在用的配置。 */
+  saveModelPreset(input: ModelPresetInput): Promise<ModelConfigView>;
+  /** 切换到某个预设：写回 config.yaml / 内容 key 的安全存储，之后所有模块都用它。 */
+  applyModelPreset(id: string): Promise<ModelConfigView>;
+  deleteModelPreset(id: string): Promise<ModelConfigView>;
   /** profileId 为公众号资料（一级方向）id；传 null 返回全部。 */
   getArticleStats(profileId: number | null): Promise<ArticleStatsView>;
   /** 弹出文件选择框导入后台导出的数据表；用户取消时返回 null。返回的视图按 profileId 过滤。 */
@@ -661,6 +750,22 @@ export interface SydneyApi {
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
+  /** 逐镜配音：只补缺失或口播改过的镜头；force 时按当前配音设置全部重配。 */
+  generateVideoVoice(id: number, force?: boolean): Promise<VideoProject>;
+  /** 逐镜 AI 配图：只补缺失或提示词改过的镜头。 */
+  generateVideoImages(id: number, force?: boolean): Promise<VideoProject>;
+  /** 每镜渲染一帧预览，渲染成片前自查。 */
+  renderVideoPreview(id: number): Promise<VideoProject>;
+  renderVideo(id: number): Promise<VideoProject>;
+  /** 选择背景音乐；用户取消时返回 null。 */
+  chooseVideoBgm(id: number): Promise<VideoProject | null>;
+  openVideoFile(id: number): Promise<string>;
+  getVideoTtsStatus(): Promise<VideoTtsStatus>;
+  saveVideoTtsSettings(patch: Partial<VideoTtsSettings>): Promise<VideoTtsStatus>;
+  saveVideoTtsKey(value: string): Promise<VideoTtsStatus>;
+  deleteVideoTtsKey(): Promise<VideoTtsStatus>;
+  /** 订阅配音 / 配图 / 渲染的进度；返回取消订阅函数。 */
+  onVideoProgress(callback: (progress: VideoProgress) => void): () => void;
   listXhsAccounts(): Promise<XhsAccount[]>;
   updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson'>>): Promise<XhsAccount>;
   /** 新建一个小红书账号（名字不能重复）。 */
@@ -722,14 +827,8 @@ export interface SydneyApi {
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
   readXhsView(): Promise<XhsPageRead>;
   onXhsViewChanged(callback: () => void): () => void;
-  getXhsApiStatus(): Promise<XhsApiStatus>;
-  saveXhsApiSettings(patch: Partial<XhsApiSettings>): Promise<XhsApiStatus>;
-  saveXhsApiKey(kind: 'llm' | 'image', value: string): Promise<XhsApiStatus>;
-  deleteXhsApiKey(kind: 'llm' | 'image'): Promise<XhsApiStatus>;
   /** 一次性把公众号现有的内容 / 图片接口配置（含 key）复制过来；之后两边各改各的。 */
-  importXhsApiFromWeWrite(): Promise<{ status: XhsApiStatus; copied: string[] }>;
   /** 用小红书的内容模型配置发一次最小请求。 */
-  testXhsLlm(): Promise<{ model: string }>;
   getRedfoxKeyStatus(): Promise<LlmKeyStatus>;
   saveRedfoxKey(value: string): Promise<LlmKeyStatus>;
   deleteRedfoxKey(): Promise<LlmKeyStatus>;
@@ -773,4 +872,9 @@ export interface SydneyApi {
   onChanged(callback: () => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
   onSiteModuleChanged(callback: () => void): () => void;
+  getWindowChrome(): Promise<WindowChromeState>;
+  windowControl(action: WindowControl): Promise<void>;
+  /** 界面换主题后通知主进程：窗口底色、右键菜单跟着换，下次启动按它建窗。 */
+  setTheme(theme: AppTheme): Promise<void>;
+  onWindowChromeChanged(callback: (state: WindowChromeState) => void): () => void;
 }

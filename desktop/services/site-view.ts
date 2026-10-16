@@ -1,4 +1,5 @@
-import { shell, WebContentsView, type BrowserWindow, type WebContents } from 'electron';
+import { WebContentsView, type BrowserWindow, type WebContents } from 'electron';
+import { openUrl } from './browser';
 import type { AppContext } from '../app-context';
 import type { SiteEntry, SiteModuleState, SiteViewBounds } from '../shared';
 import { keepLoginAcrossRestarts } from './session-cookies';
@@ -6,6 +7,13 @@ import { clampSiteBounds, readSiteConfig, sanitizeSiteEntries, writeSiteConfig }
 
 function siteHost(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
+}
+
+const pageKey = (id: string) => `site:${id}`;
+
+/** 上次停的页面还在这个站点的域名下就回到那里，否则打开站点地址。 */
+export function resumeUrl(site: Pick<SiteEntry, 'url'>, saved: string): string {
+  return saved && siteHost(saved) && siteHost(saved) === siteHost(site.url) ? saved : site.url;
 }
 
 /** 站点用独立会话分区：登录态与 cookie 留在它自己那里，不跟应用共享。 */
@@ -66,6 +74,11 @@ export class SiteView {
       }
       this.closeView(running.view);
       this.live.delete(id);
+    }
+    // 删掉的、换了地址的站点，不再回到上次停的页面。
+    for (const previous of this.sites) {
+      const next = sites.find(site => site.id === previous.id);
+      if (!next || next.url !== previous.url) this.ctx.lastPages.forget(pageKey(previous.id));
     }
     for (const site of sites) {
       const previous = this.sites.find(entry => entry.id === site.id);
@@ -136,7 +149,7 @@ export class SiteView {
   openExternal(): void {
     const active = this.activeSite();
     const target = this.liveContents(active?.id)?.getURL() || active?.url || '';
-    if (target) void shell.openExternal(target);
+    if (target) void openUrl(target);
   }
 
   dispose(): void {
@@ -184,7 +197,7 @@ export class SiteView {
       }
       running.view.setBounds(this.bounds);
       const contents = running.view.webContents;
-      if (!contents.getURL() && !running.loading) void this.load(running, active.url);
+      if (!contents.getURL() && !running.loading) void this.load(running, resumeUrl(active, this.ctx.lastPages.get(pageKey(active.id))));
     }
     if (before !== this.attachedId) this.notify();
   }
@@ -210,7 +223,7 @@ export class SiteView {
     // 列表里各站点的登录在重启应用后保留（见 session-cookies.ts）；列表改了也按最新列表判断。
     keepLoginAcrossRestarts(contents.session, () => this.sites.map(entry => siteHost(entry.url)).filter(Boolean));
     contents.setWindowOpenHandler(({ url }) => {
-      if (isHttpUrl(url)) void shell.openExternal(url);
+      if (isHttpUrl(url)) void openUrl(url);
       return { action: 'deny' };
     });
     contents.on('will-navigate', (event, url) => {
@@ -225,12 +238,15 @@ export class SiteView {
       running.loading = false;
       this.notifyIfActive(site.id);
     });
-    contents.on('did-navigate', () => this.notifyIfActive(site.id));
-    contents.on('did-navigate-in-page', () => this.notifyIfActive(site.id));
+    // 记下停在哪一页（只记这个站点自己域名下的），重启后回到那里。
+    const remember = (url: string) => { if (siteHost(url) === siteHost(site.url)) this.ctx.lastPages.set(pageKey(site.id), url); };
+    contents.on('did-navigate', (_event, url) => { remember(url); this.notifyIfActive(site.id); });
+    contents.on('did-navigate-in-page', (_event, url, isMainFrame) => { if (isMainFrame) remember(url); this.notifyIfActive(site.id); });
     contents.on('page-title-updated', () => this.notifyIfActive(site.id));
     contents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
       // -3 是「这次加载被新导航打断」，不算失败。
       if (!isMainFrame || code === -3) return;
+      this.ctx.lastPages.forget(pageKey(site.id));
       running.loading = false;
       running.error = `站点打不开：${description}（${code}）`;
       this.notifyIfActive(site.id);
