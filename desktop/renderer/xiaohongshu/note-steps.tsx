@@ -141,7 +141,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
   const [style, setStyle] = useState(plan?.style ?? XHS_CARD_STYLES[0].key);
   useEffect(() => { if (plan?.style) setStyle(plan.style); }, [plan?.style]);
   const images = readImages(note);
-  const preview = useMemo(() => plan ? renderCardsPreview({ ...plan, style }, note.title || note.topic) : '', [plan, style, note.title, note.topic]);
+  const preview = useMemo(() => plan ? renderCardsPreview({ ...plan, style }, note.title || note.topic, undefined, kit) : '', [plan, style, note.title, note.topic, kit]);
   const editPlan = (next: XhsCardPlan) => onEdit({ cardsJson: JSON.stringify(next) });
   const imageBusy = busy === 'cover' || busy === 'info-single' || busy === 'info-pages';
   const move = (index: number, delta: number) => {
@@ -168,7 +168,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
     </div>
     <div className="xhs-ip-head">
       <IpPicker label="这个账号的 IP" value={ipId} ips={ipLibrary.ips} disabled={locked} onChange={onSelectIp} />
-      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面（不加品牌名和头像）。</small>}
+      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面；图文卡片每页右下角也会放 IP 角色（不加品牌名和头像）。</small>}
       {ipId && <button className={`button ${ipOpen ? 'button-quiet' : 'button-secondary'}`} onClick={() => setIpOpen(open => !open)}>{ipOpen ? '收起 IP 模板' : '用 IP 模板出封面'}</button>}
     </div>
     {ipId && ipOpen && <IpCoverPanel note={note} kit={kit} kitError={kitError} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />}

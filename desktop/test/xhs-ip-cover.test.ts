@@ -82,3 +82,23 @@ test('账号上记着选用的 IP：默认不使用，可读写', () => {
   assert.equal(updateXhsAccount(db, account.id, { name: '改名' }).ipId, 'sydney');
   assert.equal(updateXhsAccount(db, account.id, { ipId: '' }).ipId, '');
 });
+
+test('图文卡片：选了 IP 时每页右下角放角色、各页轮流换动作；没选 IP 时和以前一样', async () => {
+  const { cardDensity, cardMascotIndex, renderCardDocument, renderCardsPreview } = await import('../services/xhs-cards.ts');
+  const plan = { style: '', pages: [0, 1, 2, 3].map(index => ({ heading: `第 ${index + 1} 页`, points: ['要点一', '要点二'], emphasis: '' })) };
+  const plain = renderCardDocument(plan, 1, '标题');
+  assert.equal(renderCardDocument(plan, 1, '标题', null), plain);
+  assert.ok(!plain.includes('ip-mascot') && !plain.includes('with-ip'));
+  const withIp = renderCardDocument(plan, 1, '标题', KIT);
+  assert.ok(withIp.includes('<div class="ip-mascot ip-m1"></div>') && withIp.includes('with-ip'));
+  assert.ok(withIp.includes('base64,PO') && !withIp.includes('base64,TY'), '单页文档只带这一页用到的角色图');
+  assert.ok(!withIp.includes('某某的一人公司') && !withIp.includes(KIT.avatar), '不放头像和品牌名');
+  assert.deepEqual([0, 1, 2, 3].map(index => cardMascotIndex(KIT, index)), [0, 1, 2, 0]);
+  assert.equal(cardMascotIndex({ ...KIT, poses: [] }, 0), -1);
+  const preview = renderCardsPreview(plan, '标题', 0.24, KIT);
+  assert.equal(preview.split('base64,TY').length - 1, 1, '预览里同一个角色图只写一次');
+  // 让出底部后版面变小，内容多的页更早换小一号字
+  const busy = { heading: '标题', points: Array.from({ length: 3 }, () => '一'.repeat(16)), emphasis: '' };
+  assert.equal(cardDensity(busy, false), '');
+  assert.equal(cardDensity(busy, false, true), 'dense');
+});

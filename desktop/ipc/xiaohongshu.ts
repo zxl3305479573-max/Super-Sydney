@@ -303,7 +303,11 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const title = note.title.trim() || note.topic.trim();
     const stamp = Date.now();
     const targets = plan.pages.map((_, index) => path.join(assetDir(id), `card-${stamp}-${String(index + 1).padStart(2, '0')}.png`));
-    await renderHtmlPages(plan.pages.map((_, index) => renderCardDocument(plan, index, title)), XHS_CARD_WIDTH, XHS_CARD_HEIGHT, targets);
+    // 账号选了 IP 时每页右下角放 IP 角色；IP 被删了就照常出卡片。
+    const ipId = getXhsAccount(db, note.accountId).ipId;
+    let kit = null;
+    try { kit = ipId ? ipRenderKit(ctx.ipLibrary, ipId) : null; } catch { kit = null; }
+    await renderHtmlPages(plan.pages.map((_, index) => renderCardDocument(plan, index, title, kit)), XHS_CARD_WIDTH, XHS_CARD_HEIGHT, targets);
     const fresh = targets.map((file, index) => ({ path: file, source: 'card' as const, caption: plan.pages[index].heading }));
     const next = { ...note, imagesJson: replaceImages(note, 'card', fresh) };
     return save(id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
