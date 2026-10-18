@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ContentDirection, ContentStage, ContentTask, ContentTaxonomy, ImageCandidateBundle } from '../shared';
+import type { ContentDirection, ContentStage, ContentTask, ContentTaxonomy, ImageCandidateBundle, WechatIpCoverInput } from '../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html';
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
@@ -184,6 +184,17 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     }
     replaceTask(await window.sydney.generateContentCover(selected.id));
     say('封面图已生成');
+  });
+  /** IP 模板出封面：成功后返回另存的 1:1 分享图，失败（已提示）返回 null。 */
+  const ipCover = (input: WechatIpCoverInput) => new Promise<{ path: string; thumbnail: string } | null>(resolve => {
+    void guarded('ip-cover', async say => {
+      if (!selected) return;
+      await persistSelected();
+      const result = await window.sydney.renderContentIpCover(selected.id, input);
+      replaceTask(result.task);
+      say('IP 封面与 1:1 分享图已生成');
+      resolve(result.share);
+    }).then(() => resolve(null));
   });
   const chooseCover = () => guarded('cover-choose', async say => {
     if (!selected) return;
@@ -409,6 +420,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
               onGenerateImagesWithCover={() => void generateImagesWithCover()}
               onPickFromLibrary={() => void openImageLibrary('both')}
               onSwapImage={(index, target, expected) => void swapImage(index, target, expected)}
+              onIpCover={ipCover}
             />}
             {step === 'publish' && <PublishStep task={selected} env={env} />}
 

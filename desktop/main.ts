@@ -13,6 +13,8 @@ import { registerArticleStatsIpc } from './ipc/article-stats';
 import { registerSiteIpc } from './ipc/site';
 import { registerEmbeddedIpc } from './ipc/embedded';
 import { registerXhsIpc } from './ipc/xiaohongshu';
+import { registerIpIpc } from './ipc/ip';
+import { IpLibrary } from './services/ip-library';
 import { registerLinksIpc } from './ipc/links';
 import { bindWindowChrome, installApplicationMenu, registerWindowIpc } from './ipc/window';
 import { MIN_WINDOW_SIZE, WINDOW_BACKGROUND, readSavedTheme, readWindowState, restoreWindowState, settleWindowBounds, writeWindowState } from './services/window-state';
@@ -104,6 +106,7 @@ function createContext(): AppContext {
     redfoxKeyStore,
     videoTtsKeyStore: new SecretStore(dataDir, safeStorage, 'video-tts-api-key.bin'),
     lastPages: new LastPages(dataDir),
+    ipLibrary: new IpLibrary(dataDir),
     modelPresets: new ModelPresetStore(dataDir, new SecretStore(dataDir, safeStorage, 'model-preset-keys.bin')),
     llmApiKey,
     redfoxApiKey: () => resolveLlmApiKey(redfoxKeyStore.read(), process.env.REDFOX_API_KEY || ''),
@@ -112,6 +115,7 @@ function createContext(): AppContext {
     broadcast: () => windowRef?.webContents.send('state:changed'),
     notifyWeWriteChanged: () => windowRef?.webContents.send('wewrite:changed'),
     notifySiteChanged: () => windowRef?.webContents.send('site:changed'),
+    notifyIpChanged: () => windowRef?.webContents.send('ip:changed'),
     window: () => windowRef
   };
 }
@@ -194,6 +198,7 @@ if (primaryInstance) app.whenReady().then(() => {
   registerContentIpc(ctx);
   registerVideoIpc(ctx);
   xhsView = new XhsView(ctx);
+  registerIpIpc(ctx);
   registerXhsIpc(ctx, xhsView);
   registerWeWriteIpc(ctx);
   registerModelIpc(ctx);

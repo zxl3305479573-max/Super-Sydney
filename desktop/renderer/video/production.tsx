@@ -4,6 +4,7 @@ import { buildSrt, buildTimeline, formatDuration, isPreviewFresh, isRenderFresh,
 import { VIDEO_TEMPLATES, describeVoiceProfile, imageCoverage, parseVoiceProfile, shotAudio, shotImage, voiceCoverage } from '../../services/video-production';
 import { buildFramePlan, framePlanOptions, framePlanStills } from '../../services/video-compose';
 import { readableError } from '../ui';
+import { IpPicker, useIpLibrary } from '../IpLibrary';
 
 /** 成片三步（配音与字幕、画面、成片）的面板。只负责展示与收集输入，动作由 VideoPanel 传入。 */
 
@@ -137,6 +138,7 @@ export function VisualsStep({ project, shots, assets, locked, busy, progress, on
   onOptions: EditOptions; onImages: (force: boolean) => void; onPreview: () => void;
 }) {
   const ai = project.options.imageMode === 'ai';
+  const { view: ipLibrary } = useIpLibrary();
   const coverage = imageCoverage(project, shots);
   const previews = assets?.preview ?? [];
   const previewFresh = isPreviewFresh(project);
@@ -149,6 +151,10 @@ export function VisualsStep({ project, shots, assets, locked, busy, progress, on
         <strong>{item.label}</strong>
         <small>{item.hint}</small>
       </button>)}
+    </div>
+    <div className="xhs-ip-head">
+      <IpPicker label="画面里带的 IP" value={project.options.ipId} ips={ipLibrary.ips} disabled={locked} onChange={ipId => { onOptions({ ipId }); void window.sydney.selectIp('video', ipId).catch(() => undefined); }} />
+      <small className="ww-muted">带上 IP 后，AI 配图和 AI 封面会把 IP 角色融进画面，每一帧标题右侧有 IP 角色（不放头像和品牌名）；新建的视频默认用这里上次选的 IP。</small>
     </div>
     <div className="native-task-fields">
       <label className="native-field-wide"><span>画面底部一行（账号名或合规提示，留空不显示）</span>

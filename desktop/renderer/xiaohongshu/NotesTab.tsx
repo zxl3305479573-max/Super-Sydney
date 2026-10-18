@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { XhsBasis, XhsGenerateStage, XhsNote, XhsStepKey } from '../../shared';
+import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import { XHS_STEPS, buildXhsPipeline, currentXhsStepKey, readTags, xhsPipelineProgress, xhsStale } from '../../services/xhs-pipeline';
 import { shortTime } from '../ui';
@@ -98,6 +98,8 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   });
   const confirmBasis = (key: keyof XhsBasis) => run('confirm', async () => { if (note) { await persist(); apply(await window.sydney.confirmXhsBasis(note.id, key)); } });
   const cover = (brief: string) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(note.id, brief)); notify('封面已生成'); } });
+  const selectIp = (ipId: string) => run('ip-select', async () => { await window.sydney.updateXhsAccount(account.id, { ipId }); });
+  const ipCover = (input: XhsIpCoverInput) => run('ip-cover', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsIpCover(note.id, input)); notify('IP 模板封面已生成'); } });
   const chooseCover = () => run('cover-choose', async () => { if (note) { await persist(); const saved = await window.sydney.chooseXhsCover(note.id); if (saved) apply(saved); } });
   const renderCards = () => run('render', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsCards(note.id)); notify('卡片图已导出到图组'); } });
   const info = (mode: 'single' | 'pages') => run(`info-${mode}`, async () => {
@@ -173,7 +175,8 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           {step === 'body' && <BodyStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'body')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('body', undefined)} />}
           {step === 'title' && <TitleStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'title')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('titles')} />}
           {step === 'visual' && <VisualStep note={note} locked={locked} busy={busy} assets={assets} coverStale={xhsStale(note, 'cover')} cardsStale={xhsStale(note, 'cards')}
-            onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
+            ipId={account.ipId} onSelectIp={ipId => void selectIp(ipId)}
+            onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onIpCover={input => void ipCover(input)} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
             onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
           {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}

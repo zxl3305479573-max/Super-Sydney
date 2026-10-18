@@ -5,7 +5,7 @@ import type { ContentTaxonomy } from '../shared';
 import type { ContentApiConfig } from '../services/content-workflow';
 import { buildContentApiConfig, imageApiConfig } from '../services/content-api-config';
 import { readTaxonomy } from '../services/content-store';
-import { requestGeneratedImage } from '../services/image-generation';
+import { requestGeneratedImage, withIpInstruction, type ImageReference } from '../services/image-generation';
 import { parseStyleSummary } from '../services/wewrite-config';
 import { readWeWriteFiles } from '../services/wewrite-files';
 
@@ -39,9 +39,13 @@ export function removeAssetDirectory(ctx: AppContext, kind: 'content-assets' | '
   fs.rmSync(path.join(ctx.dataDir, kind, String(id)), { recursive: true, force: true });
 }
 
-/** 生成一张图写到 target；图片接口配置每次现读 config.yaml，改完配置无需重启。 */
-export async function generateImageFile(target: string, prompt: string, size: string, signal?: AbortSignal): Promise<string> {
-  const bytes = await requestGeneratedImage(imageApiConfig(readWeWriteFiles().configText), prompt, size, signal);
+/**
+ * 生成一张图写到 target；图片接口配置每次现读 config.yaml，改完配置无需重启。
+ * ip 是选用的 IP 角色参考图：有的话提示词后面加一段「把参考图里的角色融进画面」，并把参考图一起传给接口。
+ */
+export async function generateImageFile(target: string, prompt: string, size: string, signal?: AbortSignal, ip?: ImageReference | null): Promise<string> {
+  const config = imageApiConfig(readWeWriteFiles().configText);
+  const bytes = ip ? await requestGeneratedImage(config, withIpInstruction(prompt), size, signal, [ip]) : await requestGeneratedImage(config, prompt, size, signal);
   fs.writeFileSync(target, bytes);
   return target;
 }

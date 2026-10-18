@@ -36,7 +36,8 @@ export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   imageMode: 'none',
   bgmPath: '',
   bgmVolume: 12,
-  footer: DEFAULT_VIDEO_FOOTER
+  footer: DEFAULT_VIDEO_FOOTER,
+  ipId: ''
 };
 
 /** 合并补丁并校验；未知字段忽略。非法取值抛错，而不是悄悄换成默认值。 */
@@ -68,6 +69,10 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (value.footer !== undefined) {
     if (typeof value.footer !== 'string') throw new Error('页脚必须是文本');
     next.footer = value.footer.replace(/\s+/g, ' ').trim().slice(0, 40);
+  }
+  if (value.ipId !== undefined) {
+    if (typeof value.ipId !== 'string') throw new Error('IP 编号必须是文本');
+    next.ipId = value.ipId.trim().slice(0, 60);
   }
   return next;
 }
@@ -178,13 +183,17 @@ export const SHOT_IMAGE_SIZE = '1024x1024';
  * 逐镜配图的完整提示词：分镜给的 imagePrompt（没有就用画面描述）+ 固定的风格与禁忌。
  * 禁忌和封面一致：画面里不要文字（文字由模板排版）、不要医疗符号、不要夸大疗效。
  */
+/**
+ * 选了 IP 的视频，配图的键里带上 IP：换 IP 后旧配图自然算过期、会重新生成；
+ * 没选 IP 时键和以前一样，已有配图不受影响。提示词本身不变，角色由参考图带进画面。
+ */
 export function shotImagePrompt(shot: VideoShot, title: string): string {
   const subject = (shot.imagePrompt || shot.visual || shot.caption || title).trim();
   return `竖版短视频配图，主题「${title.trim()}」。画面：${subject}。面向中老年观众，温暖写实、自然光、主体清楚、背景简洁；画面里不要出现任何文字、数字或标志，不要医疗器械特写，不要夸张表情或惊吓画面。`;
 }
 
-export function imageKey(prompt: string): string {
-  return contentHash(`image\n${SHOT_IMAGE_SIZE}\n${prompt}`);
+export function imageKey(prompt: string, ipId = ''): string {
+  return contentHash(ipId ? `image\n${SHOT_IMAGE_SIZE}\nip:${ipId}\n${prompt}` : `image\n${SHOT_IMAGE_SIZE}\n${prompt}`);
 }
 
 function projectTitle(project: VideoProject): string {
@@ -199,7 +208,7 @@ export function shotAudio(project: VideoProject, shot: VideoShot): VideoAudioAss
 }
 
 export function shotImage(project: VideoProject, shot: VideoShot): VideoImageAsset | null {
-  const key = imageKey(shotImagePrompt(shot, projectTitle(project)));
+  const key = imageKey(shotImagePrompt(shot, projectTitle(project)), project.options.ipId);
   return project.assets.images.find(item => item.key === key) ?? null;
 }
 

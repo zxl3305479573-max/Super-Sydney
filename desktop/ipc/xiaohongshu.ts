@@ -7,13 +7,15 @@ import type {
   XhsAccount, XhsAnalyticsView, XhsAuditInput, XhsBasis, XhsGenerateStage, XhsHotNote, XhsHotspotQuery, XhsHotspotResult, XhsImageItem,
   XhsNote, XhsNoteAssets, XhsReport, XhsRouterAdvice
 } from '../shared';
-import { ImageJobs, imageErrorText } from '../services/image-generation';
+import { ImageJobs, imageErrorText, withIpInstruction } from '../services/image-generation';
 import { imageThumbnail } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import { readTableFile } from '../services/table-file';
 import { XHS_FUNNEL_LAYERS, XHS_PAGE_COUNTS } from '../services/xhs-catalog';
 import { renderCardDocument, XHS_CARD_HEIGHT, XHS_CARD_WIDTH } from '../services/xhs-cards';
 import { exportXhsPackage } from '../services/xhs-export';
+import { normalizeIpCoverInput, renderIpCoverDocument } from '../services/xhs-ip-cover';
+import { ipReferenceImage, ipRenderKit } from './ip';
 import { hotspotCacheKey, isHttpLink, normalizeHotspotQuery, searchRedfox, type FetchLike } from '../services/xhs-hotspot';
 import {
   chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, addCandidates, readCandidates, readCardPlan, readCheckReport, readImages, readPositioning,
@@ -93,6 +95,11 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   ipcMain.handle('xhs:accounts:update', (_event, id: number, patch: Partial<XhsAccount>) => {
     const clean: Partial<XhsAccount> = {};
     if (patch.name !== undefined) clean.name = patch.name;
+    if (patch.ipId !== undefined) {
+      const ipId = String(patch.ipId ?? '');
+      if (ipId) ctx.ipLibrary.get(ipId);
+      clean.ipId = ipId;
+    }
     if (patch.positioningJson !== undefined) {
       if (String(patch.positioningJson).trim() && !readPositioning({ positioningJson: String(patch.positioningJson) })) throw new Error('定位档案格式不正确');
       clean.positioningJson = String(patch.positioningJson);
@@ -219,10 +226,16 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
 
   /* ── 视觉 ───────────────────────────────────────────────────── */
 
-  /** 生成一张 3:4 图：接口出 2:3 竖图后补边成 3:4（不裁切，内容不会被切掉）。 */
-  const generateThreeFour = async (target: string, prompt: string, signal: AbortSignal) => {
+  /**
+   * 生成一张 3:4 图：接口出 2:3 竖图后补边成 3:4（不裁切，内容不会被切掉）。
+   * 账号选了 IP 时把 IP 角色当参考图传给接口，让角色融进画面（不写品牌名、不加头像）。
+   */
+  const generateThreeFour = async (target: string, prompt: string, signal: AbortSignal, accountId: number) => {
     const config = imageApiConfig(readWeWriteFiles().configText);
-    fs.writeFileSync(target, await requestGeneratedImage(config, prompt, '1024x1536', signal));
+    const ip = ipReferenceImage(ctx.ipLibrary, getXhsAccount(db, accountId).ipId);
+    fs.writeFileSync(target, ip
+      ? await requestGeneratedImage(config, withIpInstruction(prompt), '1024x1536', signal, [ip])
+      : await requestGeneratedImage(config, prompt, '1024x1536', signal));
     return fitToThreeFour(target);
   };
   const withImageJob = async <T>(id: number, run: (signal: AbortSignal) => Promise<T>): Promise<T> => {
@@ -238,7 +251,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const account = getXhsAccount(db, note.accountId);
     const prompt = xhsCoverPrompt(note, readPositioning(account), String(brief ?? '').slice(0, 500));
     const target = path.join(assetDir(id), `cover-${Date.now()}.png`);
-    await withImageJob(id, signal => generateThreeFour(target, prompt, signal));
+    await withImageJob(id, signal => generateThreeFour(target, prompt, signal, note.accountId));
     const next = { ...note, coverPath: target };
     // 旧封面不丢：它和新封面都留在候选图库里，可以随时换回去。
     return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: 'AI 封面' }]), basisJson: stampBasis(next, 'cover') });
@@ -256,6 +269,23 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const note = getXhsNote(db, id);
     return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: path.basename(source) }]), basisJson: stampBasis({ ...note, coverPath: target }, 'cover') });
   });
+
+  /**
+   * 用账号当前 IP 的封面模板本地排版出封面，不调图片接口；和其他封面一样进候选图库、盖封面指纹。
+   * 品牌名、头像、配色、角色图都取自 IP 库（见 ipc/ip.ts）。
+   */
+  ipcMain.handle('xhs:ip-cover:render', async (_event, id: number, raw: unknown) => noteLock.run(id, async () => {
+    const note = getXhsNote(db, id);
+    const account = getXhsAccount(db, note.accountId);
+    if (!account.ipId) throw new Error('这个账号还没有选用 IP（在封面区或「账号定位」里选）');
+    const kit = ipRenderKit(ctx.ipLibrary, account.ipId);
+    const input = normalizeIpCoverInput(raw);
+    if (!input.title) throw new Error('封面标题不能为空');
+    const target = path.join(assetDir(id), `cover-ip-${Date.now()}.png`);
+    await renderHtmlPages([renderIpCoverDocument(input, kit)], XHS_CARD_WIDTH, XHS_CARD_HEIGHT, [target]);
+    const next = { ...note, coverPath: target };
+    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: `IP 模板 · ${kit.name}` }]), basisJson: stampBasis(next, 'cover') });
+  }));
 
   /**
    * 新生成的一批先替换图组里同来源的旧图（卡片图紧跟封面，信息图排在后面），省得每次手动挑；
@@ -292,7 +322,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
       for (const index of indexes) {
         const target = path.join(assetDir(id), `info-${stamp}-${index === null ? 'all' : String(index + 1).padStart(2, '0')}.png`);
         try {
-          await generateThreeFour(target, xhsInfoImagePrompt(note, plan.pages, index), signal);
+          await generateThreeFour(target, xhsInfoImagePrompt(note, plan.pages, index), signal, note.accountId);
           fresh.push({ path: target, source: 'info', caption: index === null ? '总览信息图' : plan.pages[index].heading });
         } catch (error) {
           failure = imageErrorText(error);

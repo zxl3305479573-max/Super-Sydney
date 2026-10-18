@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron';
 import type { DatabaseSync } from 'node:sqlite';
 import type { SettingsFile } from './services/app-settings';
+import type { IpLibrary } from './services/ip-library';
 import type { LastPages } from './services/last-pages';
 import type { LlmConfig } from './services/llm-json';
 import type { ModelPresetStore } from './services/model-presets';
@@ -23,6 +24,8 @@ export interface AppContext {
   videoTtsKeyStore: SecretStore;
   /** 模型预设（多套内容 / 图片模型配置，在「设置 → 模型」下拉切换）。 */
   modelPresets: ModelPresetStore;
+  /** IP 库：全应用共用的 IP 形象（「设置 → IP 形象」），各内容模块选用。 */
+  ipLibrary: IpLibrary;
   /** 嵌入网页上次停在哪一页：重启应用后回到那里，而不是站点首页。 */
   lastPages: LastPages;
   /** 密钥优先取系统安全存储，其次环境变量。 */
@@ -34,6 +37,8 @@ export interface AppContext {
   broadcast(): void;
   /** 通知渲染进程 ~/.wewrite 配置变了。 */
   notifyWeWriteChanged(): void;
+  /** 通知渲染进程 IP 库变了。 */
+  notifyIpChanged(): void;
   /** 通知渲染进程变现模块里那个站点的状态变了（导航、标题、载入失败）。 */
   notifySiteChanged(): void;
   /** 对话框需要父窗口；窗口未创建时为 null。 */

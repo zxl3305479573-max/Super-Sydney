@@ -53,7 +53,8 @@ export function migrateXhsTables(db: DatabaseSync): void {
   addColumns(db, 'xhs_accounts', {
     // 早期版本让小红书账号绑定公众号的内容方向；现在两者隔离，这列保留但不再读写。
     subdirection_id: 'INTEGER',
-    positioning_chat_json: "TEXT NOT NULL DEFAULT ''"
+    positioning_chat_json: "TEXT NOT NULL DEFAULT ''",
+    ip_id: "TEXT NOT NULL DEFAULT ''"
   });
   addColumns(db, 'xhs_notes', {
     material: "TEXT NOT NULL DEFAULT ''",
@@ -77,6 +78,7 @@ function accountFromRow(row: Record<string, unknown>): XhsAccount {
   return {
     id: Number(row.id), name: String(row.name ?? ''),
     positioningJson: String(row.positioning_json ?? ''), positioningChatJson: String(row.positioning_chat_json ?? ''),
+    ipId: String(row.ip_id ?? ''),
     createdAt: String(row.created_at ?? ''), updatedAt: String(row.updated_at ?? '')
   };
 }
@@ -102,6 +104,7 @@ export function updateXhsAccount(db: DatabaseSync, id: number, patch: Partial<Xh
   }
   if (patch.positioningJson !== undefined) { sets.push('positioning_json=?'); values.push(String(patch.positioningJson)); }
   if (patch.positioningChatJson !== undefined) { sets.push('positioning_chat_json=?'); values.push(String(patch.positioningChatJson)); }
+  if (patch.ipId !== undefined) { sets.push('ip_id=?'); values.push(String(patch.ipId).trim().slice(0, 60)); }
   if (sets.length) db.prepare(`UPDATE xhs_accounts SET ${sets.join(', ')}, updated_at=? WHERE id=?`).run(...values, new Date().toISOString(), id);
   return getXhsAccount(db, id);
 }

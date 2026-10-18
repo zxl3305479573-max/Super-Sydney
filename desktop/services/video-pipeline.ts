@@ -272,14 +272,14 @@ export function previewSignature(project: VideoProject): string {
 }
 
 /** 画面模板的版本：改了模板排版就加一，旧成片和预览随之标成过期。 */
-export const FRAME_TEMPLATE_VERSION = 3;
+export const FRAME_TEMPLATE_VERSION = 5;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
-  const { template, imageMode, footer } = project.options;
+  const { template, imageMode, footer, ipId } = project.options;
   return {
     version: FRAME_TEMPLATE_VERSION,
     title: project.title.trim() || project.topic.trim(),
-    template, imageMode, footer,
+    template, imageMode, footer, ipId,
     shots: shots.map(shot => [shot.caption, shot.role ?? '']),
     images: imageMode === 'ai' ? shots.map(shot => shotImage(project, shot)?.key ?? '') : []
   };

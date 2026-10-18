@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { VideoAssetBundle, VideoPlatform, VideoProject } from '../../shared';
+import type { VideoAssetBundle, VideoIpCoverInput, VideoPlatform, VideoProject, VideoRenderOptions } from '../../shared';
 import { VIDEO_PLATFORMS, formatDuration, narrationCoverage, parseVideoShots, videoExportChecklist, type VideoStep, type VideoStepKey } from '../../services/video-pipeline';
 import { shotRoleLabel } from '../../services/video-production';
 import { estimatedSeconds, stateNames, type TopicSuggestion } from './format';
+import { VideoIpCoverPanel } from './IpCoverPanel';
 
 /** 视频流水线的各步骤面板。只负责展示与收集输入，动作由 VideoPanel 传入。 */
 
@@ -87,8 +88,9 @@ export function StoryboardStep({ shots, raw, script, locked, busy, onEdit, onRun
   </div>;
 }
 
-export function CoverStep({ project, assets, locked, busy, onChoose, onGenerate }: {
+export function CoverStep({ project, assets, locked, busy, onChoose, onGenerate, onOptions, onIpCover }: {
   project: VideoProject; assets: VideoAssetBundle | null; locked: boolean; busy: string; onChoose: () => void; onGenerate: () => void;
+  onOptions: (patch: Partial<VideoRenderOptions>) => void; onIpCover: (input: VideoIpCoverInput) => void;
 }) {
   return <div className="flow-body">
     <div className="flow-cover">
@@ -102,6 +104,7 @@ export function CoverStep({ project, assets, locked, busy, onChoose, onGenerate 
         <small>竖版 9:16，导出时连同成片、脚本、分镜表、字幕一起拷进制作包。封面不是导出的硬门槛，但发布到平台时基本都要。</small>
       </div>
     </div>
+    <VideoIpCoverPanel project={project} locked={locked} busy={busy === 'ip-cover'} onOptions={onOptions} onRender={onIpCover} />
   </div>;
 }
 

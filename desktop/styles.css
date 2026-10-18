@@ -1027,6 +1027,55 @@ button.chip { cursor: pointer; }
 .xhs-style small { color: var(--muted); font-size: 11px; line-height: 1.45; }
 .xhs-inline-select { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .xhs-inline-select .input { width: auto; padding: 6px 28px 6px 9px; }
+.xhs-ip-cover { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; margin-top: 12px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+.xhs-ip-preview { flex: none; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.xhs-ip-preview iframe { border: 0; transform-origin: 0 0; }
+.xhs-ip-form { display: grid; flex: 1; gap: 10px; min-width: 260px; }
+.xhs-ip-pick { grid-template-columns: minmax(0, 1fr); }
+.xhs-ip-title-row { display: flex; gap: 8px; align-items: center; }
+.xhs-ip-title-row .input { flex: 1; }
+.xhs-ip-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wechat-ip { display: grid; gap: 4px; margin-top: 14px; }
+.wechat-ip-previews { display: grid; gap: 10px; align-content: start; }
+.wechat-ip-share { display: flex; gap: 12px; align-items: center; }
+.wechat-ip-share img { width: 96px; height: 96px; border-radius: 8px; border: 1px solid var(--line); }
+.wechat-ip-share div { display: grid; gap: 4px; justify-items: start; }
+.wechat-ip-share small { color: var(--muted); font-size: 11.5px; }
+.xhs-ip-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-top: 10px; }
+/* IP 库与选择器 */
+.ip-picker { display: inline-flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.ip-picker img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover; }
+.ip-picker select { min-width: 150px; }
+.ip-library { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; padding: 16px 20px 20px; }
+.ip-list { display: grid; align-content: start; gap: 6px; }
+.ip-list > button { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); text-align: left; }
+.ip-list > button.is-active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+.ip-list > button img, .ip-avatar-empty { flex: none; width: 34px; height: 34px; border-radius: 50%; object-fit: cover; display: grid; place-items: center; background: var(--surface-soft); color: var(--muted); }
+.ip-list > button span { display: grid; min-width: 0; }
+.ip-list > button strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-list > button small, .ip-sub small, .ip-colors small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.ip-new { display: grid; gap: 6px; margin-top: 6px; }
+.ip-editor { display: grid; gap: 14px; min-width: 0; }
+.ip-editor-head { display: flex; gap: 16px; align-items: flex-start; }
+.ip-avatar { flex: none; display: grid; justify-items: center; gap: 4px; width: 96px; padding: 8px; border: 1px dashed var(--line); border-radius: var(--radius); background: var(--surface-soft); color: var(--muted); }
+.ip-avatar img { width: 72px; height: 72px; border-radius: 50%; object-fit: cover; }
+.ip-avatar small { font-size: 11px; }
+.ip-fields { display: grid; flex: 1; gap: 10px; }
+.ip-colors { display: flex; flex-wrap: wrap; gap: 14px; }
+.ip-colors label { display: flex; gap: 8px; align-items: center; }
+.ip-colors input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.ip-colors span { display: grid; font-size: 12.5px; }
+.ip-sub { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 4px 0 0; font-size: 13px; }
+.ip-poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
+.ip-poses li { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+.ip-poses li .icon-button { justify-self: end; }
+.ip-pose-image { display: grid; place-items: center; height: 150px; background: repeating-conic-gradient(var(--line) 0 25%, transparent 0 50%) 0 0 / 16px 16px; border-radius: 6px; }
+.ip-pose-image img { max-width: 100%; max-height: 150px; }
+.ip-pose-add { align-content: end; }
+.ip-reference { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.ip-reference img { max-width: 360px; width: 100%; border-radius: var(--radius); border: 1px solid var(--line); }
+.ip-danger { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding-top: 10px; border-top: 1px solid var(--line); }
+@media (max-width: 900px) { .ip-library { grid-template-columns: minmax(0, 1fr); } }
 .xhs-cards-frame { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
 .xhs-page-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-top: 10px; }
 .xhs-page-editor fieldset { display: grid; gap: 6px; margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius); }

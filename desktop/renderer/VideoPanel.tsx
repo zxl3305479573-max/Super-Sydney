@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { VideoPlatform, VideoProgress, VideoProject, VideoRenderOptions, VideoStage } from '../shared';
+import type { VideoIpCoverInput, VideoPlatform, VideoProgress, VideoProject, VideoRenderOptions, VideoStage } from '../shared';
 import { ConfirmButton, readableError, shortTime } from './ui';
 import {
   AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildVideoPipeline, currentVideoStepKey,
@@ -140,6 +140,12 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
     replaceProject(await window.sydney.generateVideoCover(selected.id));
     notify('竖版封面已生成');
   });
+  const ipCover = (input: VideoIpCoverInput) => guarded('ip-cover', async () => {
+    if (!selected) return;
+    await persistSelected();
+    replaceProject(await window.sydney.renderVideoIpCover(selected.id, input));
+    notify('IP 竖版封面已生成');
+  });
   const exportPackage = () => guarded('export', async () => {
     if (!selected) return;
     await persistSelected();
@@ -276,7 +282,7 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
             {step === 'render' && <RenderStep project={selected} shots={shots} assets={assets} locked={locked} busy={busy} progress={progress}
               onOptions={editOptions} onChooseBgm={() => void chooseBgm()} onRender={() => void renderVideo()} onOpen={() => void openVideo()} />}
             {step === 'cover' && <CoverStep project={selected} assets={assets} locked={locked} busy={busy}
-              onChoose={() => void chooseCover()} onGenerate={() => void generateCover()} />}
+              onChoose={() => void chooseCover()} onGenerate={() => void generateCover()} onOptions={editOptions} onIpCover={input => void ipCover(input)} />}
             {step === 'export' && <ExportStep project={selected} locked={locked} busy={busy}
               onExport={() => void exportPackage()} onOpen={() => void openPackage()} />}
 

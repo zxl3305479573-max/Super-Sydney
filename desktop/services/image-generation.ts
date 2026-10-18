@@ -64,13 +64,55 @@ export function clampCandidateCount(count: unknown): number {
   return Math.min(3, Math.max(1, Math.round(Number(count) || 1)));
 }
 
-/** 生成一张图并返回字节；封面与正文配图共用同一套接口与错误处理。 */
-export async function requestGeneratedImage(config: ImageApiConfig, prompt: string, size = '1792x1024', signal?: AbortSignal): Promise<Buffer> {
+/** 生图时一起传给接口的参考图（IP 角色形象）。 */
+export type ImageReference = { bytes: Buffer; filename: string; contentType: string };
+
+/**
+ * 选了 IP 时追加在原提示词后面的一段：只要求把参考图里的角色融进画面，
+ * 画面内容仍由原来的提示词决定；不写品牌名、不加头像和水印。
+ */
+export const IP_IMAGE_INSTRUCTION = '画面中要出现参考图里的角色：保持角色的长相、发型、服装和配色一致，让角色自然地融入这个场景（可以是主角，也可以在一旁配合画面内容）；只参考角色形象，不要照搬参考图的构图和背景；不要在画面里写任何品牌名或账号名，不要加头像框、角标或水印。';
+
+export function withIpInstruction(prompt: string): string {
+  return `${prompt.trim()}\n\n${IP_IMAGE_INSTRUCTION}`;
+}
+
+/** multipart/form-data 请求体：参考图要走 /images/edits，那个接口只收表单。手拼字节，不依赖运行时的 FormData。 */
+export function multipartBody(fields: Record<string, string>, files: Array<{ field: string; file: ImageReference }>, boundary = `----sydney${Date.now().toString(16)}`): { body: Buffer; contentType: string } {
+  const parts: Buffer[] = [];
+  for (const [name, value] of Object.entries(fields)) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`, 'utf8'));
+  }
+  for (const { field, file } of files) {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${field}"; filename="${file.filename.replace(/"/g, '')}"\r\nContent-Type: ${file.contentType}\r\n\r\n`, 'utf8'));
+    parts.push(file.bytes, Buffer.from('\r\n', 'utf8'));
+  }
+  parts.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
+  return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` };
+}
+
+/**
+ * 生成一张图并返回字节；封面与正文配图共用同一套接口与错误处理。
+ * references 非空时改走 /images/edits，把参考图（IP 角色）一起传过去，让角色出现在画面里。
+ */
+export async function requestGeneratedImage(config: ImageApiConfig, prompt: string, size = '1792x1024', signal?: AbortSignal, references: ImageReference[] = []): Promise<Buffer> {
+  const deadline = withDeadline(AbortSignal.timeout(180_000), signal);
+  const sized = imageSizeFor(config.model, size);
   // response_format 不是每个模型都支持（网关文档要求只在支持时传），url 与 b64_json 两种返回都能处理，所以不传。
-  const response = await imageFetch(`${config.baseUrl}/images/generations`, {
-    method: 'POST', signal: withDeadline(AbortSignal.timeout(180_000), signal), headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: config.model, prompt, n: 1, size: imageSizeFor(config.model, size) })
-  });
+  const response = references.length
+    ? await (() => {
+      const form = multipartBody({ model: config.model, prompt, n: '1', size: sized }, references.map(file => ({ field: references.length > 1 ? 'image[]' : 'image', file })));
+      return imageFetch(`${config.baseUrl}/images/edits`, {
+        method: 'POST', signal: deadline, headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': form.contentType }, body: new Uint8Array(form.body)
+      });
+    })()
+    : await imageFetch(`${config.baseUrl}/images/generations`, {
+      method: 'POST', signal: deadline, headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: config.model, prompt, n: 1, size: sized })
+    });
+  if (references.length && (response.status === 404 || response.status === 405)) {
+    throw new Error(`图片接口不支持参考图（/images/edits 返回 HTTP ${response.status}）：换一个支持参考图的模型（如 gpt-image 系列），或先选「不使用 IP」`);
+  }
   if (!response.ok) throw new Error(`图片 API 请求失败（HTTP ${response.status}）${await apiErrorText(response)}`);
   const payload = await response.json() as { data?: Array<{ url?: string; b64_json?: string }> };
   const image = payload.data?.[0];

@@ -51,6 +51,8 @@ const api: SydneyApi = {
   getContentAssets: id => ipcRenderer.invoke('content:assets', id),
   renderContentPreview: (id, source) => ipcRenderer.invoke('content:preview', id, source),
   chooseContentCover: id => ipcRenderer.invoke('content:cover:choose', id),
+  renderContentIpCover: (id, input) => ipcRenderer.invoke('content:ip-cover:render', id, input),
+  revealContentAsset: (id, file) => ipcRenderer.invoke('content:asset:reveal', id, file),
   publishContentTask: (id, allowUnreviewed) => ipcRenderer.invoke('content:publish', id, allowUnreviewed),
   exportContentTask: (id, allowUnreviewed) => ipcRenderer.invoke('content:export', id, allowUnreviewed),
   getWeWriteEnvironment: () => ipcRenderer.invoke('wewrite:environment'),
@@ -72,6 +74,7 @@ const api: SydneyApi = {
   generateVideoStage: (id, stage) => ipcRenderer.invoke('video:generate', id, stage),
   generateVideoCover: id => ipcRenderer.invoke('video:cover:generate', id),
   chooseVideoCover: id => ipcRenderer.invoke('video:cover:choose', id),
+  renderVideoIpCover: (id, input) => ipcRenderer.invoke('video:ip-cover:render', id, input),
   getVideoAssets: id => ipcRenderer.invoke('video:assets', id),
   exportVideoProject: id => ipcRenderer.invoke('video:export', id),
   openVideoPackage: id => ipcRenderer.invoke('video:open-package', id),
@@ -101,6 +104,7 @@ const api: SydneyApi = {
   confirmXhsBasis: (id, key) => ipcRenderer.invoke('xhs:notes:confirm', id, key),
   generateXhsCover: (id, brief) => ipcRenderer.invoke('xhs:cover:generate', id, brief),
   chooseXhsCover: id => ipcRenderer.invoke('xhs:cover:choose', id),
+  renderXhsIpCover: (id, input) => ipcRenderer.invoke('xhs:ip-cover:render', id, input),
   renderXhsCards: id => ipcRenderer.invoke('xhs:cards:render', id),
   generateXhsInfoImages: (id, mode) => ipcRenderer.invoke('xhs:info:generate', id, mode),
   cancelXhsImages: id => ipcRenderer.invoke('xhs:images:cancel', id),
@@ -132,6 +136,14 @@ const api: SydneyApi = {
   deleteRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:delete'),
   testRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:test'),
   openXhsLink: url => ipcRenderer.invoke('xhs:open-link', url),
+  listIps: () => ipcRenderer.invoke('ip:list'),
+  createIp: name => ipcRenderer.invoke('ip:create', name),
+  updateIp: (id, patch) => ipcRenderer.invoke('ip:update', id, patch),
+  deleteIp: id => ipcRenderer.invoke('ip:delete', id),
+  addIpImage: (id, kind, label) => ipcRenderer.invoke('ip:image:add', id, kind, label),
+  removeIpPose: (id, poseId) => ipcRenderer.invoke('ip:pose:remove', id, poseId),
+  selectIp: (module, id) => ipcRenderer.invoke('ip:select', module, id),
+  getIpKit: id => ipcRenderer.invoke('ip:kit', id),
   listLinks: () => ipcRenderer.invoke('links:list'),
   createLink: input => ipcRenderer.invoke('links:create', input),
   updateLink: (id, input) => ipcRenderer.invoke('links:update', id, input),
@@ -159,6 +171,11 @@ const api: SydneyApi = {
     const listener = () => callback();
     ipcRenderer.on('wewrite:changed', listener);
     return () => ipcRenderer.removeListener('wewrite:changed', listener);
+  },
+  onIpChanged: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('ip:changed', listener);
+    return () => ipcRenderer.removeListener('ip:changed', listener);
   },
   onXhsViewChanged: callback => {
     const listener = () => callback();

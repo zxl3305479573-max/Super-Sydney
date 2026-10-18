@@ -4,6 +4,7 @@ import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import { readPositioning, readPositioningChat } from '../../services/xhs-pipeline';
 import { Icon } from '../ui';
 import { Section, useBusy, type XhsContext } from './common';
+import { IpPicker, useIpLibrary } from '../IpLibrary';
 
 /**
  * 账号定位：引导式咨询。教练每轮问 1-3 个问题，信息够了直接出定位档案
@@ -36,6 +37,8 @@ export function PositioningTab({ ctx, onAccount }: { ctx: XhsContext; onAccount:
     setPicked(new Set());
     notify(`已转成 ${result.created} 篇笔记任务${result.skipped ? `，${result.skipped} 篇已存在跳过` : ''}`);
   });
+  const { view: ipLibrary } = useIpLibrary();
+  const selectIp = (ipId: string) => run('ip-select', async () => { onAccount(await window.sydney.updateXhsAccount(account.id, { ipId })); });
   const last = chat[chat.length - 1];
   const waiting = last?.role === 'coach' && Boolean(last.questions?.length);
 
@@ -94,6 +97,10 @@ export function PositioningTab({ ctx, onAccount }: { ctx: XhsContext; onAccount:
         })}</ul>
         <button className="button button-quiet" onClick={() => goTo('notes')}>去笔记创作 →</button>
       </div> : <p className="flow-empty">还没有定位档案。</p>}
+    </Section>
+
+    <Section title="IP 形象" hint="这个账号用哪个 IP：选了之后，笔记封面可以用 IP 模板本地出图（品牌名、头像、配色、角色都取自这个 IP），不消耗图片接口额度。IP 在「设置 → IP 形象」里管理。">
+      <IpPicker label="这个账号的 IP" value={account.ipId} ips={ipLibrary.ips} disabled={locked} onChange={value => void selectIp(value)} />
     </Section>
   </div>;
 }

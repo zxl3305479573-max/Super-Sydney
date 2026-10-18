@@ -19,6 +19,10 @@ import {
 import { probeDuration, renderFrameFiles, resolveFfmpeg, runFfmpeg, speechSpan } from '../services/video-render';
 import { listSystemVoices, readVideoTtsSettings, requestSpeech, synthesizeSystemSpeech, writeVideoTtsSettings } from '../services/video-tts';
 import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
+import { pickPose } from '../services/ip-theme';
+import { normalizeVideoIpCoverInput, renderVideoIpCover, VIDEO_COVER_SIZE } from '../services/video-ip-cover';
+import { renderHtmlPages } from '../services/xhs-render';
+import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
 import { exportVideoPackage } from '../services/video-export';
 import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
@@ -53,7 +57,10 @@ export function registerVideoIpc(ctx: AppContext): void {
 
   ipcMain.handle('video:list', () => listVideoProjects(db));
   ipcMain.handle('video:create', (_event, platform: VideoPlatform, topic = '') => {
-    const project = createVideoProject(db, platform, topic);
+    let project = createVideoProject(db, platform, topic);
+    // 新视频默认带上视频模块上次选的 IP；之后每条视频各自记着自己的。
+    const ipId = ctx.ipLibrary.selections().video;
+    if (ipId) project = updateVideoProject(db, project.id, { options: { ...project.options, ipId } });
     ctx.broadcast();
     return project;
   });
@@ -100,11 +107,21 @@ export function registerVideoIpc(ctx: AppContext): void {
    * 生成竖版封面（9:16）。
    * 与公众号封面共用同一套图片接口与错误处理，但尺寸不同——竖屏封面的构图和横版不通用。
    */
+  /** 用这条视频选的 IP 本地排版出竖版封面，不调图片接口。 */
+  ipcMain.handle('video:ip-cover:render', async (_event, id: number, raw: unknown) => requests.run(id, async () => {
+    const project = getVideoProject(db, id);
+    if (!project.options.ipId) throw new Error('这条视频还没有选用 IP：在「画面」步骤或这里选一个');
+    const input = normalizeVideoIpCoverInput(raw);
+    if (!input.title) throw new Error('封面标题不能为空');
+    const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-ip-${Date.now()}.png`);
+    await renderHtmlPages([renderVideoIpCover(input, ipRenderKit(ctx.ipLibrary, project.options.ipId))], VIDEO_COVER_SIZE.width, VIDEO_COVER_SIZE.height, [target]);
+    return update(id, { coverPath: target });
+  }));
   ipcMain.handle('video:cover:generate', async (_event, id: number) => requests.run(id, async () => {
     const project = getVideoProject(db, id);
     if (!(project.title || project.topic).trim()) throw new Error('请先确定选题或填写标题，再生成封面');
     const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-${Date.now()}.png`);
-    return update(id, { coverPath: await generateImageFile(target, videoCoverPrompt(project), '1024x1792') });
+    return update(id, { coverPath: await generateImageFile(target, videoCoverPrompt(project), '1024x1792', undefined, ipReferenceImage(ctx.ipLibrary, project.options.ipId)) });
   }));
 
   /* ── 配音 ──────────────────────────────────────────────────────
@@ -170,12 +187,15 @@ export function registerVideoIpc(ctx: AppContext): void {
     const shots = parseVideoShots(project.storyboardJson);
     if (!shots.length) throw new Error('请先生成分镜，再配图');
     const title = project.title.trim() || project.topic.trim() || '健康科普';
+    // 这条视频选了 IP 时，配图里融入 IP 角色（参考图传给接口）；IP 进了配图的键，换 IP 会重新生成。
+    const ipId = project.options.ipId;
+    const ip = ipReferenceImage(ctx.ipLibrary, ipId);
     const root = assetDirectory(ctx, 'video-assets', id);
     const directory = path.join(root, 'images');
     fs.mkdirSync(directory, { recursive: true });
     const wanted = new Map(shots.map(shot => {
       const prompt = shotImagePrompt(shot, title);
-      return [imageKey(prompt), prompt] as const;
+      return [imageKey(prompt, ipId), prompt] as const;
     }));
     const kept = force === true ? [] : project.assets.images.filter(item => wanted.has(item.key) && fs.existsSync(item.path));
     for (const item of project.assets.images) if (!kept.includes(item)) removeInside(root, item.path);
@@ -184,12 +204,28 @@ export function registerVideoIpc(ctx: AppContext): void {
     const pending = [...wanted].filter(([key]) => !kept.some(item => item.key === key));
     for (const [index, [key, prompt]] of pending.entries()) {
       progress({ id, task: 'images', done: index, total: pending.length, message: `正在生成第 ${index + 1}/${pending.length} 张配图…` });
-      const file = await generateImageFile(path.join(directory, `${key}.png`), prompt, SHOT_IMAGE_SIZE);
+      const file = await generateImageFile(path.join(directory, `${key}.png`), prompt, SHOT_IMAGE_SIZE, undefined, ip);
       assets = { ...assets, images: [...assets.images, { key, path: file }] };
       project = update(id, { assets });
     }
     return project;
   }));
+
+  /**
+   * 帧里的 IP 角色：用 IP 库里文件的 file:// 地址（帧页面走 loadFile，读得到本地文件）。不放头像和品牌名。
+   * 选的 IP 已被删掉或没有角色图就不带，不让渲染失败。
+   */
+  const frameIp = (ipId: string) => {
+    if (!ipId) return null;
+    try {
+      const ip = ctx.ipLibrary.get(ipId);
+      const url = (file: string) => pathToFileURL(ctx.ipLibrary.filePathOf(ip.id, file)).href;
+      const hero = pickPose(ip.poses, '', ['指', '介绍', '打字'], 1);
+      return hero ? { heroUrl: url(hero.file) } : null;
+    } catch {
+      return null;
+    }
+  };
 
   /**
    * 把若干段画面排版成 HTML，再逐张截出各段的静帧（.png 或 .jpg）；
@@ -202,6 +238,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const shots = parseVideoShots(project.storyboardJson);
     const title = project.title.trim() || project.topic.trim() || '健康科普';
     const pad = (value: number) => String(value).padStart(4, '0');
+    const ip = frameIp(project.options.ipId);
     const jobs = segments.map((segment, position) => {
       const shot = shots[segment.shot];
       const image = project.options.imageMode === 'ai' ? shotImage(project, shot) : null;
@@ -210,7 +247,7 @@ export function registerVideoIpc(ctx: AppContext): void {
         template: project.options.template, title, keyText: shot.caption, subtitle: segment.subtitle,
         imageUrl: image && fs.existsSync(image.path) ? pathToFileURL(image.path).href : '',
         shotNumber: segment.shot + 1, shotCount: shots.length, footer: project.options.footer,
-        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion
+        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip
       }), 'utf8');
       const stills = segment.stills.map((still, index) => ({ style: motionStyle(still.motion), target: path.join(directory, `frame-${pad(position + 1)}-${pad(index + 1)}.${extension}`) }));
       return { html, stills };

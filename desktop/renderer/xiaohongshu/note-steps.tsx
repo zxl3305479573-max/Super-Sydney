@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { XhsBasis, XhsCandidateView, XhsCardPlan, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
+import type { XhsBasis, XhsCandidateView, XhsCardPlan, XhsIpCoverInput, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
 import {
   XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
 } from '../../services/xhs-catalog';
@@ -9,6 +9,8 @@ import {
 } from '../../services/xhs-pipeline';
 import { ConfirmButton, Icon, TagEditor } from '../ui';
 import { ScoreBar, sourceOf } from './common';
+import { IpCoverPanel } from './IpCoverPanel';
+import { IpPicker, useIpKit, useIpLibrary } from '../IpLibrary';
 
 /** 小红书笔记流水线的各步骤面板：只负责展示与收集输入，动作由 NotesTab 传入。 */
 
@@ -121,14 +123,19 @@ function CoverPreview({ assets, title }: { assets: XhsNoteAssets | null; title: 
   </div>;
 }
 
-export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale, onEdit, onCover, onChooseCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onUseCover, onRemoveCandidate, onConfirm }: Common & {
+export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale, ipId, onSelectIp, onEdit, onCover, onChooseCover, onIpCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onUseCover, onRemoveCandidate, onConfirm }: Common & {
   assets: XhsNoteAssets | null; coverStale: boolean; cardsStale: boolean;
-  onEdit: (patch: Partial<XhsNote>) => void; onCover: (brief: string) => void; onChooseCover: () => void;
+  /** 账号选用的 IP；空串表示不使用 IP（不显示 IP 模板）。 */
+  ipId: string; onSelectIp: (id: string) => void;
+  onEdit: (patch: Partial<XhsNote>) => void; onCover: (brief: string) => void; onChooseCover: () => void; onIpCover: (input: XhsIpCoverInput) => void;
   onCards: (pageCount: number, style: string) => void; onRenderCards: () => void; onInfo: (mode: 'single' | 'pages') => void; onCancel: () => void;
   onAddLocal: () => void; onArrange: (paths: string[]) => void; onUseCover: (path: string) => void; onRemoveCandidate: (path: string) => void;
   onConfirm: (key: keyof XhsBasis) => void;
 }) {
   const [brief, setBrief] = useState('');
+  const { view: ipLibrary } = useIpLibrary();
+  const { kit, error: kitError } = useIpKit(ipId);
+  const [ipOpen, setIpOpen] = useState(true);
   const plan = readCardPlan(note);
   const [pageCount, setPageCount] = useState(plan?.pages.length && XHS_PAGE_COUNTS.includes(plan.pages.length) ? plan.pages.length : 6);
   const [style, setStyle] = useState(plan?.style ?? XHS_CARD_STYLES[0].key);
@@ -159,6 +166,12 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
         <small className="ww-muted">封面会把标题做成大字放在上半部分，画风按笔记内容与定位档案里的视觉建议。生成后在左右补边成 3:4，不裁切画面；换下来的旧封面留在下面的候选图库里。</small>
       </div>
     </div>
+    <div className="xhs-ip-head">
+      <IpPicker label="这个账号的 IP" value={ipId} ips={ipLibrary.ips} disabled={locked} onChange={onSelectIp} />
+      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面（不加品牌名和头像）。</small>}
+      {ipId && <button className={`button ${ipOpen ? 'button-quiet' : 'button-secondary'}`} onClick={() => setIpOpen(open => !open)}>{ipOpen ? '收起 IP 模板' : '用 IP 模板出封面'}</button>}
+    </div>
+    {ipId && ipOpen && <IpCoverPanel note={note} kit={kit} kitError={kitError} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />}
 
     <h4 className="xhs-step-sub">② 图文卡片（本地模板，免费）</h4>
     {cardsStale && <ConfirmStale text="正文改过，卡片 / 信息图里的内容可能过时了。" locked={locked} onConfirm={() => onConfirm('cards')} />}

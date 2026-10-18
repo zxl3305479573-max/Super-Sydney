@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { dialog, ipcMain } from 'electron';
+import { dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
 import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, ImageCandidateScope } from '../shared';
 import type { ImageSlot } from '../services/content-images';
@@ -22,6 +22,9 @@ import { WeChatClient, contentTypeFor } from '../services/wechat-publisher';
 import { yamlScalar } from '../services/wewrite-config';
 import { readWeWriteFiles, syncStyleTopics } from '../services/wewrite-files';
 import { assetDirectory, contentApiConfig, generateImageFile, readContentTaxonomy, removeAssetDirectory } from './content-support';
+import { normalizeWechatIpCoverInput, renderWechatIpCover, WECHAT_COVER_SIZE, WECHAT_SHARE_SIZE } from '../services/wechat-ip-cover';
+import { renderHtmlPages } from '../services/xhs-render';
+import { ipReferenceImage, ipRenderKit } from './ip';
 
 /* ── 桌面端原生公众号内容管道 ─────────────────────────────────── */
 
@@ -40,11 +43,14 @@ export function registerContentIpc(ctx: AppContext): void {
     if (requests.has(id)) throw new Error(`文章正在处理，请稍后${action}`);
   };
 
+  /** 公众号选用的 IP 角色参考图：AI 生图时把角色融进画面；没选 IP 时为 null，照原样生图。 */
+  const wechatIp = () => ipReferenceImage(ctx.ipLibrary, ctx.ipLibrary.selections().wechat);
+
   /** 生成封面并落盘，返回文件路径。 */
   const generateCover = (task: ContentTask, signal?: AbortSignal): Promise<string> => {
     const scope = imagePromptScope(readContentTaxonomy(ctx), task, readWeWriteFiles().styleText);
     const target = path.join(assetDirectory(ctx, 'content-assets', task.id), `cover-${Date.now()}.png`);
-    return generateImageFile(target, coverImagePrompt(task, scope), '1792x1024', signal);
+    return generateImageFile(target, coverImagePrompt(task, scope), '1792x1024', signal, wechatIp());
   };
 
   /**
@@ -55,11 +61,13 @@ export function registerContentIpc(ctx: AppContext): void {
     const directory = assetDirectory(ctx, 'content-assets', task.id);
     const scope = imagePromptScope(readContentTaxonomy(ctx), task, readWeWriteFiles().styleText);
     const failures: string[] = [];
+    const ip = wechatIp();
     const settled = await Promise.allSettled(slots.map((slot, index) => generateImageFile(
       path.join(directory, `inline-${stamp}-${index + 1}.png`),
       buildImagePrompt({ articleTitle: task.title || task.topic, heading: slot.heading, excerpt: slot.excerpt, direction: scope.direction, style: scope.style }),
       '1792x1024',
-      signal
+      signal,
+      ip
     )));
     const paths = settled.map(item => {
       if (item.status === 'fulfilled') return item.value;
@@ -83,8 +91,9 @@ export function registerContentIpc(ctx: AppContext): void {
 
   /** 同一句提示词要 N 张候选：并发生成，个别失败就少几张，成功的仍然给用户挑。 */
   const generateOptions = async (target: (index: number) => string, prompt: string, candidates: number, signal?: AbortSignal): Promise<{ paths: string[]; failures: string[] }> => {
+    const ip = wechatIp();
     const settled = await Promise.allSettled(Array.from({ length: candidates }, (_item, index) =>
-      generateImageFile(target(index), prompt, '1792x1024', signal)));
+      generateImageFile(target(index), prompt, '1792x1024', signal, ip)));
     const paths: string[] = [];
     const failures: string[] = [];
     for (const item of settled) {
@@ -207,6 +216,31 @@ export function registerContentIpc(ctx: AppContext): void {
     const result = await dialog.showOpenDialog(ctx.window()!, { properties: ['openFile'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     return update(id, { coverPath: result.filePaths[0] });
+  });
+  /**
+   * 用公众号当前选用的 IP 本地排版出图，不调图片接口：2.35:1 的写成这篇的封面（推草稿时就用它），
+   * 1:1 的分享图另存在素材目录（微信草稿接口只收一张封面，分享图由用户自行取用）。
+   */
+  ipcMain.handle('content:ip-cover:render', async (_event, id: number, raw: unknown) => requests.run(id, async () => {
+    const ipId = ctx.ipLibrary.selections().wechat;
+    if (!ipId) throw new Error('公众号还没有选用 IP：先在封面步骤里选一个');
+    const input = normalizeWechatIpCoverInput(raw);
+    if (!input.title) throw new Error('封面标题不能为空');
+    const kit = ipRenderKit(ctx.ipLibrary, ipId);
+    const directory = assetDirectory(ctx, 'content-assets', id);
+    const stamp = Date.now();
+    const cover = path.join(directory, `cover-ip-${stamp}.png`);
+    const share = path.join(directory, `share-ip-${stamp}.png`);
+    await renderHtmlPages([renderWechatIpCover(input, kit, 'cover')], WECHAT_COVER_SIZE.width, WECHAT_COVER_SIZE.height, [cover]);
+    await renderHtmlPages([renderWechatIpCover(input, kit, 'share')], WECHAT_SHARE_SIZE.width, WECHAT_SHARE_SIZE.height, [share]);
+    return { task: update(id, { coverPath: cover }), share: { path: share, thumbnail: imageThumbnail(share, 360) } };
+  }));
+  /** 只认这篇文章自己素材目录里的文件，免得渲染进程借它打开任意路径。 */
+  ipcMain.handle('content:asset:reveal', (_event, id: number, file: string) => {
+    const directory = path.resolve(assetDirectory(ctx, 'content-assets', id));
+    const target = path.resolve(String(file ?? ''));
+    if (path.dirname(target) !== directory || !fs.existsSync(target)) throw new Error('文件不存在或不属于这篇文章');
+    shell.showItemInFolder(target);
   });
   ipcMain.handle('content:export', (_event, id: number, allowUnreviewed = false) => {
     assertIdle(id, '导出');

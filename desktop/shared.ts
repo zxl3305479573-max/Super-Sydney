@@ -330,6 +330,8 @@ export type VideoRenderOptions = {
   bgmVolume: number;
   /** 画面底部固定的一行：账号名或合规提示。 */
   footer: string;
+  /** 画面里带哪个 IP 的品牌角标和角色（IP 库里的 id）；空串表示不带。 */
+  ipId: string;
 };
 export type VideoAudioAsset = { key: string; path: string; seconds: number };
 export type VideoImageAsset = { key: string; path: string };
@@ -397,9 +399,82 @@ export type XhsAccount = {
   positioningJson: string;
   /** 定位问答记录（XhsPositioningTurn[] 的 JSON）。 */
   positioningChatJson: string;
+  /** 这个账号用的 IP（IP 库里的 id）；空串表示不使用 IP。 */
+  ipId: string;
   createdAt: string;
   updatedAt: string;
 };
+/** 小红书的 IP 封面模板（见 services/xhs-ip-cover）。 */
+export type XhsIpCoverTemplate = 'tutorial' | 'list' | 'recap';
+
+export type XhsIpCoverInput = {
+  template: XhsIpCoverTemplate;
+  /** 用 IP 的哪个角色动作（IpPose.id）；空串表示按模板自动挑。 */
+  pose: string;
+  title: string;
+  sub: string;
+  tag: string;
+  /** 只有 tutorial 用，最多 5 步。 */
+  steps: string[];
+  /** 只有 list 用：巨大数字和单位、右上角贴纸。 */
+  number: string;
+  unit: string;
+  sticker: string;
+  /** 只有 recap 用：角色上方的气泡台词。 */
+  bubble: string;
+};
+
+/** 公众号的 IP 封面模板（见 services/wechat-ip-cover）。 */
+export type WechatIpCoverInput = {
+  style: 'light' | 'dark';
+  /** 用 IP 的哪个角色动作（IpPose.id）；空串表示自动挑。 */
+  pose: string;
+  title: string;
+  sub: string;
+  tag: string;
+};
+
+/** 视频的 IP 竖版封面（见 services/video-ip-cover）。 */
+export type VideoIpCoverInput = { style: 'light' | 'dark'; pose: string; title: string; sub: string };
+
+/* ── IP 库 ─────────────────────────────────────────────────────── */
+
+/** IP 的透明底角色动作素材；file 是 IP 目录里的文件名。 */
+export type IpPose = { id: string; label: string; file: string };
+export type IpColors = { primary: string; accent: string; secondary: string };
+export type IpProfile = {
+  id: string;
+  /** 名称，也是封面上的品牌名。 */
+  name: string;
+  /** 口头禅或简介。 */
+  tagline: string;
+  /** 主色（深色，正文与底色）、强调色（高亮、标签）、辅色（点缀、浅底）。 */
+  colors: IpColors;
+  /** 头像文件名；空串表示没有。 */
+  avatar: string;
+  poses: IpPose[];
+  /** 参考图（以后生成新动作时当参考），可选。 */
+  reference: string;
+  createdAt: string;
+  updatedAt: string;
+};
+export type IpProfilePatch = Partial<Pick<IpProfile, 'name' | 'tagline' | 'colors'>> & { poses?: Array<Pick<IpPose, 'id' | 'label'>> };
+export type IpModule = 'wechat' | 'video';
+export type IpLibraryView = {
+  ips: Array<IpProfile & { avatarThumb: string; referenceThumb: string; poseThumbs: Record<string, string> }>;
+  /** 各模块上次选的 IP；空串表示不使用。 */
+  selections: Record<IpModule, string>;
+};
+/** 模板渲染用：品牌信息与图片（data URI）。模板只认这份资料，不认具体是哪个 IP。 */
+export type IpRenderKit = {
+  id: string;
+  name: string;
+  tagline: string;
+  colors: IpColors;
+  avatar: string;
+  poses: Array<{ id: string; label: string; src: string }>;
+};
+
 export type XhsPositioning = {
   track: { name: string; reason: string; alternatives: string[] };
   /** 定位句：我是谁、给谁看、提供什么价值。 */
@@ -721,6 +796,10 @@ export interface SydneyApi {
   getContentAssets(id: number): Promise<ContentAssetBundle>;
   renderContentPreview(id: number, source?: 'draft' | 'final'): Promise<{ html: string }>;
   chooseContentCover(id: number): Promise<ContentTask | null>;
+  /** 用公众号当前 IP 的模板本地出 2.35:1 封面（写成这篇的封面）和 1:1 分享图（另存），不调图片接口。 */
+  renderContentIpCover(id: number, input: WechatIpCoverInput): Promise<{ task: ContentTask; share: { path: string; thumbnail: string } }>;
+  /** 在资源管理器里显示这篇文章素材目录里的某个文件。 */
+  revealContentAsset(id: number, file: string): Promise<void>;
   publishContentTask(id: number, allowUnreviewed?: boolean): Promise<ContentTask & { mediaId: string }>;
   exportContentTask(id: number, allowUnreviewed?: boolean): Promise<ContentTask>;
   getWeWriteEnvironment(): Promise<WeWriteEnvironment>;
@@ -747,6 +826,8 @@ export interface SydneyApi {
   generateVideoStage(id: number, stage: VideoStage): Promise<VideoProject>;
   generateVideoCover(id: number): Promise<VideoProject>;
   chooseVideoCover(id: number): Promise<VideoProject | null>;
+  /** 用这条视频选的 IP 本地排版出竖版封面（不调图片接口）。 */
+  renderVideoIpCover(id: number, input: VideoIpCoverInput): Promise<VideoProject>;
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
@@ -767,7 +848,7 @@ export interface SydneyApi {
   /** 订阅配音 / 配图 / 渲染的进度；返回取消订阅函数。 */
   onVideoProgress(callback: (progress: VideoProgress) => void): () => void;
   listXhsAccounts(): Promise<XhsAccount[]>;
-  updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson'>>): Promise<XhsAccount>;
+  updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson' | 'ipId'>>): Promise<XhsAccount>;
   /** 新建一个小红书账号（名字不能重复）。 */
   createXhsAccount(name: string): Promise<XhsAccount>;
   /** 只能删没有笔记、报告和导入数据的空账号，且至少保留一个。 */
@@ -790,6 +871,21 @@ export interface SydneyApi {
   confirmXhsBasis(id: number, key: keyof XhsBasis): Promise<XhsNote>;
   generateXhsCover(id: number, brief: string): Promise<XhsNote>;
   chooseXhsCover(id: number): Promise<XhsNote | null>;
+  /** 用账号当前 IP 的封面模板本地排版出封面（不调图片接口），写成这篇笔记的封面。 */
+  renderXhsIpCover(id: number, input: XhsIpCoverInput): Promise<XhsNote>;
+  /** IP 库：全应用共用的 IP 形象，各内容模块各自选用。 */
+  listIps(): Promise<IpLibraryView>;
+  createIp(name: string): Promise<IpLibraryView>;
+  updateIp(id: string, patch: IpProfilePatch): Promise<IpLibraryView>;
+  deleteIp(id: string): Promise<IpLibraryView>;
+  /** 选一张本地图片作为头像 / 新角色动作 / 参考图；取消选择时返回 null。 */
+  addIpImage(id: string, kind: 'avatar' | 'pose' | 'reference', label?: string): Promise<IpLibraryView | null>;
+  removeIpPose(id: string, poseId: string): Promise<IpLibraryView>;
+  /** 模块级的 IP 选择（公众号、视频）；小红书按账号存在账号上。 */
+  selectIp(module: IpModule, id: string): Promise<IpLibraryView>;
+  /** 模板渲染用的 IP 资料（图片是 data URI）。 */
+  getIpKit(id: string): Promise<IpRenderKit>;
+  onIpChanged(callback: () => void): () => void;
   /** 把图文卡片逐页渲染成 3:4 PNG，替换图组里旧的卡片图。 */
   renderXhsCards(id: number): Promise<XhsNote>;
   /** 生图信息图：single 出 1 张总览图；pages 按卡片分页逐页出图（6–9 张）。 */

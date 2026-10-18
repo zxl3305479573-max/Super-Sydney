@@ -172,6 +172,11 @@ export type FrameInput = {
   lead: string;
   /** 页面载入时的动效参数；之后逐帧改写 <html> 的 style。 */
   motion: FrameMotion;
+  /**
+   * IP 角色（在标题右侧，不压画面主体和字幕）；null 表示不带。不放头像和品牌名。
+   * 图片是 file:// 地址，和配图一样由 loadFile 读取。
+   */
+  ip?: { heroUrl: string } | null;
 };
 
 export function escapeHtml(value: string): string {
@@ -222,8 +227,13 @@ function karaokeMarkup(subtitle: string): string {
   return Array.from(subtitle).map((char, index) => `<span style="--i:${index}">${escapeHtml(char)}</span>`).join('');
 }
 
+/** 只在带 IP 角色时输出这段样式：不带 IP 的帧和以前逐字节相同。 */
+const IP_HERO_CSS = `.ip-hero{position:absolute;right:60px;top:84px;width:220px;height:236px;object-fit:contain;object-position:right bottom}
+.title{right:300px}`;
+
 export function buildFrameHtml(input: FrameInput): string {
   const color = PALETTES[input.template] ?? PALETTES.warm;
+  const hero = input.ip?.heroUrl ?? '';
   const title = escapeHtml(input.title.trim());
   const key = input.keyText.trim();
   const solid = SOLID_ROLES.has(input.role);
@@ -258,7 +268,9 @@ html,body{width:${FRAME_WIDTH}px;height:${FRAME_HEIGHT}px;overflow:hidden;backgr
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${color.accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
 .footer{position:absolute;left:90px;right:90px;top:1470px;font-size:32px;letter-spacing:2px;text-align:center;color:${color.muted}}
+${hero ? IP_HERO_CSS : ''}
 </style></head><body>
+${hero ? `<img class="ip-hero" src="${escapeHtml(hero)}" alt="">` : ''}
 <div class="title">${title}</div>
 <div class="progress">${progress}</div>
 ${visual}

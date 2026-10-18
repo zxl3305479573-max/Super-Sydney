@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { AppState, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPresetKind, ModelPresetView, Settings } from '../shared';
 import ModelPresetBar from './ModelPresetBar';
 import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
+import { IpLibraryCard } from './IpLibrary';
 
 type Patch = Partial<Settings>;
 
@@ -11,6 +12,7 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'ai', label: 'AI 对话采集', icon: 'bot' },
   { id: 'files', label: '文件与屏幕', icon: 'folder' },
   { id: 'models', label: '模型', icon: 'key' },
+  { id: 'ip', label: 'IP 形象', icon: 'user' },
   { id: 'data', label: '小红书数据', icon: 'chart' }
 ];
 
@@ -204,6 +206,8 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
       </section>
 
       <ModelsCard enabled={settings.llmEnabled} onToggle={value => void onSetting({ llmEnabled: value })} notify={notify} />
+
+      <IpLibraryCard notify={notify} />
 
       <section id="set-data" className="set-card">
         <header><Icon name="chart" size={18} /><div><h2>小红书 · 热点数据（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>

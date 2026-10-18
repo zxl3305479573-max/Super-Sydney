@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ContentAssetBundle, ContentAssetView, ContentTask, ContentTaxonomy, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption } from '../../shared';
+import type { ContentAssetBundle, ContentAssetView, ContentTask, ContentTaxonomy, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, WechatIpCoverInput } from '../../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../../services/article-html';
 import { countInlineImages } from '../../services/content-images';
 import { renderEvidenceSection } from '../../services/evidence-section';
@@ -7,6 +7,7 @@ import { FEATURED_SOURCE_LIMIT, pickFeaturedSources } from '../../services/conte
 import { PIPELINE_STEPS, buildPipeline, currentStepKey, publishChecklist, type PipelineStep, type PipelineStepKey } from '../../services/content-pipeline';
 import { findDirectionById, findSubdirectionById, subdirectionsOf, taskScopeLabel } from '../content-taxonomy';
 import { readableError } from '../ui';
+import { WechatIpCoverPanel } from './IpCoverPanel';
 import { countChars, list, parseObject, readSources, stateNames, text, topicSuggestions, wrapPreviewHtml, type Env, type Source } from './format';
 
 /** 公众号创作流水线的各步骤面板。只负责展示与收集输入，动作由 NativeContentPanel 传入。 */
@@ -170,11 +171,12 @@ function ThemePicker({ value, locked, onPick }: { value: string; locked: boolean
   </div>;
 }
 
-export function CoverStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onChoose, onGenerateCover, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage }: {
+export function CoverStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onChoose, onGenerateCover, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage, onIpCover }: {
   task: ContentTask; assets: ContentAssetBundle | null; locked: boolean; busy: string; busySeconds: number;
   candidateCount: number; onCandidateCount: (count: number) => void;
   onChoose: () => void; onGenerateCover: () => void; onGenerateImages: () => void; onGenerateImagesWithCover: () => void;
   onPickFromLibrary: () => void; onSwapImage: (index: number, path: string, expected: string) => void;
+  onIpCover: (input: WechatIpCoverInput) => Promise<{ path: string; thumbnail: string } | null>;
 }) {
   return <div className="flow-body">
     <div className="flow-cover">
@@ -194,6 +196,7 @@ export function CoverStep({ task, assets, locked, busy, busySeconds, candidateCo
         <small>封面是微信草稿的缩略图；正文配图按小标题插进正文，推送时会自动上传到微信。一次生成会同时消耗封面与配图的费用。</small>
       </div>
     </div>
+    <WechatIpCoverPanel task={task} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />
     <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
   </div>;
 }
