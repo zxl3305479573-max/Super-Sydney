@@ -81,6 +81,8 @@ export type LlmKeyStatus = { configured: boolean; masked: string; encryptionAvai
  * 必须由 agent 执行，应用不代跑。
  */
 export type ContentStage = 'topics' | 'brief' | 'claims' | 'draft' | 'review' | 'revise';
+/** 未给公众号资料设置篇幅时使用的写作目标；界面提示与实际生成共用，避免两处漂移。 */
+export const DEFAULT_CONTENT_WORD_COUNT = '600-1200';
 /**
  * 内容方向是两级、由用户自己维护的分类：
  * 一级「内容方向」（如 中老年健康科普 / 科技与数码），二级「具体方向」（如 饮食营养与蔬果利弊）。

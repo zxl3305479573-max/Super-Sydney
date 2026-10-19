@@ -87,6 +87,16 @@ test('API call uses account style, a timeout and the persisted task', async () =
   assert.match(JSON.stringify(sent.messages), /没有联网核实能力/);
 });
 
+test('未配置篇幅时使用公众号默认的 600-1200 字范围', async () => {
+  let sent: { messages?: unknown } = {};
+  const fetcher = (async (_url, init) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ choices: [{ message: { content: '# 短稿' } }] }));
+  }) as typeof fetch;
+  await requestContentStage(task(), 'draft', { apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer' }, fetcher);
+  assert.match(JSON.stringify(sent.messages), /600-1200 字范围内/);
+});
+
 test('写作提示词用内容方向的约束，换方向就不再带健康红线', async () => {
   const capture = async (config: Parameters<typeof requestContentStage>[2], overrides: Partial<ContentTask> = {}) => {
     let sent: { messages?: unknown } = {};

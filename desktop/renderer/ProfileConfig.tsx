@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ContentDirectionInput, ContentProfileFields, ContentTaxonomy, DirectionNoteRequest, DirectionNoteSuggestion, ImageStyleRequest } from '../shared';
+import { DEFAULT_CONTENT_WORD_COUNT } from '../shared';
 import { ARTICLE_THEMES } from '../services/article-html';
 import { DEFAULT_IMAGE_STYLE, IMAGE_STYLE_PRESETS } from '../services/image-style';
 import WeWriteOverviewPanel from './WeWriteOverview';
@@ -297,7 +298,7 @@ export default function ProfileConfig({ profileId, notify, onSaved }: {
           </select>
           <small>这份资料新建的文章默认用它；单篇可在编辑器右上角切换。</small>
         </label>
-        <label className="ww-input"><span>文章篇幅</span><input value={active.wordCount} onChange={event => patchActive({ wordCount: event.target.value })} placeholder="1200-1800" /></label>
+        <label className="ww-input"><span>文章篇幅</span><input value={active.wordCount} onChange={event => patchActive({ wordCount: event.target.value })} placeholder={DEFAULT_CONTENT_WORD_COUNT} /></label>
         <label className="ww-input"><span>内容风格</span><input value={active.contentStyle} onChange={event => patchActive({ contentStyle: event.target.value })} placeholder="干货" /></label>
       </div>
     </div>}
