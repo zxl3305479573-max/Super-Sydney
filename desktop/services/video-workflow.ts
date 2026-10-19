@@ -2,6 +2,7 @@ import type { VideoProject, VideoShot, VideoStage } from '../shared.ts';
 import { parseJsonObject, requestChatContent } from './llm-json.ts';
 import { MAX_SHOT_SECONDS, MIN_SHOT_SECONDS, VIDEO_PLATFORMS, parseVideoShots, serializeVideoShots, videoPlatformLabel } from './video-pipeline.ts';
 import { VIDEO_SHOT_ROLES } from './video-production.ts';
+import { VIDEO_STORYBOARD_IMAGE_PROMPT_RULE } from './video-image-prompts.ts';
 
 /**
  * 视频模块的模型调用：只负责选题、口播脚本与分镜三件事。
@@ -20,7 +21,8 @@ const healthRules = [
   '区分事实、推断与意见；没有核实过的内容不能写成已证实结论。',
   '涉及慢性病、服药、相互作用、特殊人群时，口播里要提醒咨询医生或药师。',
   '不编造亲身经历、患者案例、医生采访、数字或来源。',
-  '你没有联网核实能力，不得把模型记忆或自审当作事实核查。'
+  '你没有联网核实能力，不得把模型记忆或自审当作事实核查。',
+  '输出只能包含当前字段要求的正文或 JSON，不复述提示词、不解释创作过程、不写自我评价。'
 ].join('\n');
 
 const platformGuide: Record<string, string> = {
@@ -72,23 +74,33 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   const target = project.durationSeconds > 0 ? project.durationSeconds : 60;
   const audience = project.audience.trim() || '中老年读者及其子女';
   if (stage === 'topics') {
-    return `为「${platform}」生成 5 个可核实的健康科普短视频选题，目标受众：${audience}。${guide}\n字段：title（口语化标题）、hook（前 3 秒的第一句话）、angle（切入角度）、risk_note（健康合规风险提示）。\n用户方向：${project.topic || project.title || '结合中老年健康科普常青话题生成'}。只输出 JSON：{"topics":[...]}`;
+    return `为「${platform}」生成 5 个可核实、可拍成短视频的健康科普选题。目标受众：${audience}。${guide}\n`
+      + `用户方向：${project.topic || project.title || '结合中老年健康科普常青话题生成'}。\n`
+      + `五个候选必须角度不同，覆盖其中至少三种：具体生活场景、常见误区纠正、可执行步骤、适用边界与风险、代际沟通问题。不要用五个同义标题凑数。\n`
+      + `标题像观众会主动搜索的一句话，不用“震惊、必看、彻底解决”等夸张承诺；开场钩子必须具体，禁止连续候选都用“你知道吗”“很多人不知道”这类套话。\n`
+      + `字段：title（标题，尽量不超过 20 个汉字）、hook（前 3 秒第一句话，8-24 个汉字）、angle（切入角度）、why（为什么值得做，只能写受众需求或内容价值，不得编造趋势数据）、evidence_to_verify（写需要人工核实的事实、数字或来源；没有则写“无需额外事实”）、risk_note（健康合规风险提示）。\n`
+      + '只输出 JSON：{"topics":[...]}';
   }
   if (stage === 'script') {
     return `写一条 ${target} 秒的短视频口播脚本。平台：${platform}；受众：${audience}；标题：${project.title || project.topic}；方向：${project.topic || '同上'}。\n${guide}\n`
       + `先在心里想清楚（不要写出来）：观众卡在哪个困惑、一句话结论是什么、支撑结论的 3-5 个要点、最后能马上做的一件小事。\n`
       + `${explainerStructures}\n`
-      + `要求：第一句就是抓人的开场（反常识、提问或一个具体场景，不用夸张数字吓人）；一句话只讲一件事，多用短句；不照着资料顺序复述；结尾给一个具体可做的小建议和一句合规提醒；按 ${Math.round(target * 4)} 字左右控制（中文口播约每秒 4 字）。\n`
+      + `要求：第一句直接进入问题、场景或结论，不用“大家好”“今天聊聊”“话不多说”“欢迎收看”等开场；不介绍本条视频本身。一句话只讲一件事，多用短句；不照着资料顺序复述；结尾给一个具体可做的小建议和一句合规提醒；按 ${Math.round(target * 4)} 字左右控制（中文口播约每秒 4 字）。\n`
+      + '中间用自然口语衔接，不堆“首先、其次、最后”；不要让每段都用同一种句式开头。不要编造案例和研究来增强说服力。\n'
       + '数字、单位写成口语读法（如「一百三」「两个小时」），避免配音念错。\n'
+      + '输出契约：script 字段内只能放可直接朗读的纯文本；禁止 Markdown、标题层级、项目符号、表情、URL、时间码、“镜头”“画面”“字幕”“旁白”等制作标记，也不要写括号动作提示。\n'
+      + '写完后自检：是否开头抓人但不吓人、是否只有一个核心结论、是否每句话适合一次念完、是否包含具体行动和合规提醒、字数是否接近目标；不合格就重写后再输出。\n'
       + '把脚本写进 script 字段，纯口播文本，可以分段换行，不要写画面提示、不要写时间码、不要出现「镜头」这类词。只输出 JSON：{"script":"..."}';
   }
   return `把下面这条口播脚本拆成分镜。平台：${platform}；目标总时长：${target} 秒。\n${guide}\n`
     + `要求：镜头 4-12 个，每镜 ${MIN_SHOT_SECONDS}-${MAX_SHOT_SECONDS} 秒，所有镜头秒数加起来接近 ${target} 秒；一镜只承担一个作用。\n`
+    + `叙事顺序要成立：开场钩子 → 问题或场景 → 2-4 个核心要点 / 步骤 → 结论或行动建议。第一镜通常用 hook，最后一镜通常是 takeaway 或 cta。\n`
+    + `不要让相邻镜头重复同一种画面和构图。概念镜头要有可理解的日常生活场景，抽象内容可用一个简洁视觉隐喻，但不要为了隐喻牺牲事实。\n`
     + `- narration：该镜对应的口播原文，一字不改（合起来要覆盖整篇脚本，不要漏句、不要添加脚本里没有的内容）；字幕和配音都直接用它。\n`
     + `- role：这一镜在讲解里的作用，只能取 ${VIDEO_SHOT_ROLES.map(item => `${item.value}（${item.label}）`).join('、')}；第一镜通常是 hook。\n`
     + '- caption：画面上的大字，是这一镜的要点而不是口播原句，不超过 12 字。\n'
-    + '- visual：画面描述，写清拍什么、用什么画面或素材。\n'
-    + '- image_prompt：给 AI 生图用的中文画面提示词，写具体的场景、人物和构图，温暖写实；不要让画面里出现文字、数字、药品或医疗器械特写；不超过 60 字。\n'
+    + '- visual：画面描述，写清主体、动作、环境、景别或构图、光线和情绪；必须与这一镜口播直接相关。\n'
+    + `${project.options.storyboardImagePromptRule.trim() || VIDEO_STORYBOARD_IMAGE_PROMPT_RULE}\n`
     + `字段：shots 数组，每项含 no、seconds、role、caption、visual、narration、image_prompt。\n口播脚本：\n${project.script}\n只输出 JSON：{"shots":[...]}`;
 }
 

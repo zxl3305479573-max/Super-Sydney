@@ -17,11 +17,12 @@ import { exportXhsPackage } from '../services/xhs-export';
 import { normalizeIpCoverInput, renderIpCoverDocument } from '../services/xhs-ip-cover';
 import { ipReferenceImage, ipRenderKit } from './ip';
 import { hotspotCacheKey, isHttpLink, normalizeHotspotQuery, searchRedfox, type FetchLike } from '../services/xhs-hotspot';
+import { searchTopicHotspots } from '../services/topic-hotspot-search';
 import {
   chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, addCandidates, readCandidates, readCardPlan, readCheckReport, readImages, readPositioning,
   readPositioningChat, routeByRules, stampBasis
 } from '../services/xhs-pipeline';
-import { fitToThreeFour, renderHtmlPages, searchBing } from '../services/xhs-render';
+import { fitToThreeFour, renderHtmlPages } from '../services/xhs-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
 import {
   createXhsAccount, createXhsNote, createXhsReport, deleteXhsAccount, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
@@ -52,12 +53,21 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   const imageJobs = new ImageJobs();
   const redfox = (apiKey: string) => ({ apiKey, fetch: fetch as unknown as FetchLike });
 
-  /** 内容模型用全应用统一的那一个（「设置 → 模型」）；读者与人设仍只来自小红书定位档案。 */
+  /** 内容模型用全应用统一的那一个（「设置 → 模型」）；读者与人设来自小红书定位，IP 只补充品牌名与核心主张。 */
   const apiConfig = (_account?: XhsAccount): XhsApiConfig => {
     if (!ctx.settings.read().llmEnabled) throw new Error(`请先在${MODEL_SETTINGS_WHERE}里允许调用内容模型`);
     const apiKey = ctx.llmApiKey();
     if (!apiKey) throw new Error(`还没有配置内容模型的 API Key，请先在${MODEL_SETTINGS_WHERE}里填写`);
-    return { apiKey, ...writerEndpoint(readWeWriteFiles().configText) };
+    let ip: { name: string; tagline: string } | null = null;
+    if (_account?.ipId) {
+      try {
+        const profile = ctx.ipLibrary.get(_account.ipId);
+        ip = { name: profile.name, tagline: profile.tagline };
+      } catch {
+        // IP 已删除时照常生成文字，不让旧选择卡住整篇笔记。
+      }
+    }
+    return { apiKey, ...writerEndpoint(readWeWriteFiles().configText), ip };
   };
   const assetDir = (noteId: number) => {
     const directory = path.join(ctx.dataDir, 'xhs-assets', String(noteId));
@@ -417,43 +427,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
 
   /* ── 热点选题 ───────────────────────────────────────────────── */
 
-  /**
-   * 数据源按优先级降级：红狐（有 key 时）→ 联网搜索（必应）。
-   * 同样的查询 24 小时内走缓存：红狐每天只更新一次，重查没有新数据还费额度。
-   */
-  ipcMain.handle('xhs:hotspot:search', async (_event, query: XhsHotspotQuery): Promise<XhsHotspotResult> => {
-    const source = query?.source ?? 'auto';
-    const normalized = normalizeHotspotQuery(query ?? { keyword: '' });
-    const apiKey = ctx.redfoxApiKey();
-    let notice = '';
-    if (source === 'redfox' || (source === 'auto' && apiKey)) {
-      const key = hotspotCacheKey(normalized, 'redfox');
-      const cached = query.refresh ? null : readHotspotCache(db, key);
-      if (cached) return cached;
-      try {
-        const result = await searchRedfox(query, redfox(apiKey));
-        writeHotspotCache(db, key, result);
-        return result;
-      } catch (error) {
-        if (source === 'redfox') throw error;
-        notice = `红狐不可用（${error instanceof Error ? error.message : String(error)}），已改用联网搜索`;
-      }
-    } else if (source === 'auto') {
-      notice = '还没有配置红狐 API Key，已改用联网搜索';
-    }
-    if (!normalized.keyword) throw new Error(`${notice ? `${notice}；` : ''}联网搜索需要关键词，全站热门只有红狐支持`);
-    const key = hotspotCacheKey(normalized, 'web');
-    const cached = query.refresh ? null : readHotspotCache(db, key);
-    if (cached) return { ...cached, notice: notice || cached.notice };
-    const notes = await searchBing(normalized.keyword);
-    const result: XhsHotspotResult = {
-      source: 'web', keyword: normalized.keyword, startDate: '', endDate: '', total: notes.length, notes: notes.slice(0, normalized.pageSize), latest: [],
-      relatedSearches: [], hotTopics: [], fetchedAt: new Date().toISOString(), cached: false, notice,
-      tips: '联网搜索结果来自公开网页，没有互动数据：只能看标题钩子、内容形态和方向有没有人写，互动量级、账号量级与热度趋势都需要配置数据源，结论未经互动数据验证。'
-    };
-    writeHotspotCache(db, key, result);
-    return result;
-  });
+  ipcMain.handle('xhs:hotspot:search', async (_event, query: XhsHotspotQuery): Promise<XhsHotspotResult> =>
+    searchTopicHotspots(db, query, ctx.redfoxApiKey()));
   ipcMain.handle('xhs:hotspot:suggest', async (_event, accountId: number, keyword: string) => accountLock.run(accountId, async () => {
     const account = getXhsAccount(db, accountId);
     const references: string[] = [];

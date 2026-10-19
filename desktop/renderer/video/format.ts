@@ -7,7 +7,7 @@ export const stageLabels: Record<VideoStage, string> = { topics: 'AI 生成候�
 export const statusNames: Record<string, string> = { idea: '选题', script: '已定脚本', storyboard: '已定分镜', exported: '已导出制作包' };
 export const stateNames: Record<VideoStep['state'], string> = { done: '已完成', current: '当前步骤', attention: '需处理', ready: '可进行', locked: '未解锁' };
 
-export type TopicSuggestion = { title: string; hook: string; angle: string; risk: string };
+export type TopicSuggestion = { title: string; hook: string; angle: string; why: string; evidence: string; risk: string };
 
 export function readTopics(value: string): TopicSuggestion[] {
   try {
@@ -16,6 +16,8 @@ export function readTopics(value: string): TopicSuggestion[] {
       title: String(item.title),
       hook: String(item.hook ?? ''),
       angle: String(item.angle ?? ''),
+      why: String(item.why ?? ''),
+      evidence: String(item.evidence_to_verify ?? item.evidence ?? ''),
       risk: String(item.risk_note ?? item.risk ?? '')
     }));
   } catch { return []; }

@@ -10,6 +10,9 @@
 
 export type Bitmap = { data: Buffer; width: number; height: number };
 
+/** 小红书图文与封面的标准输出尺寸：3:4，和本地卡片模板保持一致。 */
+export const XHS_COVER_SIZE = { width: 1080, height: 1440 } as const;
+
 const EDGE_SAMPLE = 6;
 const SMOOTH_RADIUS = 12;
 

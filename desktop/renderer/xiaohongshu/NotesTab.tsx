@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
-import { XHS_STEPS, buildXhsPipeline, currentXhsStepKey, readTags, xhsPipelineProgress, xhsStale } from '../../services/xhs-pipeline';
-import { shortTime } from '../ui';
+import {
+  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsPipelineProgress, xhsStale
+} from '../../services/xhs-pipeline';
+import { shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
 import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, VisualStep, stateNames, useXhsAssets } from './note-steps';
 
@@ -13,6 +15,13 @@ import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, Visua
 
 const EDITABLE: Array<keyof XhsNote> = ['topic', 'noteType', 'material', 'title', 'body', 'tagsJson', 'cardsJson'];
 const STAGE_DONE: Record<XhsGenerateStage, string> = { body: '正文已生成', revise: '已按检测意见回改正文', titles: '标题候选已生成', checks: '检测完成', cards: '图文卡片已拆好分页' };
+const AUTO_STAGE_LABEL: Record<XhsGenerateStage, string> = {
+  body: '正在写正文',
+  titles: '正在生成并选定标题',
+  checks: '正在做发布前检测',
+  revise: '正在按检测意见回改',
+  cards: '正在拆分图文卡片'
+};
 
 export function NotesTab({ ctx, target, onDirtyChange }: {
   ctx: XhsContext; target: { id: number; step?: XhsStepKey; nonce: number } | null;
@@ -27,6 +36,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
   const [step, setStep] = useState<XhsStepKey>('topic');
   const [newTopic, setNewTopic] = useState('');
+  const [autoStage, setAutoStage] = useState<XhsGenerateStage | null>(null);
   const { busy, run, locked } = useBusy(notify);
 
   // 外部跳转（定位、复盘、热点里点进来）指定了笔记与步骤。
@@ -49,6 +59,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const pipeline = useMemo(() => (note ? buildXhsPipeline(note) : []), [note]);
   const assets = useXhsAssets(note?.id ?? 0, note?.updatedAt ?? '');
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
+  const flowRef = useWorkflowStepScroll(`${note?.id ?? 0}:${step}`);
 
   const select = (item: XhsNote) => {
     if (dirty && item.id !== selectedId && !window.confirm('当前笔记有未保存的修改，切换后会丢失。继续？')) return;
@@ -96,6 +107,50 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
     notify(STAGE_DONE[stage]);
     if (next) setStep(next);
   });
+  /**
+   * 自动生成只沿内容模型链路推进，跳过已经完成且没有过期的步骤。
+   * 标题候选生成后自动采用唯一主推标题；检测发现硬性问题时停在检测页，交给用户处理。
+   */
+  const autoGenerate = () => {
+    if (!note) return;
+    const plan = autoXhsPlan(note);
+    if (!plan.ok) { notify(plan.reason); return; }
+    if (!plan.stages.length) {
+      notify('正文、标题和发布前检测都已是最新，无需自动生成');
+      setStep(currentXhsStepKey(note));
+      return;
+    }
+    const replacing = [
+      plan.stages.includes('body') && note.body.trim() ? '正文' : '',
+      plan.stages.includes('titles') && note.title.trim() ? '标题' : ''
+    ].filter(Boolean);
+    if (replacing.length && !window.confirm(`自动生成会重写现有${replacing.join('和')}，并重新做发布前检测。封面、配图与发布不会自动处理。继续？`)) return;
+    void run('auto', async () => {
+      let current = await persist();
+      try {
+        for (const stage of plan.stages) {
+          setAutoStage(stage);
+          current = await window.sydney.generateXhsNote(current.id, stage);
+          apply(current);
+          if (stage === 'titles') {
+            const chosen = pickAutoXhsTitle(readTitleWorkshop(current));
+            if (chosen && chosen.title !== current.title) {
+              current = await window.sydney.updateXhsNote(current.id, { title: chosen.title });
+              apply(current);
+            }
+          }
+        }
+        const passed = checksPassed(current) === true;
+        setStep(passed ? 'visual' : 'checks');
+        notify(passed
+          ? `自动生成完成：${plan.stages.map(stage => STAGE_DONE[stage]).join(' → ')}。封面与配图仍由你确认`
+          : '自动生成完成，但发布前检测仍有必须处理的项；已停在检测页');
+      } finally {
+        setAutoStage(null);
+        await ctx.refresh().catch(() => undefined);
+      }
+    });
+  };
   const confirmBasis = (key: keyof XhsBasis) => run('confirm', async () => { if (note) { await persist(); apply(await window.sydney.confirmXhsBasis(note.id, key)); } });
   const cover = (brief: string) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(note.id, brief)); notify('封面已生成'); } });
   const selectIp = (ipId: string) => run('ip-select', async () => { await window.sydney.updateXhsAccount(account.id, { ipId }); });
@@ -155,6 +210,9 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           </div>
           <div className="native-editor-actions">
             {dirty && <span className="flow-dirty">有未保存修改</span>}
+            <button className="button button-primary" disabled={locked} title="按当前选题自动完成正文 → 生成并选定标题 → 发布前检测；封面、配图与发布仍由你手动确认" onClick={autoGenerate}>
+              {autoStage ? `${AUTO_STAGE_LABEL[autoStage]}…` : '自动生成'}
+            </button>
             <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
             <button className="button button-quiet" disabled={locked} onClick={() => void remove()}>删除</button>
           </div>
@@ -162,12 +220,18 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
 
         <Stepper steps={pipeline} active={step} onSelect={setStep} />
 
-        <section className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="xhs-step-title">
+        <section ref={flowRef} className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="xhs-step-title">
           <header className="flow-panel-head">
             <span className="flow-panel-index">{activeStep.index}</span>
             <div><h3 id="xhs-step-title">{activeStep.label}</h3><p>{activeStep.hint}</p></div>
             <span className={`flow-badge flow-badge-${activeStep.state}`}>{stateNames[activeStep.state]}</span>
           </header>
+          <div className="flow-panel-toolbar">
+            <span className="flow-panel-progress">第 {activeStep.index} / {pipeline.length} 步</span>
+            {index > 0 && <button className="button button-quiet button-small" disabled={locked} onClick={() => setStep(XHS_STEPS[index - 1].key)}>← 上一步</button>}
+            <span className="flow-spacer" />
+            {next && <button className="button button-quiet" disabled={locked} onClick={() => setStep(next)}>下一步：{XHS_STEPS[index + 1].label} →</button>}
+          </div>
           {activeStep.reason && activeStep.state === 'locked' && <p className="flow-locked-note">{activeStep.reason}</p>}
           {locked && <p className="flow-locked-note">正在处理中；完成前这一页的按钮会保持禁用。</p>}
 
@@ -181,11 +245,6 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
           {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}
 
-          <footer className="flow-panel-foot">
-            {index > 0 && <button className="button button-quiet" disabled={locked} onClick={() => setStep(XHS_STEPS[index - 1].key)}>← 上一步</button>}
-            <span className="flow-spacer" />
-            {next && <button className="button button-quiet" disabled={locked} onClick={() => setStep(next)}>下一步：{XHS_STEPS[index + 1].label} →</button>}
-          </footer>
         </section>
       </> : <div className="native-empty native-editor-empty"><strong>还没有选中笔记</strong><span>按 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包 推进。标题放在正文之后：要基于写成的正文做搜索词覆盖与收藏动机。</span></div>}
     </div>

@@ -29,7 +29,7 @@ export const VIDEO_STEPS: Array<{ key: VideoStepKey; label: string; hint: string
   { key: 'storyboard', label: '分镜', hint: '逐镜的作用、画面大字、口播与配图提示词', stage: 'storyboard' },
   { key: 'voice', label: '配音与字幕', hint: '逐镜配音，镜头时长以真实音频为准；字幕按句切分、每行不超过 14 字' },
   { key: 'visuals', label: '画面', hint: '选模板与配图方式，先看每镜一帧的预览再渲染' },
-  { key: 'render', label: '成片', hint: '静帧 + 配音 + 背景音乐合成 1080×1920 的 MP4' },
+  { key: 'render', label: '成片', hint: '静帧 + 配音 + 背景音乐合成 1080×1920 的 MP4；有效成片可直接另存导出' },
   { key: 'cover', label: '封面', hint: '竖版封面：选本地图片或 AI 生成，导出时一起带走' },
   { key: 'export', label: '制作包', hint: '导出成片、脚本、分镜表、字幕与封面到知识库' }
 ];

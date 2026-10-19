@@ -575,13 +575,15 @@ button.chip { cursor: pointer; }
 .ww-page-header-note { display: grid; gap: 3px; color: var(--muted); font-size: 12px; text-align: right; }
 .ww-page-header-note strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .ww-tabs { margin-top: 0; }
+.ww-nav-dock { position: sticky; top: 0; z-index: 24; display: flex; align-items: center; min-width: 0; min-height: 54px; margin-top: -8px; padding: 8px 0 9px; border-bottom: 1px solid var(--line); background: var(--bg); isolation: isolate; box-shadow: 0 10px 18px -16px oklch(0.24 0.02 262 / 48%); }
 .ww-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 8px 18px; padding: 12px 15px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); color: var(--muted); font-size: 12px; }
 .ww-status span { min-width: 0; display: inline-flex; align-items: baseline; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ww-status b { color: var(--faint); font-weight: 600; }
 
 /* 公众号子标签与「环境与配置」面板 */
-.ww-tabs { display: flex; gap: 4px; padding: 3px; width: fit-content; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-raised); }
-.ww-tab { padding: 7px 15px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 13px; transition: background .16s ease-out, color .16s ease-out; }
+.ww-tabs { display: flex; gap: 4px; max-width: 100%; overflow-x: auto; padding: 3px; width: fit-content; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-raised); scrollbar-width: none; }
+.ww-tabs::-webkit-scrollbar { display: none; }
+.ww-tab { flex: 0 0 auto; padding: 7px 15px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); font-size: 13px; white-space: nowrap; transition: background .16s ease-out, color .16s ease-out; }
 .ww-tab:hover { color: var(--ink); }
 .ww-tab.is-active { background: var(--surface); color: var(--primary); font-weight: 600; box-shadow: 0 1px 2px oklch(0.2 0.02 260 / 8%); }
 .wewrite-overview { display: grid; gap: 16px; }
@@ -607,6 +609,13 @@ button.chip { cursor: pointer; }
 .native-export-path { margin: 0; overflow-wrap: anywhere; color: var(--muted); font: 12px/1.6 ui-monospace, Consolas, monospace; }
 .native-topic-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .native-topic-options h3 { grid-column: 1 / -1; margin: 0; font-size: 14px; }
+.video-topic-research { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+.video-topic-research .flow-sub-head { margin: 0; }
+.video-topic-research .xhs-search { padding: 0; }
+.video-topic-research .xhs-search .input:first-child { min-width: 180px; }
+.video-topic-research .xhs-result { padding-top: 2px; }
+.video-topic-research .xhs-hot { gap: 12px; }
+.video-topic-research .xhs-hot:first-child { border-top: 1px solid var(--line); }
 .ww-writer-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .ww-writer-toggle input { accent-color: var(--primary); }
 .ww-savebar > div { display: flex; gap: 8px; }
@@ -711,7 +720,21 @@ button.chip { cursor: pointer; }
 .flow-dirty { align-self: center; color: var(--warning); font-size: 12px; }
 .flow-theme { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 .flow-theme select { padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); font-size: 12px; }
-.flow-stepper { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin: 0; padding: 14px 8px 12px; list-style: none; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); counter-reset: none; }
+.flow-stepper {
+  position: sticky;
+  top: 16px;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0;
+  padding: 14px 8px 12px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 12px 20px -18px oklch(0.24 0.02 262 / 58%);
+  counter-reset: none;
+}
 .flow-node { position: relative; }
 .flow-node::before { content: ""; position: absolute; top: 15px; left: calc(-50% + 17px); right: calc(50% + 17px); height: 2px; background: var(--line); }
 .flow-node:first-child::before { display: none; }
@@ -729,11 +752,16 @@ button.chip { cursor: pointer; }
 .flow-node-locked .flow-node-label { color: var(--faint); font-weight: 500; }
 .flow-node.is-active > button { background: oklch(0.965 0.018 263); }
 .flow-node.is-active .flow-node-label { color: var(--primary); }
-.flow-panel { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.flow-panel { display: grid; gap: 14px; scroll-margin-top: 172px; padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.wewrite .flow-stepper, .xhs-panel .flow-stepper { top: 70px; }
+.wewrite .flow-panel, .xhs-panel .flow-panel { scroll-margin-top: 230px; }
 .flow-panel-head { display: flex; align-items: center; gap: 12px; }
 .flow-panel-head h3 { margin: 0; font-size: 16px; font-weight: 650; }
 .flow-panel-head p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
 .flow-panel-head > div { flex: 1; }
+.flow-panel-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -15px -18px 0; padding: 10px 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.flow-panel-toolbar .button-small { padding: 5px 9px; }
+.flow-panel-progress { color: var(--faint); font: 600 11px/1.4 var(--mono); letter-spacing: .02em; white-space: nowrap; }
 .flow-panel-index { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-sm); background: oklch(0.94 0.025 263); color: var(--primary); font: 700 13px/1 ui-monospace, Consolas, monospace; }
 .flow-badge { padding: 4px 8px; border-radius: 4px; background: var(--surface-raised); color: var(--muted); font-size: 11px; }
 .flow-badge-done { background: oklch(0.95 0.035 155); color: oklch(0.38 0.1 155); }
@@ -763,6 +791,21 @@ button.chip { cursor: pointer; }
 /* 说明文字跟在按钮后面：够宽就占满剩余宽度，不够就自己换到下一行 */
 .flow-inline-actions > small { flex: 1 1 260px; min-width: 0; }
 .flow-inline-actions small, .flow-risk { color: var(--muted); font-size: 11px; }
+.flow-secondary-tools { display: grid; gap: 11px; padding: 0 13px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+.flow-secondary-tools > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 9px; margin: 0 -13px; padding: 10px 13px; cursor: pointer; color: var(--ink-soft); font-size: 12.5px; font-weight: 600; list-style: none; }
+.flow-secondary-tools > summary::-webkit-details-marker { display: none; }
+.flow-secondary-tools > summary::after { content: "+"; margin-left: auto; color: var(--faint); font: 500 18px/1 var(--mono); }
+.flow-secondary-tools[open] > summary { border-bottom: 1px solid var(--line); }
+.flow-secondary-tools[open] > summary::after { content: "−"; }
+.flow-secondary-tools > summary small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.flow-secondary-tools .xhs-step-sub:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.video-prompt-settings > p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.video-prompt-settings code { padding: 1px 4px; border-radius: 4px; background: var(--surface); font: 11.5px/1.4 var(--mono); }
+.video-prompt-fields { display: grid; gap: 14px; }
+.video-prompt-fields > div { display: grid; gap: 7px; }
+.video-prompt-fields label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--ink-soft); font-size: 12.5px; font-weight: 600; }
+.video-prompt-fields label small { flex: 1 1 320px; color: var(--muted); font-size: 11.5px; font-weight: 400; line-height: 1.6; }
+.video-prompt-textarea { min-height: 120px; padding: 10px 12px; font: 12.5px/1.75 var(--mono); }
 .flow-empty { margin: 0; padding: 20px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 13px; text-align: center; }
 .flow-pre { margin: 0; max-height: 360px; overflow: auto; font: 12px/1.6 ui-monospace, Consolas, monospace; white-space: pre-wrap; }
 .flow-fields { display: grid; gap: 0; margin: 0; border: 1px solid var(--line); border-radius: var(--radius); }
@@ -805,7 +848,6 @@ button.chip { cursor: pointer; }
 .flow-checklist li.is-missing > span { color: var(--faint); }
 .flow-checklist strong { display: block; font-size: 13px; }
 .flow-checklist small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.flow-panel-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
 .flow-spacer { flex: 1; }
 .flow-mini { display: flex; gap: 3px; margin-top: 2px; }
 .flow-mini i { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
@@ -859,18 +901,26 @@ button.chip { cursor: pointer; }
  */
 @media (min-width: 1101px) {
   .native-task-list { position: sticky; top: 16px; max-height: calc(100vh - var(--titlebar-h) - 32px); overflow-y: auto; padding-right: 2px; }
+  .wewrite .native-task-list, .xhs-panel .native-task-list { top: 70px; max-height: calc(100vh - var(--titlebar-h) - 86px); }
 }
 .ww-savebar { position: sticky; bottom: 12px; z-index: 5; border-radius: var(--radius); box-shadow: var(--shadow-md); backdrop-filter: blur(6px); }
 .ww-input input, .ww-input textarea, .ww-input select { border-color: var(--line-strong); }
 .ww-input input:focus, .ww-input textarea:focus, .ww-input select:focus,
 .native-create select:focus, .native-create input:focus, .native-task-fields input:focus, .native-task-fields select:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px oklch(0.62 0.15 264 / 15%); }
 
-/* ── 创作设置：模板/资料/读者/类别直接放在创作流水线里 ── */
-.flow-settings { display: grid; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.flow-settings-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.flow-settings-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
-.flow-settings-head p { margin: 4px 0 0; max-width: 720px; color: var(--muted); font-size: 12px; line-height: 1.6; }
-.flow-settings-actions { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+/* ── 创作设置：默认收成一行，需要时再展开，避免压住真正的创作任务 ── */
+.flow-settings { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.flow-settings > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 15px; border-radius: inherit; cursor: pointer; list-style: none; }
+.flow-settings > summary::-webkit-details-marker { display: none; }
+.flow-settings > summary > span:first-child { display: grid; gap: 3px; min-width: 0; }
+.flow-settings > summary strong { font-size: 13px; font-weight: 650; }
+.flow-settings > summary small { overflow: hidden; color: var(--muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.flow-settings-hint { flex: none; color: var(--faint); font-size: 11.5px; }
+.flow-settings[open] > summary { border-bottom: 1px solid var(--line); border-radius: var(--radius) var(--radius) 0 0; }
+.flow-settings[open] > summary .flow-settings-hint::after { content: " · 收起"; }
+.flow-settings.is-incomplete > summary strong { color: var(--warning-ink); }
+.flow-settings-body { display: grid; justify-items: start; gap: 11px; padding: 13px 15px 15px; }
+.flow-settings-body > p { max-width: 760px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .flow-settings-summary { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--muted); font-size: 12px; }
 .flow-settings-summary span { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; overflow-wrap: anywhere; }
 .flow-settings-summary b { color: var(--faint); font-weight: 600; }

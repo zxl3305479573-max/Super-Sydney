@@ -31,6 +31,9 @@ test('render options merge patches and reject values the renderer cannot honour'
   assert.throws(() => normalizeRenderOptions({ voiceMode: 'robot' }), /配音方式/);
   assert.throws(() => normalizeRenderOptions({ imageMode: 'video' }), /配图方式/);
   assert.throws(() => normalizeRenderOptions({ bgmPath: 3 }), /文本/);
+  assert.throws(() => normalizeRenderOptions({ shotImagePromptTemplate: 3 }), /逐镜配图/);
+  assert.equal(normalizeRenderOptions({ shotImagePromptTemplate: '' }).shotImagePromptTemplate, VIDEO_RENDER_DEFAULTS.shotImagePromptTemplate);
+  assert.equal(normalizeRenderOptions({ coverImagePromptTemplate: '封面 {title}' }).coverImagePromptTemplate, '封面 {title}');
   // 旧任务没有这一列、或者库里存坏了，都按默认值读出来。
   assert.deepEqual(parseRenderOptions(''), VIDEO_RENDER_DEFAULTS);
   assert.deepEqual(parseRenderOptions('{broken'), VIDEO_RENDER_DEFAULTS);
@@ -80,6 +83,8 @@ test('shot images are keyed by the full prompt so a changed prompt needs a new i
   const prompt = shotImagePrompt(shots[0], '控糖早餐');
   assert.match(prompt, /清晨厨房/);
   assert.match(prompt, /不要出现任何文字/);
+  assert.match(prompt, /一个清晰的主体和一个明确动作/);
+  assert.match(prompt, /中国家庭或社区日常场景/);
   // 没有配图提示词时退回画面描述。
   assert.match(shotImagePrompt(shots[1], '控糖早餐'), /饭桌/);
   const withImage = project({ options: { ...VIDEO_RENDER_DEFAULTS, imageMode: 'ai' }, assets: { ...emptyRenderAssets(), images: [{ key: imageKey(prompt), path: 'i.png' }] } });

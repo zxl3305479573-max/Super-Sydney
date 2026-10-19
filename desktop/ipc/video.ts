@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { dialog, ipcMain, shell } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
-import type { VideoAssetBundle, VideoPlatform, VideoProgress, VideoProject, VideoRenderAssets, VideoStage, VideoTtsSettings, VideoTtsStatus } from '../shared';
-import { videoCoverPrompt } from '../services/content-api-config';
+import type {
+  VideoAssetBundle, VideoPlatform, VideoProgress, VideoProject, VideoRenderAssets, VideoStage, VideoTtsSettings, VideoTtsStatus,
+  VideoTopicSearchQuery, VideoTopicSearchResult
+} from '../shared';
+import { videoCoverPrompt } from '../services/video-image-prompts';
 import { imageThumbnail } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import {
@@ -24,7 +27,8 @@ import { normalizeVideoIpCoverInput, renderVideoIpCover, VIDEO_COVER_SIZE } from
 import { renderHtmlPages } from '../services/xhs-render';
 import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
-import { exportVideoPackage } from '../services/video-export';
+import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export';
+import { searchVideoTopicHotspots } from '../services/video-topic-search';
 import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
@@ -56,6 +60,9 @@ export function registerVideoIpc(ctx: AppContext): void {
   const progress = (payload: VideoProgress) => ctx.window()?.webContents.send('video:progress', payload);
 
   ipcMain.handle('video:list', () => listVideoProjects(db));
+  /** 按发布平台路由选题数据源：对应红狐接口优先，没有 key 或失败时改用平台化联网搜索。 */
+  ipcMain.handle('video:topics:search', async (_event, query: VideoTopicSearchQuery): Promise<VideoTopicSearchResult> =>
+    searchVideoTopicHotspots(db, query, ctx.redfoxApiKey()));
   ipcMain.handle('video:create', (_event, platform: VideoPlatform, topic = '') => {
     let project = createVideoProject(db, platform, topic);
     // 新视频默认带上视频模块上次选的 IP；之后每条视频各自记着自己的。
@@ -121,7 +128,15 @@ export function registerVideoIpc(ctx: AppContext): void {
     const project = getVideoProject(db, id);
     if (!(project.title || project.topic).trim()) throw new Error('请先确定选题或填写标题，再生成封面');
     const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-${Date.now()}.png`);
-    return update(id, { coverPath: await generateImageFile(target, videoCoverPrompt(project), '1024x1792', undefined, ipReferenceImage(ctx.ipLibrary, project.options.ipId)) });
+    return update(id, {
+      coverPath: await generateImageFile(
+        target,
+        videoCoverPrompt(project, project.options.coverImagePromptTemplate),
+        '1024x1792',
+        undefined,
+        ipReferenceImage(ctx.ipLibrary, project.options.ipId)
+      )
+    });
   }));
 
   /* ── 配音 ──────────────────────────────────────────────────────
@@ -194,7 +209,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const directory = path.join(root, 'images');
     fs.mkdirSync(directory, { recursive: true });
     const wanted = new Map(shots.map(shot => {
-      const prompt = shotImagePrompt(shot, title);
+      const prompt = shotImagePrompt(shot, title, project.options.shotImagePromptTemplate);
       return [imageKey(prompt, ipId), prompt] as const;
     }));
     const kept = force === true ? [] : project.assets.images.filter(item => wanted.has(item.key) && fs.existsSync(item.path));
@@ -353,6 +368,20 @@ export function registerVideoIpc(ctx: AppContext): void {
     const video = getVideoProject(db, id).assets.video;
     if (!video || !fs.existsSync(video.path)) throw new Error('还没有可打开的成片，请先渲染');
     return shell.openPath(video.path);
+  });
+  /** 直接把当前有效成片另存为 .mp4；保存位置由用户确认。 */
+  ipcMain.handle('video:save-mp4', async (_event, id: number) => {
+    assertIdle(id, '导出 MP4');
+    const project = getVideoProject(db, id);
+    if (!project.assets.video || !fs.existsSync(project.assets.video.path)) throw new Error('还没有可导出的成片，请先渲染');
+    const result = await dialog.showSaveDialog(ctx.window()!, {
+      title: '导出 MP4 视频',
+      defaultPath: path.join(app.getPath('videos'), suggestedMp4Name(project)),
+      filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+      properties: ['showOverwriteConfirmation', 'createDirectory']
+    });
+    if (result.canceled || !result.filePath) return null;
+    return copyRenderedVideoTo(project, result.filePath);
   });
 
   /** 导出制作包：写知识库属于本地动作，但会生成一堆文件，所以先过门槛再落盘。 */

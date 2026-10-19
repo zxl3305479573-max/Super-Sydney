@@ -99,7 +99,7 @@ export function PositioningTab({ ctx, onAccount }: { ctx: XhsContext; onAccount:
       </div> : <p className="flow-empty">还没有定位档案。</p>}
     </Section>
 
-    <Section title="IP 形象" hint="这个账号用哪个 IP：选了之后，笔记封面可以用 IP 模板本地出图（品牌名、头像、配色、角色都取自这个 IP），不消耗图片接口额度。IP 在「设置 → IP 形象」里管理。">
+    <Section title="IP 形象" hint="这个账号用哪个 IP：写作会把 IP 名称与口头禅转成观察视角和表达习惯，自然融入而不是每篇自报身份；封面、信息图和图文卡片也使用同一角色与配色。IP 在「设置 → IP 形象」里管理。">
       <IpPicker label="这个账号的 IP" value={account.ipId} ips={ipLibrary.ips} disabled={locked} onChange={value => void selectIp(value)} />
     </Section>
   </div>;

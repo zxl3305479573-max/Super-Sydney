@@ -1,6 +1,6 @@
 import type {
-  XhsAccount, XhsBasis, XhsCardPlan, XhsCheckItem, XhsCheckReport, XhsCandidate, XhsFunnelLayer, XhsImageItem, XhsNote, XhsNoteStatus,
-  XhsPositioning, XhsPositioningTurn, XhsRouterAdvice, XhsStepKey, XhsTitleWorkshop, XhsWriterMeta
+  XhsAccount, XhsBasis, XhsCardPlan, XhsCheckItem, XhsCheckReport, XhsCandidate, XhsFunnelLayer, XhsGenerateStage, XhsImageItem, XhsNote, XhsNoteStatus,
+  XhsPositioning, XhsPositioningTurn, XhsRouterAdvice, XhsStepKey, XhsTitleCandidate, XhsTitleWorkshop, XhsWriterMeta
 } from '../shared.ts';
 import {
   XHS_BODY_LIMIT, XHS_CHECKS, XHS_FUNNEL_LAYERS, XHS_NOTE_TYPES, XHS_RISK_EXCEPTIONS, XHS_RISK_WORDS, XHS_TAG_RANGE, XHS_TITLE_LIMIT, xhsCardStyle
@@ -227,6 +227,40 @@ export function buildXhsPipeline(note: XhsNote): XhsStep[] {
 export function currentXhsStepKey(note: XhsNote): XhsStepKey {
   const steps = buildXhsPipeline(note);
   return (steps.find(step => step.state === 'current' || step.state === 'attention') ?? steps[steps.length - 1]).key;
+}
+
+/**
+ * 小红书「自动生成」只跑内容模型链路：正文、标题候选、发布前检测。
+ * 从当前产物接着跑：已有且未过期的正文不会重写，已有且未过期的标题也不会重生成。
+ * 封面、卡片图、信息图与发布都涉及费用或外部动作，仍由人单独确认。
+ */
+export const AUTO_XHS_STAGES: XhsGenerateStage[] = ['body', 'titles', 'checks'];
+
+export type AutoXhsPlan =
+  | { ok: false; reason: string }
+  | { ok: true; stages: XhsGenerateStage[] };
+
+export function autoXhsPlan(note: XhsNote): AutoXhsPlan {
+  if (!note.topic.trim()) return { ok: false, reason: '请先填写选题，再点自动生成' };
+  const bodyNeedsWrite = !note.body.trim() || xhsStale(note, 'body');
+  const titleNeedsWrite = bodyNeedsWrite || !note.title.trim() || xhsStale(note, 'title');
+  const checksNeedUpdate = bodyNeedsWrite || titleNeedsWrite || !note.checksJson.trim() || xhsStale(note, 'checks');
+  const stages = AUTO_XHS_STAGES.filter(stage => {
+    if (stage === 'body') return bodyNeedsWrite;
+    if (stage === 'titles') return titleNeedsWrite;
+    return checksNeedUpdate;
+  });
+  return { ok: true, stages };
+}
+
+/** 自动采用标题时优先主推且无风险，其次无风险候选；只有全都带风险时才退到主推。 */
+export function pickAutoXhsTitle(workshop: XhsTitleWorkshop | null): XhsTitleCandidate | null {
+  const candidates = workshop?.candidates ?? [];
+  return candidates.find(item => item.role === 'primary' && !item.risks.length)
+    ?? candidates.find(item => !item.risks.length)
+    ?? candidates.find(item => item.role === 'primary')
+    ?? candidates[0]
+    ?? null;
 }
 
 export function xhsPipelineProgress(note: XhsNote): { done: number; total: number } {

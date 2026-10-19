@@ -26,6 +26,9 @@ test('topic stage returns candidates and keeps the platform guide in the prompt'
   // 健康合规规则必须随每次调用一起下发，不能依赖模型记忆。
   assert.match(body, /不诊断、不开药方/);
   assert.match(body, /没有联网核实能力/);
+  assert.match(body, /五个候选必须角度不同/);
+  assert.match(body, /evidence_to_verify/);
+  assert.match(body, /不得编造趋势数据/);
 });
 
 test('script stage sends the target length and returns plain script text', async () => {
@@ -36,6 +39,9 @@ test('script stage sends the target length and returns plain script text', async
   });
   assert.match(String(result.script), /第一句。/);
   assert.match(body, /240 字左右/);
+  assert.match(body, /不用“大家好”“今天聊聊”/);
+  assert.match(body, /禁止 Markdown/);
+  assert.match(body, /写完后自检/);
 });
 
 test('storyboard stage normalizes shots and refuses an empty result', async () => {
@@ -54,8 +60,24 @@ test('storyboard stage normalizes shots and refuses an empty result', async () =
   // 提示词要求逐镜给出作用、画面大字与配图提示词。
   assert.match(body, /image_prompt/);
   assert.match(body, /不超过 12 字/);
+  assert.match(body, /主体、动作、环境、景别或构图、光线和情绪/);
+  assert.match(body, /不要出现任何文字、数字、标志/);
   await assert.rejects(() => requestVideoStage(project({ script: 'x' }), 'storyboard', config, async () =>
     new Response(JSON.stringify({ choices: [{ message: { content: '{"shots":[]}' } }] }), { status: 200 })), /有效镜头/);
+});
+
+test('storyboard stage uses the per-video custom image prompt rule', async () => {
+  let body = '';
+  const custom = project({
+    script: '开场白',
+    options: { ...VIDEO_RENDER_DEFAULTS, storyboardImagePromptRule: '- image_prompt：只画中国社区里的真实生活动作。' }
+  });
+  await requestVideoStage(custom, 'storyboard', config, async (_url, init) => {
+    body = String(init?.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ shots: [{ no: 1, seconds: 5, role: 'hook', caption: '开场', visual: '社区', narration: '开场白', image_prompt: '社区里散步' }] }) } }] }), { status: 200 });
+  });
+  assert.match(body, /只画中国社区里的真实生活动作/);
+  assert.doesNotMatch(body, /主体 \+ 一个明确动作 \+ 环境 \+ 构图 \+ 光线 \+ 情绪/);
 });
 
 test('rejects before fetch when the API key is missing and surfaces HTTP errors', async () => {

@@ -334,6 +334,12 @@ export type VideoRenderOptions = {
   footer: string;
   /** 画面里带哪个 IP 的品牌角标和角色（IP 库里的 id）；空串表示不带。 */
   ipId: string;
+  /** 分镜模型填写 image_prompt 的自定义规则；空串按默认规则。 */
+  storyboardImagePromptRule: string;
+  /** 逐镜 AI 配图的最终提示词模板，支持 {title}、{subject}。 */
+  shotImagePromptTemplate: string;
+  /** AI 竖版封面的提示词模板，支持 {title}、{context}。 */
+  coverImagePromptTemplate: string;
 };
 export type VideoAudioAsset = { key: string; path: string; seconds: number };
 export type VideoImageAsset = { key: string; path: string };
@@ -608,6 +614,9 @@ export type XhsHotspotResult = {
   /** 降级说明，例如「红狐 Key 无效，已改用联网搜索」。 */
   notice?: string;
 };
+/** 视频选题按发布平台选择数据源；小红书沿用现有适配器，其他平台走各自的红狐接口或平台化联网搜索。 */
+export type VideoTopicSearchQuery = XhsHotspotQuery & { platform: VideoPlatform };
+export type VideoTopicSearchResult = XhsHotspotResult & { platform: VideoPlatform };
 export type XhsTopicIdea = { title: string; pillar: string; noteType: XhsNoteType; angle: string; why: string };
 
 export type XhsFunnelLayer = 'exposure' | 'click' | 'depth' | 'engagement' | 'save' | 'follow';
@@ -821,6 +830,8 @@ export interface SydneyApi {
   importArticleStats(profileId: number | null): Promise<ArticleStatsImportResult | null>;
   deleteArticleStat(id: number, profileId: number | null): Promise<ArticleStatsView>;
   listVideoProjects(): Promise<VideoProject[]>;
+  /** 视频选题搜索：按发布平台调用对应红狐接口，失败或没有 Key 时改用平台化联网搜索。 */
+  searchVideoTopics(query: VideoTopicSearchQuery): Promise<VideoTopicSearchResult>;
   createVideoProject(platform: VideoPlatform, topic?: string): Promise<VideoProject>;
   /** 删除视频任务与它的封面文件；已导出的发布包不动。 */
   deleteVideoProject(id: number): Promise<void>;
@@ -840,6 +851,8 @@ export interface SydneyApi {
   /** 每镜渲染一帧预览，渲染成片前自查。 */
   renderVideoPreview(id: number): Promise<VideoProject>;
   renderVideo(id: number): Promise<VideoProject>;
+  /** 把当前有效成片另存为 .mp4；用户取消时返回 null。 */
+  saveVideoMp4(id: number): Promise<string | null>;
   /** 选择背景音乐；用户取消时返回 null。 */
   chooseVideoBgm(id: number): Promise<VideoProject | null>;
   openVideoFile(id: number): Promise<string>;

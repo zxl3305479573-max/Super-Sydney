@@ -163,8 +163,10 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
       </div>
     </header>
 
-    <nav className="ww-tabs xhs-tabs" role="tablist" aria-label="小红书分区">
-      {TABS.map(item => <button key={item} role="tab" aria-selected={tab === item} className={`ww-tab ${tab === item ? 'is-active' : ''}`} onClick={() => setTab(item)}>{XHS_TAB_LABELS[item]}</button>)}
+    <nav className="ww-nav-dock" aria-label="小红书分区">
+      <div className="ww-tabs xhs-tabs" role="tablist" aria-label="小红书分区">
+        {TABS.map(item => <button key={item} role="tab" aria-selected={tab === item} className={`ww-tab ${tab === item ? 'is-active' : ''}`} onClick={() => setTab(item)}>{XHS_TAB_LABELS[item]}</button>)}
+      </div>
     </nav>
 
     <div key={account.id} className="xhs-account-scope">

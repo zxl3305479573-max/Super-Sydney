@@ -4,7 +4,7 @@ import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html'
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
 import { profileDefaultSubdirection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
-import { ConfirmButton, readableError, shortTime } from './ui';
+import { ConfirmButton, readableError, shortTime, useWorkflowStepScroll } from './ui';
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
 import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
@@ -331,6 +331,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   const autoStage = busy.startsWith('auto:') ? busy.slice('auto:'.length) as ContentStage : null;
   const autoStageLabel = autoStage ? stageLabels[autoStage] : '准备中';
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
+  const flowRef = useWorkflowStepScroll(`${selectedId ?? 0}:${step}`);
 
   return <section className="native-content">
     <ContentSettingsPanel profile={profile} onOpenConfig={onOpenConfig} />
@@ -385,12 +386,26 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
 
           <Stepper steps={pipeline} active={step} onSelect={setStep} />
 
-          <section className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="flow-step-title">
+          <section ref={flowRef} className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="flow-step-title">
             <header className="flow-panel-head">
               <span className="flow-panel-index">{activeStep.index}</span>
               <div><h3 id="flow-step-title">{activeStep.label}</h3><p>{activeStep.hint}</p></div>
               <span className={`flow-badge flow-badge-${activeStep.state}`}>{stateNames[activeStep.state]}</span>
             </header>
+            <div className="flow-panel-toolbar">
+              <span className="flow-panel-progress">第 {activeStep.index} / {pipeline.length} 步</span>
+              {PIPELINE_STEPS.findIndex(item => item.key === step) > 0 && <button className="button button-quiet button-small" onClick={() => setStep(PIPELINE_STEPS[PIPELINE_STEPS.findIndex(item => item.key === step) - 1].key)}>← 上一步</button>}
+              <span className="flow-spacer" />
+              {activeStep.stage && step !== 'topic' && <button className={`button ${activeStep.state === 'done' ? 'button-secondary' : 'button-primary'}`} disabled={locked || activeStep.state === 'locked'} onClick={() => void runStage(activeStep.stage!)}>
+                {busy === activeStep.stage ? '处理中…' : activeStep.state === 'done' || (step === 'review' && selected.reviewJson) ? `重新${stageLabels[activeStep.stage]}` : stageLabels[activeStep.stage]}</button>}
+              {step === 'review' && activeStep.state === 'attention' && <button className="button button-secondary" disabled={locked} onClick={() => setStep('draft')}>回到初稿修改</button>}
+              {step === 'publish' && <>
+                <button className="button button-secondary" disabled={locked || !(selected.finalArticle.trim() || selected.draft.trim())} title="未通过审稿也能导出，导出前会二次确认" onClick={() => deliver('export')}>{busy === 'export' ? '导出中…' : '导出到 Obsidian'}</button>
+                <button className="button button-primary" disabled={locked || publishChecklist(selected, env).some(item => !item.ok)} title="推送到真实公众号草稿箱；未通过审稿也能推送，推送前会二次确认" onClick={() => deliver('publish')}>{busy === 'publish' ? '推送中…' : '推送草稿箱'}</button>
+                <button className="button button-secondary" disabled={locked} title="切到「公众号后台」页签，在应用里打开微信公众平台，到草稿箱检查排版并手动发表" onClick={openBackend}>打开公众号后台</button>
+              </>}
+              {nextStepKey(step) && <button className="button button-quiet" onClick={() => setStep(nextStepKey(step)!)}>下一步：{PIPELINE_STEPS.find(item => item.key === nextStepKey(step))?.label} →</button>}
+            </div>
             {activeStep.reason && <p className={activeStep.state === 'locked' ? 'flow-locked-note' : 'flow-attention-note'}>{activeStep.reason}</p>}
             {locked && <p className="flow-locked-note">
               {`正在处理中，已等待 ${busySeconds} 秒；完成前这一页的按钮会保持禁用。`}
@@ -425,20 +440,6 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
             {step === 'publish' && <PublishStep task={selected} env={env} />}
 
             {candidateSheet && candidateSheet.taskId === selected.id && <ImageCandidatePicker bundle={candidateSheet} busy={busy} onApply={picks => void applyCandidates(picks)} onDiscard={() => void discardCandidates()} />}
-
-            <footer className="flow-panel-foot">
-              {PIPELINE_STEPS.findIndex(item => item.key === step) > 0 && <button className="button button-quiet" onClick={() => setStep(PIPELINE_STEPS[PIPELINE_STEPS.findIndex(item => item.key === step) - 1].key)}>← 上一步</button>}
-              <span className="flow-spacer" />
-              {activeStep.stage && step !== 'topic' && <button className={`button ${activeStep.state === 'done' ? 'button-secondary' : 'button-primary'}`} disabled={locked || activeStep.state === 'locked'} onClick={() => void runStage(activeStep.stage!)}>
-                {busy === activeStep.stage ? '处理中…' : activeStep.state === 'done' || (step === 'review' && selected.reviewJson) ? `重新${stageLabels[activeStep.stage]}` : stageLabels[activeStep.stage]}</button>}
-              {step === 'review' && activeStep.state === 'attention' && <button className="button button-secondary" onClick={() => setStep('draft')}>回到初稿修改</button>}
-              {step === 'publish' && <>
-                <button className="button button-secondary" disabled={locked || !(selected.finalArticle.trim() || selected.draft.trim())} title="未通过审稿也能导出，导出前会二次确认" onClick={() => deliver('export')}>{busy === 'export' ? '导出中…' : '导出到 Obsidian'}</button>
-                <button className="button button-primary" disabled={locked || publishChecklist(selected, env).some(item => !item.ok)} title="推送到真实公众号草稿箱；未通过审稿也能推送，推送前会二次确认" onClick={() => deliver('publish')}>{busy === 'publish' ? '推送中…' : '推送草稿箱'}</button>
-                <button className="button button-secondary" disabled={locked} title="切到「公众号后台」页签，在应用里打开微信公众平台，到草稿箱检查排版并手动发表" onClick={openBackend}>打开公众号后台</button>
-              </>}
-              {nextStepKey(step) && <button className="button button-quiet" onClick={() => setStep(nextStepKey(step)!)}>下一步：{PIPELINE_STEPS.find(item => item.key === nextStepKey(step))?.label} →</button>}
-            </footer>
           </section>
         </> : <div className="native-empty native-editor-empty"><strong>先创建一个文章任务</strong><span>选择类别后，按 选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布 逐步推进。</span></div>}
       </div>

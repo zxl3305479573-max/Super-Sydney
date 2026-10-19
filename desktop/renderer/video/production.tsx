@@ -3,6 +3,7 @@ import type { VideoAssetBundle, VideoProgress, VideoProject, VideoRenderOptions,
 import { buildSrt, buildTimeline, formatDuration, isPreviewFresh, isRenderFresh, renderBlockers, shotDurations } from '../../services/video-pipeline';
 import { VIDEO_TEMPLATES, describeVoiceProfile, imageCoverage, parseVoiceProfile, shotAudio, shotImage, voiceCoverage } from '../../services/video-production';
 import { buildFramePlan, framePlanOptions, framePlanStills } from '../../services/video-compose';
+import { VIDEO_IMAGE_PROMPT_DEFAULTS } from '../../services/video-image-prompts';
 import { readableError } from '../ui';
 import { IpPicker, useIpLibrary } from '../IpLibrary';
 
@@ -166,6 +167,30 @@ export function VisualsStep({ project, shots, assets, locked, busy, progress, on
       <button role="radio" aria-checked={!ai} className={`choice ${ai ? '' : 'is-active'}`} disabled={locked} onClick={() => onOptions({ imageMode: 'none' })}>纯文字卡片（不花钱）</button>
       <button role="radio" aria-checked={ai} className={`choice ${ai ? 'is-active' : ''}`} disabled={locked} onClick={() => onOptions({ imageMode: 'ai' })}>逐镜 AI 配图（每镜一张，按张计费）</button>
     </div>
+    <details className="flow-secondary-tools video-prompt-settings">
+      <summary>生图提示词（高级）<small>按这条视频保存，修改后重新生成才生效</small></summary>
+      <p className="ww-muted">逐镜模板支持 <code>{'{title}'}</code> 和 <code>{'{subject}'}</code>；封面模板支持 <code>{'{title}'}</code> 和 <code>{'{context}'}</code>。留空保存会恢复对应默认值。</p>
+      <div className="video-prompt-fields">
+        <div>
+          <label><span>分镜生图规则</span><small>控制模型如何填写每一镜的 image_prompt；影响下次生成或重新生成分镜。</small></label>
+          <textarea className="flow-draft video-prompt-textarea" disabled={locked} maxLength={3000} value={project.options.storyboardImagePromptRule}
+            onChange={event => onOptions({ storyboardImagePromptRule: event.target.value })} />
+        </div>
+        <div>
+          <label><span>逐镜配图最终模板</span><small>图片接口实际收到的模板。修改后，已有 AI 配图会因提示词变化标记为待重新生成。</small></label>
+          <textarea className="flow-draft video-prompt-textarea" disabled={locked} maxLength={3000} value={project.options.shotImagePromptTemplate}
+            onChange={event => onOptions({ shotImagePromptTemplate: event.target.value })} />
+        </div>
+        <div>
+          <label><span>AI 竖版封面模板</span><small>只在「封面」步骤点 AI 生成时使用，不影响逐镜配图。</small></label>
+          <textarea className="flow-draft video-prompt-textarea" disabled={locked} maxLength={3000} value={project.options.coverImagePromptTemplate}
+            onChange={event => onOptions({ coverImagePromptTemplate: event.target.value })} />
+        </div>
+      </div>
+      <div className="flow-inline-actions">
+        <button className="button button-quiet" disabled={locked} onClick={() => onOptions({ ...VIDEO_IMAGE_PROMPT_DEFAULTS })}>恢复全部默认提示词</button>
+      </div>
+    </details>
     {ai && <>
       <div className="flow-sub-head">
         <h4>逐镜配图<small>已有 {coverage.ready}/{coverage.needed} 张 · 用公众号配置里的图片接口</small></h4>
@@ -192,9 +217,9 @@ export function VisualsStep({ project, shots, assets, locked, busy, progress, on
   </div>;
 }
 
-export function RenderStep({ project, shots, assets, locked, busy, progress, onOptions, onChooseBgm, onRender, onOpen }: {
+export function RenderStep({ project, shots, assets, locked, busy, progress, onOptions, onChooseBgm, onRender, onSaveMp4, onOpen }: {
   project: VideoProject; shots: VideoShot[]; assets: VideoAssetBundle | null; locked: boolean; busy: string; progress: VideoProgress | null;
-  onOptions: EditOptions; onChooseBgm: () => void; onRender: () => void; onOpen: () => void;
+  onOptions: EditOptions; onChooseBgm: () => void; onRender: () => void; onSaveMp4: () => void; onOpen: () => void;
 }) {
   const blockers = renderBlockers(project);
   const { seconds, voiced } = shotDurations(project, shots);
@@ -225,9 +250,10 @@ export function RenderStep({ project, shots, assets, locked, busy, progress, onO
       <small>建议 8–15%，结尾 2 秒自动淡出。音乐版权请自行确认。</small>
     </label>}
     <div className="flow-inline-actions">
-      <button className="button button-primary" disabled={locked || blockers.length > 0} onClick={onRender}>{busy === 'render' ? '渲染中…' : video ? '重新渲染' : '渲染成片'}</button>
+      <button className={`button ${fresh ? 'button-secondary' : 'button-primary'}`} disabled={locked || blockers.length > 0} onClick={onRender}>{busy === 'render' ? '渲染中…' : video ? '重新渲染' : '渲染成片'}</button>
+      {fresh && <button className="button button-primary" disabled={locked || !assets?.videoPath} onClick={onSaveMp4}>{busy === 'save-mp4' ? '导出中…' : '导出 MP4'}</button>}
       {assets?.videoPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开成片</button>}
-      <small>需要本机安装 ffmpeg。成片先存在应用目录，导出制作包时一起拷进知识库；不会上传到任何平台。</small>
+      <small>需要本机安装 ffmpeg。渲染完成后可直接导出 MP4；制作包仍会带上当前有效成片。不会上传到任何平台。</small>
     </div>
     {busy === 'render' && <ProgressBar progress={progress} />}
     {video && <p className={fresh ? 'native-export-path' : 'flow-attention-note'}>

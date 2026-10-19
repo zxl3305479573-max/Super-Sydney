@@ -1,4 +1,4 @@
-import type { XhsHotNote, XhsPageRead, XhsProfileRead } from '../shared.ts';
+import type { VideoPlatform, XhsHotNote, XhsPageRead, XhsProfileRead } from '../shared.ts';
 import { fingerprint } from './xhs-pipeline.ts';
 import { parseCount } from './xhs-hotspot.ts';
 
@@ -127,9 +127,18 @@ export const BING_EXTRACT_SCRIPT = `(() => Array.from(document.querySelectorAll(
   return { title: a ? a.textContent.trim() : '', url: a ? a.href : '', snippet: p ? p.textContent.trim() : '' };
 }))()`;
 
-export function bingSearchUrls(keyword: string): string[] {
+export function bingSearchUrls(keyword: string, platform: VideoPlatform = 'xiaohongshu'): string[] {
   const word = keyword.trim();
-  return [`小红书 ${word} 爆款笔记`, `小红书 ${word}`].map(query => `https://cn.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-CN`);
+  const queries = platform === 'douyin'
+    ? [`抖音 ${word} 热门视频`, `抖音 ${word}`]
+    : platform === 'shipinhao'
+      ? [`视频号 ${word} 热门视频`, `微信视频号 ${word}`]
+      : platform === 'bilibili'
+        ? [`B站 ${word} 热门视频`, `哔哩哔哩 ${word}`]
+        : platform === 'general'
+          ? [`${word} 短视频 热门`, `${word}`]
+          : [`小红书 ${word} 爆款笔记`, `小红书 ${word}`];
+  return queries.map(query => `https://cn.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-CN`);
 }
 
 /**

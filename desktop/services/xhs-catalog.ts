@@ -90,7 +90,7 @@ export const XHS_CHECKS: Array<{ id: string; label: string; source: 'local' | 'm
   { id: 'hook', label: '开头 3 行留得住人', source: 'model', hint: '前 3 行要让人想继续往下看' },
   { id: 'payoff', label: '标题承诺在正文兑现', source: 'model', hint: '标题说了什么，正文就要给到什么' },
   { id: 'compliance', label: '符合内容方向的合规约束', source: 'model', hint: '例如健康科普不诊断、不开药方、不给剂量' },
-  { id: 'persona', label: '与人设语气一致', source: 'model', hint: '和定位档案里的人设说话方式一致' },
+  { id: 'persona', label: 'IP 人设自然融入', source: 'model', hint: '视角、判断与说话方式和人设一致；不是靠自报身份、反复提账号名或硬塞口头禅来体现' },
   { id: 'interaction', label: '结尾有自然的互动引导', source: 'model', hint: '提一个具体、好回答的问题，而不是「求关注」' }
 ];
 

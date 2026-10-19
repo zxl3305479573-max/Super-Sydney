@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VideoIpCoverInput, VideoPlatform, VideoProgress, VideoProject, VideoRenderOptions, VideoStage } from '../shared';
-import { ConfirmButton, readableError, shortTime } from './ui';
+import { ConfirmButton, readableError, shortTime, useWorkflowStepScroll } from './ui';
 import {
   AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildVideoPipeline, currentVideoStepKey,
   nextVideoStepKey, parseVideoShots, videoPipelineProgress, videoPlatformLabel,
@@ -193,6 +193,11 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
     replaceProject(project);
     notify(`成片已渲染：${project.assets.video?.path ?? ''}`);
   });
+  const saveVideoMp4 = () => guarded('save-mp4', async () => {
+    if (!selected) return;
+    const target = await window.sydney.saveVideoMp4(selected.id);
+    if (target) notify(`MP4 已导出：${target}`);
+  });
   const chooseBgm = () => guarded('bgm', async () => {
     if (!selected) return;
     // 先存下未保存的修改：选曲返回的是库里的版本，不先存会把界面上的改动冲掉。
@@ -209,6 +214,7 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
   const locked = busy !== '';
   const autoStage = busy.startsWith('auto:') ? busy.slice(5) as VideoStage : null;
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
+  const flowRef = useWorkflowStepScroll(`${selectedId ?? 0}:${step}`);
 
   return <section className="native-content video-panel">
     <header className="ww-page-header">
@@ -260,17 +266,26 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
 
           <Stepper steps={pipeline} active={step} onSelect={setStep} />
 
-          <section className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="video-step-title">
+          <section ref={flowRef} className={`flow-panel flow-panel-${activeStep.state}`} aria-labelledby="video-step-title">
             <header className="flow-panel-head">
               <span className="flow-panel-index">{activeStep.index}</span>
               <div><h3 id="video-step-title">{activeStep.label}</h3><p>{activeStep.hint}</p></div>
               <span className={`flow-badge flow-badge-${activeStep.state}`}>{stateNames[activeStep.state]}</span>
             </header>
+            <div className="flow-panel-toolbar">
+              <span className="flow-panel-progress">第 {activeStep.index} / {pipeline.length} 步</span>
+              {VIDEO_STEPS.findIndex(item => item.key === step) > 0 && <button className="button button-quiet button-small" disabled={locked} onClick={() => setStep(VIDEO_STEPS[VIDEO_STEPS.findIndex(item => item.key === step) - 1].key)}>← 上一步</button>}
+              <span className="flow-spacer" />
+              {activeStep.stage && step !== 'topic' && <button className={`button ${activeStep.state === 'done' ? 'button-secondary' : 'button-primary'}`} disabled={locked || activeStep.state === 'locked'} onClick={() => void runStage(activeStep.stage!)}>
+                {busy === activeStep.stage ? '处理中…' : activeStep.state === 'done' ? `重新${stageLabels[activeStep.stage]}` : stageLabels[activeStep.stage]}
+              </button>}
+              {nextVideoStepKey(step) && <button className="button button-quiet" disabled={locked} onClick={() => setStep(nextVideoStepKey(step)!)}>下一步：{VIDEO_STEPS.find(item => item.key === nextVideoStepKey(step))?.label} →</button>}
+            </div>
             {activeStep.reason && <p className={activeStep.state === 'locked' ? 'flow-locked-note' : 'flow-attention-note'}>{activeStep.reason}</p>}
             {locked && <p className="flow-locked-note">正在处理中；完成前这一页的按钮会保持禁用。</p>}
 
             {step === 'topic' && <TopicStep project={selected} suggestions={readTopics(selected.topicsJson)} locked={locked} busy={busy}
-              onEdit={editSelected} onRun={() => void runStage('topics')} />}
+              onEdit={editSelected} onRun={() => void runStage('topics')} notify={notify} />}
             {step === 'script' && <ScriptStep project={selected} locked={locked} busy={busy}
               onEdit={script => editSelected({ script })} onRun={() => void runStage('script')} />}
             {step === 'storyboard' && <StoryboardStep shots={shots} raw={selected.storyboardJson} script={selected.script} locked={locked} busy={busy}
@@ -280,20 +295,13 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
             {step === 'visuals' && <VisualsStep project={selected} shots={shots} assets={assets} locked={locked} busy={busy} progress={progress}
               onOptions={editOptions} onImages={generateImages} onPreview={() => void renderPreview()} />}
             {step === 'render' && <RenderStep project={selected} shots={shots} assets={assets} locked={locked} busy={busy} progress={progress}
-              onOptions={editOptions} onChooseBgm={() => void chooseBgm()} onRender={() => void renderVideo()} onOpen={() => void openVideo()} />}
+              onOptions={editOptions} onChooseBgm={() => void chooseBgm()} onRender={() => void renderVideo()}
+              onSaveMp4={() => void saveVideoMp4()} onOpen={() => void openVideo()} />}
             {step === 'cover' && <CoverStep project={selected} assets={assets} locked={locked} busy={busy}
               onChoose={() => void chooseCover()} onGenerate={() => void generateCover()} onOptions={editOptions} onIpCover={input => void ipCover(input)} />}
             {step === 'export' && <ExportStep project={selected} locked={locked} busy={busy}
               onExport={() => void exportPackage()} onOpen={() => void openPackage()} />}
 
-            <footer className="flow-panel-foot">
-              {VIDEO_STEPS.findIndex(item => item.key === step) > 0 && <button className="button button-quiet" disabled={locked} onClick={() => setStep(VIDEO_STEPS[VIDEO_STEPS.findIndex(item => item.key === step) - 1].key)}>← 上一步</button>}
-              <span className="flow-spacer" />
-              {activeStep.stage && step !== 'topic' && <button className={`button ${activeStep.state === 'done' ? 'button-secondary' : 'button-primary'}`} disabled={locked || activeStep.state === 'locked'} onClick={() => void runStage(activeStep.stage!)}>
-                {busy === activeStep.stage ? '处理中…' : activeStep.state === 'done' ? `重新${stageLabels[activeStep.stage]}` : stageLabels[activeStep.stage]}
-              </button>}
-              {nextVideoStepKey(step) && <button className="button button-quiet" disabled={locked} onClick={() => setStep(nextVideoStepKey(step)!)}>下一步：{VIDEO_STEPS.find(item => item.key === nextVideoStepKey(step))?.label} →</button>}
-            </footer>
           </section>
         </> : <div className="native-empty native-editor-empty"><strong>还没有视频任务</strong><span>选好平台后新建一条，按 选题 → 口播脚本 → 分镜 → 配音与字幕 → 画面 → 成片 → 封面 → 制作包 推进；字幕按配音自动排好时间轴。</span></div>}
       </div>

@@ -52,6 +52,7 @@ export function TopicStep({ note, locked, onEdit }: Common & { onEdit: (patch: P
         placeholder="写下你自己的经历、做法、踩过的坑、具体数字。正文只会基于这里写「亲身经历」；不填就按科普 / 整理的口吻写，不会编造亲测。" />
     </label>
     {source && <p className="xhs-hint">选题来源：{source.title}{source.unverified ? '（联网搜索，热度未知）' : source.interactive ? ` · ${source.interactive} 互动` : ''}</p>}
+    <p className="xhs-hint">填好选题和素材后，可以点右上角「自动生成」一次完成正文、标题与发布前检测；当前修改会先自动保存。</p>
   </div>;
 }
 
@@ -197,12 +198,16 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
       </details>
     </>}
 
-    <h4 className="xhs-step-sub">③ 生图信息图（图片接口，按张计费）</h4>
-    <div className="flow-inline-actions">
-      <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('single')}>{busy === 'info-single' ? '生成中…' : '出 1 张总览信息图'}</button>
-      <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('pages')}>{busy === 'info-pages' ? '生成中…' : `按分页出 ${plan?.pages.length ?? 6} 张`}</button>
-      <small className="ww-muted">{plan ? '固定「轻盈信息图」风格：白底、紫蓝 + 青柠绿、圆角卡片、线性图标。' : '先拆好分页：信息图按卡片分页逐页出图。'}</small>
-    </div>
+    <details className="flow-secondary-tools">
+      <summary>更多图片生成<small>生图信息图按张计费；历史候选图库也在这里</small></summary>
+      <h4 className="xhs-step-sub">③ 生图信息图（图片接口，按张计费）</h4>
+      <div className="flow-inline-actions">
+        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('single')}>{busy === 'info-single' ? '生成中…' : '出 1 张总览信息图'}</button>
+        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('pages')}>{busy === 'info-pages' ? '生成中…' : `按分页出 ${plan?.pages.length ?? 6} 张`}</button>
+        <small className="ww-muted">{plan ? '固定「轻盈信息图」风格：白底、紫蓝 + 青柠绿、圆角卡片、线性图标。' : '先拆好分页：信息图按卡片分页逐页出图。'}</small>
+      </div>
+      <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
+    </details>
 
     <h4 className="xhs-step-sub">④ 发布图组<small>封面固定第 1 张，下面是之后的顺序；导出发布包只用这一组</small></h4>
     {assets?.images.length ? <ol className="xhs-gallery">{assets.images.map((item, index) => <li key={item.path}>
@@ -216,7 +221,6 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
     </li>)}</ol> : <p className="flow-empty">图组还是空的：导出卡片图、生成信息图，或添加本地图片。</p>}
     <button className="button button-quiet" disabled={locked} onClick={onAddLocal}><Icon name="plus" />添加本地图片</button>
 
-    <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
   </div>;
 }
 
@@ -300,6 +304,14 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
       <span aria-hidden="true">{item.ok ? '✓' : '○'}</span>
       <div><strong>{item.label}{item.optional && '（建议）'}</strong><small>{item.detail}</small></div>
     </li>)}</ul>
+    <div className="flow-inline-actions">
+      <button className="button button-primary" disabled={locked || !ready} onClick={onExport}>{busy === 'export' ? '导出中…' : note.exportPath ? '重新导出发布包' : '导出发布包'}</button>
+      {note.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开发布包目录</button>}
+      <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
+      <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>
+      <button className="button button-secondary" title="在「小红书窗口」里打开网页版创作者中心的发布页，由你自己上传图片、粘贴文字并发布" onClick={onPublishPage}>去创作者中心发布</button>
+      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：应用窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL)}><Icon name="window" size={14} />在浏览器打开发布页</button>
+    </div>
     <div className="flow-sub-head">
       <h4>将要导出的图组<small>{(assets?.cover ? 1 : 0) + (assets?.images.length ?? 0)} 张，按这个顺序导出为 01、02…</small></h4>
       <button className="button button-quiet" onClick={onEdit}>去调整图组</button>
@@ -311,14 +323,6 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
         <span>{String(index + 2).padStart(2, '0')}{item.caption ? ` · ${item.caption}` : ''}</span>
       </li>)}
     </ol> : <p className="flow-empty">还没有封面和图组。</p>}
-    <div className="flow-inline-actions">
-      <button className="button button-primary" disabled={locked || !ready} onClick={onExport}>{busy === 'export' ? '导出中…' : note.exportPath ? '重新导出发布包' : '导出发布包'}</button>
-      {note.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开发布包目录</button>}
-      <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
-      <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>
-      <button className="button button-secondary" title="在「小红书窗口」里打开网页版创作者中心的发布页，由你自己上传图片、粘贴文字并发布" onClick={onPublishPage}>去创作者中心发布</button>
-      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：应用窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL)}><Icon name="window" size={14} />在浏览器打开发布页</button>
-    </div>
     {note.exportPath && <p className="native-export-path">最近导出：{note.exportPath}</p>}
     <p className="ww-muted">发布包在知识库「08-小红书」下：笔记.md（标题、正文、标签、检测结果、发布提醒）+ 01.png（封面）、02.png… 按图组顺序。本模块不代发布：请在小红书 App 或网页版创作者中心手动发布；含 AI 生成内容时记得勾选平台的 AI 内容声明。</p>
   </div>;

@@ -92,6 +92,31 @@ function oneLine(value: string): string {
   return value.replace(/\r\n?/g, ' ').replace(/\n/g, ' ').replace(/\|/g, '\\|').trim() || '—';
 }
 
+/** 直接导出 MP4 时的建议文件名：去掉 Windows 非法字符，并带日期方便区分多次导出。 */
+export function suggestedMp4Name(project: VideoProject, now: Date = new Date()): string {
+  const title = project.title.trim() || project.topic.trim() || '未命名视频';
+  const safeTitle = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '-').replace(/\s+/g, ' ').replace(/[. ]+$/g, '').trim().slice(0, 60) || '未命名视频';
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  return `${safeTitle}-${stamp}.mp4`;
+}
+
+/**
+ * 把当前有效成片复制到用户选择的位置。
+ *
+ * 只有签名仍匹配当前分镜、配音和画面的成片才能直接导出；若用户没写扩展名，自动补 `.mp4`。
+ */
+export function copyRenderedVideoTo(project: VideoProject, destination: string): string {
+  const video = project.assets.video;
+  if (!video || !isRenderFresh(project)) throw new Error('当前成片已过期或还没有渲染，请先重新渲染成片');
+  if (!fs.existsSync(video.path)) throw new Error('成片文件不存在，请重新渲染');
+  const target = destination.toLowerCase().endsWith('.mp4') ? destination : `${destination}.mp4`;
+  if (path.resolve(target).toLowerCase() !== path.resolve(video.path).toLowerCase()) {
+    fs.copyFileSync(video.path, target);
+  }
+  return target;
+}
+
 /**
  * 写出制作包并返回目录路径。
  * 目录名带时间戳与随机串，重复导出不会互相覆盖；中途失败时只清理本次新建的目录。

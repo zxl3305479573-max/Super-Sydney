@@ -1,4 +1,5 @@
 import type { VideoAudioAsset, VideoImageAsset, VideoProject, VideoRenderAssets, VideoRenderOptions, VideoShot, VideoShotRole, VideoTtsSettings } from '../shared.ts';
+import { buildVideoShotImagePrompt, VIDEO_IMAGE_PROMPT_DEFAULTS, VIDEO_SHOT_IMAGE_SIZE } from './video-image-prompts.ts';
 
 /**
  * 成片相关的纯函数：渲染选项、素材账本、内容哈希与新鲜度。
@@ -37,7 +38,8 @@ export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   bgmPath: '',
   bgmVolume: 12,
   footer: DEFAULT_VIDEO_FOOTER,
-  ipId: ''
+  ipId: '',
+  ...VIDEO_IMAGE_PROMPT_DEFAULTS
 };
 
 /** 合并补丁并校验；未知字段忽略。非法取值抛错，而不是悄悄换成默认值。 */
@@ -73,6 +75,18 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (value.ipId !== undefined) {
     if (typeof value.ipId !== 'string') throw new Error('IP 编号必须是文本');
     next.ipId = value.ipId.trim().slice(0, 60);
+  }
+  if (value.storyboardImagePromptRule !== undefined) {
+    if (typeof value.storyboardImagePromptRule !== 'string') throw new Error('分镜生图规则必须是文本');
+    next.storyboardImagePromptRule = value.storyboardImagePromptRule.trim().slice(0, 3000) || VIDEO_IMAGE_PROMPT_DEFAULTS.storyboardImagePromptRule;
+  }
+  if (value.shotImagePromptTemplate !== undefined) {
+    if (typeof value.shotImagePromptTemplate !== 'string') throw new Error('逐镜配图提示词模板必须是文本');
+    next.shotImagePromptTemplate = value.shotImagePromptTemplate.trim().slice(0, 3000) || VIDEO_IMAGE_PROMPT_DEFAULTS.shotImagePromptTemplate;
+  }
+  if (value.coverImagePromptTemplate !== undefined) {
+    if (typeof value.coverImagePromptTemplate !== 'string') throw new Error('封面提示词模板必须是文本');
+    next.coverImagePromptTemplate = value.coverImagePromptTemplate.trim().slice(0, 3000) || VIDEO_IMAGE_PROMPT_DEFAULTS.coverImagePromptTemplate;
   }
   return next;
 }
@@ -176,21 +190,14 @@ export function audioKey(voiceProfile: string, narration: string): string {
   return contentHash(`audio\n${voiceProfile}\n${narration.trim()}`);
 }
 
-/** 逐镜配图的尺寸：画面区接近方形，用各家接口都支持的 1024×1024。 */
-export const SHOT_IMAGE_SIZE = '1024x1024';
+/** 逐镜配图尺寸由独立的视觉提示词模块维护；这里保留别名给素材账本和界面使用。 */
+export const SHOT_IMAGE_SIZE = VIDEO_SHOT_IMAGE_SIZE;
 
-/**
- * 逐镜配图的完整提示词：分镜给的 imagePrompt（没有就用画面描述）+ 固定的风格与禁忌。
- * 禁忌和封面一致：画面里不要文字（文字由模板排版）、不要医疗符号、不要夸大疗效。
- */
 /**
  * 选了 IP 的视频，配图的键里带上 IP：换 IP 后旧配图自然算过期、会重新生成；
  * 没选 IP 时键和以前一样，已有配图不受影响。提示词本身不变，角色由参考图带进画面。
  */
-export function shotImagePrompt(shot: VideoShot, title: string): string {
-  const subject = (shot.imagePrompt || shot.visual || shot.caption || title).trim();
-  return `竖版短视频配图，主题「${title.trim()}」。画面：${subject}。面向中老年观众，温暖写实、自然光、主体清楚、背景简洁；画面里不要出现任何文字、数字或标志，不要医疗器械特写，不要夸张表情或惊吓画面。`;
-}
+export const shotImagePrompt = buildVideoShotImagePrompt;
 
 export function imageKey(prompt: string, ipId = ''): string {
   return contentHash(ipId ? `image\n${SHOT_IMAGE_SIZE}\nip:${ipId}\n${prompt}` : `image\n${SHOT_IMAGE_SIZE}\n${prompt}`);
@@ -208,7 +215,7 @@ export function shotAudio(project: VideoProject, shot: VideoShot): VideoAudioAss
 }
 
 export function shotImage(project: VideoProject, shot: VideoShot): VideoImageAsset | null {
-  const key = imageKey(shotImagePrompt(shot, projectTitle(project)), project.options.ipId);
+  const key = imageKey(shotImagePrompt(shot, projectTitle(project), project.options.shotImagePromptTemplate), project.options.ipId);
   return project.assets.images.find(item => item.key === key) ?? null;
 }
 

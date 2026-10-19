@@ -1,4 +1,4 @@
-import type { ContentTask, ContentTaxonomy, VideoProject } from '../shared.ts';
+import type { ContentTask, ContentTaxonomy } from '../shared.ts';
 import type { ContentApiConfig } from './content-workflow.ts';
 import { findSubdirection } from './content-taxonomy.ts';
 import { articleLeadExcerpt } from './content-images.ts';
@@ -127,9 +127,4 @@ export function coverImagePrompt(task: ContentTask, scope: ImagePromptScope): st
     excerpt ? `封面要贴住正文内容：${excerpt}` : '',
     scope.style
   ].filter(Boolean).join('\n');
-}
-
-/** 竖版封面提示词：中老年观众、不要文字与医疗符号、不夸大疗效。 */
-export function videoCoverPrompt(project: VideoProject): string {
-  return `短视频竖版封面图，主题：${project.title || project.topic}。面向中老年观众，写实、自然光、主体清楚、对比适中；画面里不要出现文字、不要医疗符号、不要夸大疗效。`;
 }

@@ -153,6 +153,19 @@ test('与公众号隔离：系统提示只有小红书定位，不带公众号�
   assert.match(fake.requests[0].system, /退休护士，教长辈在家把小毛病照顾好/, '读者与人设来自小红书自己的定位档案');
 });
 
+test('IP 身份作为观察视角和判断方式自然融入，不作为固定自我介绍模板', async () => {
+  const fake = fakeChat([{ body: '正文', tags: [] }]);
+  await requestXhsBody({ ...config, ip: { name: '雪梨的一人公司', tagline: '一个人 + AI = 一个团队' } }, note({ topic: '怎么用 AI 整理资料' }), null, 'write', fake.fetch);
+  const systemText = fake.requests[0].system;
+  assert.match(systemText, /对外 IP \/ 品牌：雪梨的一人公司/);
+  assert.match(systemText, /核心主张或口头禅：一个人 \+ AI = 一个团队/);
+  assert.match(systemText, /影响你先提醒什么、怎样做判断、如何举例/);
+  assert.match(systemText, /不要为了露出 IP 硬塞品牌名、口号和口头禅/);
+  assert.doesNotMatch(systemText, /每篇都必须提到/);
+  assert.match(fake.requests[0].user, /不要把账号名、口头禅或“我是……”式自我介绍当固定开头/);
+  assert.match(fake.requests[0].user, /默认用 A 或 B/);
+});
+
 test('封面提示词按这篇笔记的选题与正文来画，读者来自定位档案', () => {
   const body = '租房党的收纳难题 🙂 #收纳\n第一步先清空桌面，把东西按使用频率分三类。';
   const cover = xhsCoverPrompt(note({ topic: '小户型收纳', title: '租房收纳 3 步', body }), { statement: '给刚租房的年轻人讲收纳' } as never, '桌面收纳盒');
@@ -163,6 +176,9 @@ test('封面提示词按这篇笔记的选题与正文来画，读者来自定�
   assert.match(cover, /「租房收纳 3 步」/);
   assert.match(cover, /桌面收纳盒/);
   assert.match(cover, /给刚租房的年轻人讲收纳/);
+  assert.match(cover, /1080×1440/);
+  assert.match(cover, /中心约 88% 的安全区/);
+  assert.match(cover, /补边成 3:4/);
   assert.doesNotMatch(cover, /中老年|老年|长辈/);
   const pages = [{ heading: '总览', points: [], emphasis: '' }, { heading: '要点一', points: ['a', 'b'], emphasis: '记住' }, { heading: '总结', points: [], emphasis: '' }];
   assert.match(xhsInfoImagePrompt(note({ title: 'T' }), pages, 1), /第 2\/3 张[\s\S]*要点一[\s\S]*a；b[\s\S]*记住/);

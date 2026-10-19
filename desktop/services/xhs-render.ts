@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { BrowserWindow, nativeImage } from 'electron';
-import type { XhsHotNote } from '../shared';
-import { padToThreeFour } from './xhs-image-fit';
+import type { VideoPlatform, XhsHotNote } from '../shared';
+import { padToThreeFour, XHS_COVER_SIZE } from './xhs-image-fit';
 import { BING_EXTRACT_SCRIPT, bingSearchUrls, normalizeWebResults } from './xhs-page-parse';
 
 /**
@@ -61,16 +61,20 @@ export async function renderHtmlPages(documents: string[], width: number, height
 }
 
 /**
- * 生图接口给的是 2:3 竖图，小红书按 3:4 展示：在短边补边成 3:4（见 xhs-image-fit）。
- * 不裁切——以前居中裁成 3:4 会把顶部的标题、底部的要点切掉一截。
+ * 生图接口通常给 2:3 竖图，小红书按 3:4 展示：先在短边补边，再统一缩放到 1080×1440。
+ * 不裁切——以前居中裁成 3:4 会把顶部的标题、底部的要点切掉一截；统一尺寸也避免不同
+ * 网关返回 1024×1365、1152×1536 或 1536×2048 时，预览和发布包里出现不同比例体验。
  */
 export function fitToThreeFour(file: string): string {
   const image = nativeImage.createFromPath(file);
   if (image.isEmpty()) throw new Error('生成的图片无法读取');
   const { width, height } = image.getSize();
   const padded = padToThreeFour({ data: image.toBitmap(), width, height });
-  if (padded.width === width && padded.height === height) return file;
-  fs.writeFileSync(file, nativeImage.createFromBitmap(padded.data, { width: padded.width, height: padded.height }).toPNG());
+  if (padded.width === width && padded.height === height
+    && width === XHS_COVER_SIZE.width && height === XHS_COVER_SIZE.height) return file;
+  const normalized = nativeImage.createFromBitmap(padded.data, { width: padded.width, height: padded.height })
+    .resize({ ...XHS_COVER_SIZE, quality: 'best' });
+  fs.writeFileSync(file, normalized.toPNG());
   return file;
 }
 
@@ -79,7 +83,7 @@ export function fitToThreeFour(file: string): string {
  * 用真实浏览器而不是 Node 直接请求——后者拿到的是给爬虫的降级页面（实测返回无关结果）。
  * 两个查询之间间隔 1.5 秒；任何一页失败不影响另一页。
  */
-export async function searchBing(keyword: string): Promise<XhsHotNote[]> {
+export async function searchBing(keyword: string, platform: VideoPlatform = 'xiaohongshu'): Promise<XhsHotNote[]> {
   return withHiddenWindow({
     width: 1200, height: 900,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'persist:sydney-websearch' }
@@ -87,7 +91,7 @@ export async function searchBing(keyword: string): Promise<XhsHotNote[]> {
     win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     const rows: unknown[] = [];
     const errors: string[] = [];
-    for (const [index, url] of bingSearchUrls(keyword).entries()) {
+    for (const [index, url] of bingSearchUrls(keyword, platform).entries()) {
       if (index > 0) await wait(1500);
       try {
         await win.loadURL(url);

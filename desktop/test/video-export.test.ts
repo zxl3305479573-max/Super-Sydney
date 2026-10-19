@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { VideoProject } from '../shared.ts';
-import { exportVideoPackage } from '../services/video-export.ts';
+import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export.ts';
 import { renderSignature, serializeVideoShots } from '../services/video-pipeline.ts';
 import { VIDEO_RENDER_DEFAULTS, audioKey, emptyRenderAssets } from '../services/video-production.ts';
 
@@ -68,6 +68,27 @@ test('export copies the rendered video only while it still matches the storyboar
     // 分镜改过之后旧成片对不上了，导出时不再带上。
     const edited = { ...rendered, storyboardJson: serializeVideoShots([{ index: 1, seconds: 4, visual: 'v', narration: '改过的口播。', caption: '' }]) };
     assert.ok(!fs.existsSync(path.join(exportVideoPackage(vault, edited), 'video.mp4')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('direct MP4 export copies only a fresh render and suggests a safe filename', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sydney-video-mp4-'));
+  try {
+    const video = path.join(root, 'rendered.mp4');
+    fs.writeFileSync(video, 'rendered bytes');
+    const silent = project({ options: { ...VIDEO_RENDER_DEFAULTS, voiceMode: 'silent' } });
+    const rendered = { ...silent, assets: { ...silent.assets, video: { path: video, signature: renderSignature(silent), seconds: 10, renderedAt: '' } } };
+    assert.equal(suggestedMp4Name(rendered, new Date(2026, 9, 18, 9, 5)), '控糖早餐-怎么吃-20261018-0905.mp4');
+    const destination = path.join(root, 'exports', '我的视频');
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    const saved = copyRenderedVideoTo(rendered, destination);
+    assert.equal(saved, `${destination}.mp4`);
+    assert.equal(fs.readFileSync(saved, 'utf8'), 'rendered bytes');
+
+    const edited = { ...rendered, storyboardJson: serializeVideoShots([{ index: 1, seconds: 4, visual: 'v', narration: '改过。', caption: '' }]) };
+    assert.throws(() => copyRenderedVideoTo(edited, path.join(root, 'stale.mp4')), /成片已过期/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

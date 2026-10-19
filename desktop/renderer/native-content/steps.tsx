@@ -134,17 +134,20 @@ export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCo
   return <div className="flow-body">
     <div className="flow-sub-head"><h4>{preview ? '正文预览（公众号排版）' : '文章正文（Markdown）'}<small>约 {countChars(task.draft)} 字</small></h4>
       <div className="flow-mode"><button className={!preview ? 'is-active' : ''} onClick={() => setPreview(false)}>编辑</button><button className={preview ? 'is-active' : ''} onClick={() => setPreview(true)}>预览</button></div></div>
-    <ThemePicker value={task.theme} locked={locked} onPick={theme => { onTheme(theme); setPreview(true); }} />
-    <div className="flow-inline-actions">
-      <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? `重新生成正文配图（现有 ${images} 张）` : 'AI 生成正文配图'}</button>
-      <button className="button button-secondary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
-      <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇正文以前生成过的配图列出来，挑一张插到对应的小节" onClick={onPickFromLibrary}>从已生成的图里挑</button>
-      <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
-      <small>按小标题自动挑位置插入配图；导出时图片一起复制到知识库，推送时自动上传到微信。插入配图会改动正文，需要重新审稿。</small>
-    </div>
-    <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
     {preview ? <ArticlePreview taskId={task.id} source="draft" revision={task.updatedAt} title="文章预览" />
       : <textarea className="flow-draft" disabled={locked} value={task.draft} onChange={event => onEdit(event.target.value)} placeholder="生成初稿后在这里编辑；也可以直接粘贴自己写的正文。改动正文会使之前的审稿结论失效。" />}
+    <details className="flow-secondary-tools">
+      <summary>排版与配图<small>可选 · 当前 {images} 张正文配图 · 切换排版，或生成 / 替换配图</small></summary>
+      <ThemePicker value={task.theme} locked={locked} onPick={theme => { onTheme(theme); setPreview(true); }} />
+      <div className="flow-inline-actions">
+        <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? `重新生成正文配图（现有 ${images} 张）` : 'AI 生成正文配图'}</button>
+        <button className="button button-secondary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
+        <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇正文以前生成过的配图列出来，挑一张插到对应的小节" onClick={onPickFromLibrary}>从已生成的图里挑</button>
+        <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
+        <small>按小标题自动挑位置插入配图；导出时图片一起复制到知识库，推送时自动上传到微信。插入配图会改动正文，需要重新审稿。</small>
+      </div>
+      <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
+    </details>
   </div>;
 }
 
@@ -187,13 +190,16 @@ export function CoverStep({ task, assets, locked, busy, busySeconds, candidateCo
         <figcaption>{task.coverPath ? task.coverPath.split(/[\\/]/).pop() : '未选择封面'}</figcaption>
       </figure>
       <div className="flow-cover-actions">
+        <button className="button button-primary" disabled={locked} onClick={onGenerateCover}>{busy === 'cover' ? `生成中… ${busySeconds}s` : 'AI 生成封面'}</button>
         <button className="button button-secondary" disabled={locked} onClick={onChoose}>选择本地图片</button>
-        <button className="button button-secondary" disabled={locked} onClick={onGenerateCover}>{busy === 'cover' ? `生成中… ${busySeconds}s` : 'AI 生成封面'}</button>
-        <button className="button button-primary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
-        <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : '只生成正文配图'}</button>
-        <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇任务以前生成过的封面与配图列出来，挑一张换上" onClick={onPickFromLibrary}>从已生成的图里挑</button>
-        <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
         <small>封面是微信草稿的缩略图；正文配图按小标题插进正文，推送时会自动上传到微信。一次生成会同时消耗封面与配图的费用。</small>
+        <details className="flow-secondary-tools">
+          <summary>更多生成选项<small>正文配图、一次生成、历史图库与候选张数</small></summary>
+          <button className="button button-primary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
+          <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : '只生成正文配图'}</button>
+          <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇任务以前生成过的封面与配图列出来，挑一张换上" onClick={onPickFromLibrary}>从已生成的图里挑</button>
+          <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
+        </details>
       </div>
     </div>
     <WechatIpCoverPanel task={task} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />

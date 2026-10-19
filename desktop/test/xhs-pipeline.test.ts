@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { XhsNote } from '../shared.ts';
 import {
-  assertXhsExportable, buildXhsPipeline, checksPassed, countChars, currentXhsStepKey, deriveXhsStatus, findRiskWords, fingerprint, localChecks,
-  addCandidates, mergeCheckItems, normalizeTags, prepareXhsEdit, readCandidates, readCardPlan, routeByRules, stampBasis, xhsExportChecklist, xhsStale
+  AUTO_XHS_STAGES, assertXhsExportable, autoXhsPlan, buildXhsPipeline, checksPassed, countChars, currentXhsStepKey, deriveXhsStatus, findRiskWords, fingerprint, localChecks,
+  addCandidates, mergeCheckItems, normalizeTags, pickAutoXhsTitle, prepareXhsEdit, readCandidates, readCardPlan, routeByRules, stampBasis, xhsExportChecklist, xhsStale
 } from '../services/xhs-pipeline.ts';
 
 function note(patch: Partial<XhsNote> = {}): XhsNote {
@@ -34,6 +34,27 @@ test('步骤按依赖解锁：选题 → 正文 → 标题 → 视觉 → 检测
   assert.equal(stateOf(full, 'checks').state, 'current');
   assert.equal(stateOf(full, 'package').state, 'ready');
   assert.equal(currentXhsStepKey(full), 'checks');
+});
+
+test('自动生成按当前状态续跑：正文 → 标题 → 检测，视觉与发布不自动执行', () => {
+  assert.deepEqual(AUTO_XHS_STAGES, ['body', 'titles', 'checks']);
+  assert.deepEqual(autoXhsPlan(note()), { ok: false, reason: '请先填写选题，再点自动生成' });
+  assert.deepEqual(autoXhsPlan(note({ topic: 't' })), { ok: true, stages: ['body', 'titles', 'checks'] });
+
+  let item = note({ topic: 't', body: '已经写好的正文' });
+  item = { ...item, basisJson: stampBasis(item, 'body') };
+  assert.deepEqual(autoXhsPlan(item), { ok: true, stages: ['titles', 'checks'] });
+
+  item = note({ topic: 't', body: '正文', title: '标题', checksJson: JSON.stringify({ items: [], checkedAt: '', modelError: '' }) });
+  item = { ...item, basisJson: stampBasis(item, 'body', 'title', 'checks') };
+  assert.deepEqual(autoXhsPlan(item), { ok: true, stages: [] }, '全部最新时不重复花钱');
+
+  const changedType = { ...item, noteType: 'story' as const };
+  assert.deepEqual(autoXhsPlan(changedType), { ok: true, stages: ['body', 'titles', 'checks'] });
+
+  const risky = { title: '最有效的护膝', method: 'number', scores: { search: 5, audience: 5, save: 5, hook: 5 }, total: 20, risks: ['绝对化用语'], role: 'primary' as const, reason: '' };
+  const safe = { ...risky, title: '护膝怎么选？3 个要点', total: 18, risks: [], role: 'backup' as const };
+  assert.equal(pickAutoXhsTitle({ candidates: [risky, safe], ab: [], keywords: [], generatedAt: '' })?.title, safe.title, '自动采用时优先避开合规风险');
 });
 
 test('失效规则：改正文 → 标题与卡片需复核；改标题 → 封面需复核；换类型 → 正文需重写', () => {

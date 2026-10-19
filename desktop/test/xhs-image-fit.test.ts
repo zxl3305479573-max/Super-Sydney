@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { padToThreeFour, threeFourSize } from '../services/xhs-image-fit.ts';
+import { padToThreeFour, threeFourSize, XHS_COVER_SIZE } from '../services/xhs-image-fit.ts';
 
 function solid(width: number, height: number, color: [number, number, number, number]) {
   const data = Buffer.alloc(width * height * 4);
@@ -9,6 +9,7 @@ function solid(width: number, height: number, color: [number, number, number, nu
 }
 
 test('2:3 竖图补左右边到 3:4，不丢任何一行', () => {
+  assert.deepEqual(XHS_COVER_SIZE, { width: 1080, height: 1440 });
   assert.deepEqual(threeFourSize(1024, 1536), { width: 1152, height: 1536 });
   const source = solid(16, 24, [10, 20, 30, 255]);
   // 第一行与最后一行打上记号：补边后它们必须还在（以前居中裁切会把它们切掉）。

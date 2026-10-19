@@ -67,12 +67,14 @@ export default function WeWritePanel({ notify, overlay }: { notify: (message: st
         <small>{profile ? [profile.audience ? `读者：${profile.audience}` : '未设置读者定位', profile.theme || '默认排版'].join(' · ') : '正在读取…'}</small>
       </label>
     </header>
-    <div className="ww-tabs">
-      <button className={`ww-tab ${tab === 'native' ? 'is-active' : ''}`} onClick={() => setTab('native')}>创作流水线</button>
-      <button className={`ww-tab ${tab === 'stats' ? 'is-active' : ''}`} onClick={() => setTab('stats')}>文章数据</button>
-      <button className={`ww-tab ${tab === 'config' ? 'is-active' : ''}`} onClick={() => setTab('config')}>环境与配置</button>
-      <button className={`ww-tab ${tab === 'mp' ? 'is-active' : ''}`} title="在应用里打开微信公众平台（创作者发布平台）" onClick={() => setTab('mp')}>公众号后台</button>
-    </div>
+    <nav className="ww-nav-dock" aria-label="公众号工作区">
+      <div className="ww-tabs">
+        <button type="button" className={`ww-tab ${tab === 'native' ? 'is-active' : ''}`} aria-current={tab === 'native' ? 'page' : undefined} onClick={() => setTab('native')}>创作流水线</button>
+        <button type="button" className={`ww-tab ${tab === 'stats' ? 'is-active' : ''}`} aria-current={tab === 'stats' ? 'page' : undefined} onClick={() => setTab('stats')}>文章数据</button>
+        <button type="button" className={`ww-tab ${tab === 'config' ? 'is-active' : ''}`} aria-current={tab === 'config' ? 'page' : undefined} onClick={() => setTab('config')}>环境与配置</button>
+        <button type="button" className={`ww-tab ${tab === 'mp' ? 'is-active' : ''}`} aria-current={tab === 'mp' ? 'page' : undefined} title="在应用里打开微信公众平台（创作者发布平台）" onClick={() => setTab('mp')}>公众号后台</button>
+      </div>
+    </nav>
     {/* key 绑定资料：切换资料时子面板整体重建，不会把上一份资料的选中状态带过来。 */}
     {/* 子页签进过就常驻，切走只隐藏：写到一半的稿子、正在跑的步骤都还在。 */}
     {visited.includes('native') && <KeepAlive show={tab === 'native'}><NativeContentPanel key={profileId ?? 0} profile={profile} notify={notify} onOpenConfig={() => setTab('config')} onOpenBackend={() => setTab('mp')} /></KeepAlive>}

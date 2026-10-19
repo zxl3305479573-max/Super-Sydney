@@ -145,13 +145,47 @@ export function KeepAlive({ show, children }: { show: boolean; children: ReactNo
   return <div className="keep-alive" hidden={!show}>{children}</div>;
 }
 
+/**
+ * 切换任务或流水线步骤后，把当前步骤面板滚回步骤条下方。
+ * 首次挂载不滚，避免覆盖应用为页面保存的滚动位置；后续切换用平滑滚动，
+ * 用户点「下一步」时不会继续停在上一页的底部。
+ */
+export function useWorkflowStepScroll(signature: string) {
+  const ref = useRef<HTMLElement>(null);
+  const previous = useRef<string | null>(null);
+  useEffect(() => {
+    if (previous.current === null) {
+      previous.current = signature;
+      return;
+    }
+    if (previous.current === signature) return;
+    previous.current = signature;
+    const frame = window.requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({
+        block: 'start',
+        behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+      });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [signature]);
+  return ref;
+}
+
 export function visibleStageBounds(element: HTMLElement | null): { x: number; y: number; width: number; height: number } | null {
   if (!element) return null;
   const rect = element.getBoundingClientRect();
   const scroller = element.closest<HTMLElement>('.main-scroll');
   const box = scroller?.getBoundingClientRect();
+  // 流式网页视图浮在 DOM 之上：内容模块的吸顶导航挡住页面时，也要把它从视图可视区里裁掉。
+  const stickyNav = element.closest<HTMLElement>('.wewrite, .xhs-panel')?.querySelector<HTMLElement>('.ww-nav-dock');
+  const stickyBox = stickyNav?.getBoundingClientRect();
   const view = box && scroller
-    ? { left: box.left + scroller.clientLeft, top: box.top + scroller.clientTop, right: box.left + scroller.clientLeft + scroller.clientWidth, bottom: box.top + scroller.clientTop + scroller.clientHeight }
+    ? {
+        left: box.left + scroller.clientLeft,
+        top: Math.max(box.top + scroller.clientTop, stickyBox?.bottom ?? 0),
+        right: box.left + scroller.clientLeft + scroller.clientWidth,
+        bottom: box.top + scroller.clientTop + scroller.clientHeight
+      }
     : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
   const left = Math.max(rect.left, view.left);
   const top = Math.max(rect.top, view.top);

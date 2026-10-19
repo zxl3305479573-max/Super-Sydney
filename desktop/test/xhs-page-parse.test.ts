@@ -75,6 +75,9 @@ test('联网搜索：提出摘要里的日期、按链接去重、标记热度�
   assert.match(notes[0].id, /^web-/);
   assert.equal(bingSearchUrls('护膝').length, 2);
   assert.match(decodeURIComponent(bingSearchUrls('护膝')[0]), /小红书 护膝 爆款笔记/);
+  assert.match(decodeURIComponent(bingSearchUrls('护膝', 'douyin')[0]), /抖音 护膝 热门视频/);
+  assert.match(decodeURIComponent(bingSearchUrls('护膝', 'shipinhao')[0]), /视频号 护膝 热门视频/);
+  assert.match(decodeURIComponent(bingSearchUrls('护膝', 'bilibili')[0]), /B站 护膝 热门视频/);
 });
 
 test('卡片模板：转义内容、页码与尺寸、预览含全部页', () => {
