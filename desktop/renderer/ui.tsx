@@ -48,7 +48,8 @@ const paths: Record<string, ReactNode> = {
   tag: <><path d="M4.5 4.5h6.2L20 13.8 13.8 20 4.5 10.7z" /><circle cx="8.6" cy="8.6" r="1.25" /></>,
   note: <><rect x="4.5" y="3.5" width="15" height="17" rx="3" /><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" /></>,
   phone: <><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.4" /><path d="M10.5 17.8h3" /></>,
-  card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>
+  card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>,
+  cloud: <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
 };
 export type IconName = keyof typeof paths;
 
