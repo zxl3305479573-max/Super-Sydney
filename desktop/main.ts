@@ -35,6 +35,7 @@ import { migrateVideoTables } from './services/video-store';
 import { migrateXhsTables } from './services/xhs-store';
 import { migrateLinkTables } from './services/link-store';
 import { migrateEventMetadataColumns, migrateEventTables } from './services/event-store';
+import { CloudSync, migrateCloudSyncTables, useCloudFetch } from './services/cloud-sync';
 import { useImageFetch } from './services/image-generation';
 import { ModelPresetStore } from './services/model-presets';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
@@ -48,6 +49,7 @@ const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
 
 let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
+let cloudSync: CloudSync | undefined;
 let siteView: SiteView | undefined;
 let xhsView: XhsView | undefined;
 let embeddedViews: { closeAll(): void; dispose(): void } | undefined;
@@ -90,6 +92,7 @@ function openDatabase(file: string): DatabaseSync {
     adoptAccountProfile(db, parseStyleSummary(styleText), yamlScalar(yamlBlock(configText, 'wechat'), 'author'));
   }
   migrateEventMetadataColumns(db);
+  migrateCloudSyncTables(db);
   return db;
 }
 
@@ -100,15 +103,20 @@ function createContext(): AppContext {
   const llmApiKey = () => resolveLlmApiKey(secretStore.read(), process.env.SYDNEY_LLM_API_KEY || '');
   const redfoxKeyStore = new SecretStore(dataDir, safeStorage, 'redfox-api-key.bin');
   const heroSmsKeyStore = new SecretStore(dataDir, safeStorage, 'hero-sms-api-key.bin');
+  const cloudSyncKeyStore = new SecretStore(dataDir, safeStorage, 'cloud-sync-password.bin');
+  const db = openDatabase(path.join(dataDir, 'sydney.db'));
+  const settings = new SettingsFile(path.join(dataDir, 'settings.json'), defaultVaultPath, projectPath);
   return {
-    db: openDatabase(path.join(dataDir, 'sydney.db')),
+    db,
     dataDir,
     homeDir: app.getPath('home'),
-    settings: new SettingsFile(path.join(dataDir, 'settings.json'), defaultVaultPath, projectPath),
+    settings,
     secretStore,
     redfoxKeyStore,
     videoTtsKeyStore: new SecretStore(dataDir, safeStorage, 'video-tts-api-key.bin'),
     heroSmsKeyStore,
+    cloudSync: new CloudSync(db, settings, cloudSyncKeyStore),
+    cloudSyncKeyStore,
     heroSmsActivations: new HeroSmsActivationStore(dataDir),
     lastPages: new LastPages(dataDir),
     ipLibrary: new IpLibrary(dataDir),
@@ -192,12 +200,17 @@ if (process.platform === 'win32') app.setAppUserModelId('com.sydney.workos');
 if (primaryInstance) app.whenReady().then(() => {
   // 生图请求走 Electron 的网络栈：跟随系统代理（Node 自带的 fetch 不读代理，国内直连图片网关会超时）。
   useImageFetch((input, init) => net.fetch(input as string, init));
+  // 云同步也走同一套网络栈：自建同步服务需要跟随系统代理。
+  useCloudFetch((input, init) => net.fetch(input as string, init));
   installApplicationMenu();
   const ctx = createContext();
   // 前台采样每次启动都从关闭状态开始，必须由用户在界面上重新开启。
   ctx.settings.write({ ...ctx.settings.read(), captureEnabled: false, capturePaused: false });
   capture = new CaptureRuntime(ctx);
   capture.start();
+  // 云同步：启动时对齐队列并立即同步一次，之后每 10 分钟批量上传。
+  cloudSync = ctx.cloudSync;
+  cloudSync.start();
   // 变现模块的站点视图：窗口还没创建时只构造，真正挂上去要等界面报位置。
   siteView = new SiteView(ctx);
   registerCoreIpc(ctx, capture);
@@ -223,6 +236,7 @@ if (primaryInstance) app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   capture?.dispose();
+  cloudSync?.dispose();
   siteView?.dispose();
   xhsView?.dispose();
   embeddedViews?.dispose();

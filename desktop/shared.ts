@@ -58,6 +58,25 @@ export type Settings = {
   screenRetentionHours: number;
   inputWatchEnabled: boolean;
   inputWatchPaths: string[];
+  /** 云同步：把已确认事件按隐私规则批量上传到自建同步 API。密码单独走系统安全存储。 */
+  cloudSyncEnabled: boolean;
+  cloudSyncUrl: string;
+  cloudSyncUsername: string;
+  /** 是否上传窗口标题（默认关）。 */
+  cloudSyncIncludeWindowTitle: boolean;
+  /** 是否上传文件路径（默认关）。 */
+  cloudSyncIncludeFilePath: boolean;
+};
+/** 云同步的运行状态与待上传队列，只在主进程维护，渲染进程拿到的是掩码后的快照。 */
+export type CloudSyncStatus = {
+  enabled: boolean;
+  clientId: string;
+  /** 上次成功收到响应的时间（ISO），从未同步过为空串。 */
+  lastSyncAt: string;
+  /** 待上传条数。 */
+  pending: number;
+  running: boolean;
+  error: string;
 };
 export type CodexCaptureStatus = { state: 'disabled' | 'stopped' | 'listening' | 'error'; error: string };
 export type ClaudeCaptureStatus = CodexCaptureStatus;
@@ -786,6 +805,11 @@ export interface SydneyApi {
   deleteEvent(id: number): Promise<void>;
   setCapture(mode: 'start' | 'pause' | 'stop'): Promise<void>;
   saveSettings(settings: Partial<Settings>): Promise<Settings>;
+  getCloudSyncStatus(): Promise<CloudSyncStatus>;
+  runCloudSync(): Promise<CloudSyncStatus>;
+  getCloudSyncKeyStatus(): Promise<LlmKeyStatus>;
+  saveCloudSyncKey(value: string): Promise<LlmKeyStatus>;
+  deleteCloudSyncKey(): Promise<LlmKeyStatus>;
   chooseVault(): Promise<string | null>;
   openVault(): Promise<string>;
   chooseFiles(): Promise<string[]>;

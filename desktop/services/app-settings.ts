@@ -21,7 +21,12 @@ export function defaultSettings(defaultVaultPath: string, projectPath: string): 
     screenCaptureIntervalSeconds: 60,
     screenRetentionHours: 24,
     inputWatchEnabled: false,
-    inputWatchPaths: []
+    inputWatchPaths: [],
+    cloudSyncEnabled: false,
+    cloudSyncUrl: 'https://zxlup.xin/sync-api/',
+    cloudSyncUsername: 'sydney',
+    cloudSyncIncludeWindowTitle: false,
+    cloudSyncIncludeFilePath: false
   };
 }
 

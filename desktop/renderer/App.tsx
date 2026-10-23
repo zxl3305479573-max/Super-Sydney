@@ -19,7 +19,7 @@ type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xia
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
-  settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: false, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
+  settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: false, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [], cloudSyncEnabled: false, cloudSyncUrl: 'https://zxlup.xin/sync-api/', cloudSyncUsername: 'sydney', cloudSyncIncludeWindowTitle: false, cloudSyncIncludeFilePath: false },
   stats: { total: 0, pending: 0, duration: 0 }, events: [], codexCapture: { state: 'disabled', error: '' }, claudeCapture: { state: 'disabled', error: '' }, screenCapture: { state: 'disabled', saved: 0, error: '' }, captureStatus: { state: 'idle', appName: '', windowTitle: '', sampledAt: '', message: '尚未采样' }
 };
 

@@ -42,6 +42,7 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
     if (patch.status === 'approved') {
       const event = getApprovedEvent(db, id);
       if (event && writeConfirmedEvent(vaultPath(), event)) writeDailySummary(vaultPath(), confirmedEvents(db), []);
+      ctx.cloudSync.enqueue(id);
     }
     ctx.broadcast();
   });
@@ -63,6 +64,12 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
   ipcMain.handle('llm-key:status', () => ctx.secretStore.getStatus());
   ipcMain.handle('llm-key:save', (_event, value: string) => { ctx.secretStore.save(value); return ctx.secretStore.getStatus(); });
   ipcMain.handle('llm-key:delete', () => { ctx.secretStore.remove(); return ctx.secretStore.getStatus(); });
+
+  ipcMain.handle('cloud-sync:status', () => ctx.cloudSync.status());
+  ipcMain.handle('cloud-sync:run', () => ctx.cloudSync.syncNow());
+  ipcMain.handle('cloud-sync:key:status', () => ctx.cloudSyncKeyStore.getStatus());
+  ipcMain.handle('cloud-sync:key:save', (_event, value: string) => { ctx.cloudSyncKeyStore.save(value); return ctx.cloudSyncKeyStore.getStatus(); });
+  ipcMain.handle('cloud-sync:key:delete', () => { ctx.cloudSyncKeyStore.remove(); return ctx.cloudSyncKeyStore.getStatus(); });
 
   ipcMain.handle('capture:set', (_event, mode: CaptureMode) => capture.setCapture(mode));
   ipcMain.handle('settings:save', (_event, patch: Partial<Settings>) => {

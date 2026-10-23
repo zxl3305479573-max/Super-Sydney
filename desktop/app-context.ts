@@ -7,6 +7,7 @@ import type { HeroSmsActivationStore } from './services/hero-sms-activations';
 import type { LlmConfig } from './services/llm-json';
 import type { ModelPresetStore } from './services/model-presets';
 import type { SecretStore } from './services/secret-store';
+import type { CloudSync } from './services/cloud-sync';
 
 /**
  * 主进程各模块共享的依赖。启动时在 db、密钥存储都就绪后一次性构造，
@@ -25,6 +26,9 @@ export interface AppContext {
   videoTtsKeyStore: SecretStore;
   /** HeroSMS 开放 API 的 key，与内容模型、红狐、视频配音分开存储。 */
   heroSmsKeyStore: SecretStore;
+  /** 云同步：把已确认事件批量上传到自建 API；密码在独立的安全存储文件里。 */
+  cloudSync: CloudSync;
+  cloudSyncKeyStore: SecretStore;
   /** HeroSMS 最近购号明细：补全活跃列表里被打码的号码。 */
   heroSmsActivations: HeroSmsActivationStore;
   /** 模型预设（多套内容 / 图片模型配置，在「设置 → 模型」下拉切换）。 */
