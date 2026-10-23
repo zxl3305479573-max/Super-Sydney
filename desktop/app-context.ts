@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { SettingsFile } from './services/app-settings';
 import type { IpLibrary } from './services/ip-library';
 import type { LastPages } from './services/last-pages';
+import type { HeroSmsActivationStore } from './services/hero-sms-activations';
 import type { LlmConfig } from './services/llm-json';
 import type { ModelPresetStore } from './services/model-presets';
 import type { SecretStore } from './services/secret-store';
@@ -22,6 +23,10 @@ export interface AppContext {
   redfoxKeyStore: SecretStore;
   /** 视频配音（OpenAI 兼容接口）的 key。 */
   videoTtsKeyStore: SecretStore;
+  /** HeroSMS 开放 API 的 key，与内容模型、红狐、视频配音分开存储。 */
+  heroSmsKeyStore: SecretStore;
+  /** HeroSMS 最近购号明细：补全活跃列表里被打码的号码。 */
+  heroSmsActivations: HeroSmsActivationStore;
   /** 模型预设（多套内容 / 图片模型配置，在「设置 → 模型」下拉切换）。 */
   modelPresets: ModelPresetStore;
   /** IP 库：全应用共用的 IP 形象（「设置 → IP 形象」），各内容模块选用。 */
@@ -33,6 +38,8 @@ export interface AppContext {
   llmConfig(): LlmConfig;
   /** 红狐 key：优先系统安全存储，其次环境变量 REDFOX_API_KEY。 */
   redfoxApiKey(): string;
+  /** HeroSMS key：优先系统安全存储，其次环境变量 HERO_SMS_API_KEY。 */
+  heroSmsApiKey(): string;
   /** 通知渲染进程重新拉取 state:get。 */
   broadcast(): void;
   /** 通知渲染进程 ~/.wewrite 配置变了。 */

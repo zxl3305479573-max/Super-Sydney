@@ -126,25 +126,34 @@ export async function requestGeneratedImage(config: ImageApiConfig, prompt: stri
   return bytes;
 }
 
-/** 生图的取消句柄：按任务记，界面上「取消生成」就是把它 abort 掉。 */
+/**
+ * 生图的取消句柄：按任务记，界面上「取消生成」就是把它 abort 掉。
+ * 同一篇可以同时跑封面和正文配图，所以一个任务下可能挂着几个句柄，取消时一起中断。
+ */
 export class ImageJobs {
-  private readonly controllers = new Map<number, AbortController>();
+  private readonly controllers = new Map<number, Set<AbortController>>();
 
   begin(id: number): AbortSignal {
     const controller = new AbortController();
-    this.controllers.set(id, controller);
+    const running = this.controllers.get(id) ?? new Set<AbortController>();
+    running.add(controller);
+    this.controllers.set(id, running);
     return controller.signal;
   }
 
-  end(id: number): void {
-    this.controllers.delete(id);
+  /** 传 signal 只结束那一个生图；不传就结束这个任务下的全部。 */
+  end(id: number, signal?: AbortSignal): void {
+    const running = this.controllers.get(id);
+    if (!running) return;
+    if (signal) for (const controller of running) { if (controller.signal === signal) running.delete(controller); }
+    if (!signal || !running.size) this.controllers.delete(id);
   }
 
   /** 返回是否真的中断了某个请求。 */
   cancel(id: number): boolean {
-    const controller = this.controllers.get(id);
-    if (!controller) return false;
-    controller.abort();
+    const running = this.controllers.get(id);
+    if (!running?.size) return false;
+    for (const controller of running) controller.abort();
     return true;
   }
 }

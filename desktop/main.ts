@@ -12,6 +12,7 @@ import { registerWeWriteIpc } from './ipc/wewrite';
 import { registerArticleStatsIpc } from './ipc/article-stats';
 import { registerSiteIpc } from './ipc/site';
 import { registerEmbeddedIpc } from './ipc/embedded';
+import { registerHeroSmsIpc } from './ipc/herosms';
 import { registerXhsIpc } from './ipc/xiaohongshu';
 import { registerIpIpc } from './ipc/ip';
 import { IpLibrary } from './services/ip-library';
@@ -38,6 +39,7 @@ import { useImageFetch } from './services/image-generation';
 import { ModelPresetStore } from './services/model-presets';
 import { resolveLlmApiKey, SecretStore } from './services/secret-store';
 import { LastPages } from './services/last-pages';
+import { HeroSmsActivationStore } from './services/hero-sms-activations';
 import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
 
@@ -97,6 +99,7 @@ function createContext(): AppContext {
   const secretStore = new SecretStore(dataDir, safeStorage);
   const llmApiKey = () => resolveLlmApiKey(secretStore.read(), process.env.SYDNEY_LLM_API_KEY || '');
   const redfoxKeyStore = new SecretStore(dataDir, safeStorage, 'redfox-api-key.bin');
+  const heroSmsKeyStore = new SecretStore(dataDir, safeStorage, 'hero-sms-api-key.bin');
   return {
     db: openDatabase(path.join(dataDir, 'sydney.db')),
     dataDir,
@@ -105,11 +108,14 @@ function createContext(): AppContext {
     secretStore,
     redfoxKeyStore,
     videoTtsKeyStore: new SecretStore(dataDir, safeStorage, 'video-tts-api-key.bin'),
+    heroSmsKeyStore,
+    heroSmsActivations: new HeroSmsActivationStore(dataDir),
     lastPages: new LastPages(dataDir),
     ipLibrary: new IpLibrary(dataDir),
     modelPresets: new ModelPresetStore(dataDir, new SecretStore(dataDir, safeStorage, 'model-preset-keys.bin')),
     llmApiKey,
     redfoxApiKey: () => resolveLlmApiKey(redfoxKeyStore.read(), process.env.REDFOX_API_KEY || ''),
+    heroSmsApiKey: () => resolveLlmApiKey(heroSmsKeyStore.read(), process.env.HERO_SMS_API_KEY || ''),
     // 和公众号、视频、小红书用同一个内容模型（「设置 → 模型」）。
     llmConfig: () => ({ apiKey: llmApiKey(), ...writerEndpoint(readWeWriteFiles().configText) }),
     broadcast: () => windowRef?.webContents.send('state:changed'),
@@ -205,6 +211,7 @@ if (primaryInstance) app.whenReady().then(() => {
   registerArticleStatsIpc(ctx);
   registerLinksIpc(ctx);
   registerSiteIpc(ctx, siteView);
+  registerHeroSmsIpc(ctx);
   // 变现分组里固定嵌入的站点（闲鱼、16688）：每个站点一个独立会话的视图。
   embeddedViews = registerEmbeddedIpc(ctx);
   // 网页地址的记录是攒一会儿再落盘的，退出前补写一次。

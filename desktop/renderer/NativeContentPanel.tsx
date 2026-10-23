@@ -8,6 +8,25 @@ import { ConfirmButton, readableError, shortTime, useWorkflowStepScroll } from '
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
 import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
+/** 同一篇文章的两条通道：正文（以及一切会改正文的操作）与封面，和主进程的两把锁一一对应。 */
+type Lane = 'main' | 'cover';
+const BOTH_LANES: Lane[] = ['main', 'cover'];
+const laneSlot = (id: number, lane: Lane) => lane === 'main' ? String(id) : `${id}:cover`;
+
+/** 从 since 起已经过去几秒；since 为 0 表示没在跑。秒数走字是为了让「等」和「坏了」能区分开。 */
+function useElapsed(since: number): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    setSeconds(0);
+    if (!since) return;
+    const tick = () => setSeconds(Math.max(0, Math.round((Date.now() - since) / 1000)));
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [since]);
+  return seconds;
+}
+
 /**
  * 创作流水线：只显示当前公众号资料下的文章任务（加上还没归类的老任务），新建任务也归到这份资料。
  * 切换资料时由父组件用 key 重建本组件，所以这里把资料当作常量处理。
@@ -21,11 +40,10 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   const [subdirectionId, setSubdirectionId] = useState<number | null>(null);
   const [topicSeed, setTopicSeed] = useState('');
   /**
-   * 进行中的长操作按文章记：一篇在生图时，可以切到另一篇继续写或同时生图。
-   * 后端的请求锁本来就是按文章 id 的，同一篇仍然一次只跑一件事。
+   * 进行中的长操作按「文章 + 通道」记：一篇在生图时，可以切到另一篇继续写或同时生图；
+   * 同一篇里封面单独一条通道（和后端的两把锁对应），所以生成封面时还能同时生成正文配图。
    */
-  const [jobs, setJobs] = useState<Record<number, { key: string; since: number }>>({});
-  const [busySeconds, setBusySeconds] = useState(0);
+  const [jobs, setJobs] = useState<Record<string, { key: string; since: number }>>({});
   const [env, setEnv] = useState<Env>({ wechatConfigured: false });
   const [mode, setMode] = useState<'pipeline' | 'board'>('pipeline');
   const [step, setStep] = useState<PipelineStepKey>('topic');
@@ -40,17 +58,22 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   /** 异步操作完成时用它判断用户是否还停在那篇文章上，别把别的文章的界面跳走。 */
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selectedId;
-  const busy = selectedId !== null ? jobs[selectedId]?.key ?? '' : '';
-  const busySince = selectedId !== null ? jobs[selectedId]?.since ?? 0 : 0;
+  const busy = selectedId !== null ? jobs[laneSlot(selectedId, 'main')]?.key ?? '' : '';
+  const coverBusy = selectedId !== null ? jobs[laneSlot(selectedId, 'cover')]?.key ?? '' : '';
+  const busySeconds = useElapsed(selectedId !== null ? jobs[laneSlot(selectedId, 'main')]?.since ?? 0 : 0);
+  const coverSeconds = useElapsed(selectedId !== null ? jobs[laneSlot(selectedId, 'cover')]?.since ?? 0 : 0);
   const candidateSheet = selectedId !== null ? candidateSheets[selectedId] ?? null : null;
   const setCandidateSheet = (id: number, bundle: ImageCandidateBundle | null) => setCandidateSheets(current => {
     const next = { ...current };
     if (bundle) next[id] = bundle; else delete next[id];
     return next;
   });
-  const setJob = (id: number, key: string) => setJobs(current => {
+  const setJob = (id: number, key: string, lanes: Lane[] = ['main']) => setJobs(current => {
     const next = { ...current };
-    if (key) next[id] = { key, since: current[id]?.since ?? Date.now() }; else delete next[id];
+    for (const lane of lanes) {
+      const slot = laneSlot(id, lane);
+      if (key) next[slot] = { key, since: current[slot]?.since ?? Date.now() }; else delete next[slot];
+    }
     return next;
   });
   const onTask = (id: number) => selectedRef.current === id;
@@ -85,6 +108,8 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   useEffect(() => { if (selected && !dirty) setStep(currentStepKey(selected, env)); }, [selectedId]);
 
   const replaceTask = (task: ContentTask) => setTasks(current => current.map(item => item.id === task.id ? task : item));
+  /** 封面通道只改封面：只合并 coverPath，免得把封面生成期间没保存的正文改动冲掉。 */
+  const replaceCover = (task: ContentTask) => setTasks(current => current.map(item => item.id === task.id ? { ...item, coverPath: task.coverPath, updatedAt: task.updatedAt } : item));
   const persistSelected = async () => {
     if (!selected) throw new Error('请先选择文章任务');
     const task = await window.sydney.updateContentTask(selected.id, { directionId: selected.directionId, subdirectionId: selected.subdirectionId, topic: selected.topic, title: selected.title, draft: selected.draft, sourcesJson: selected.sourcesJson });
@@ -99,29 +124,23 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   /** 新建任务不属于任何一篇文章，单独占一个槽位。 */
   const CREATE_SLOT = -1;
   /**
-   * 长操作只锁发起它的那篇文章；结束后的提示若不在当前文章，就带上标题以免看不出是哪篇。
+   * 长操作只锁发起它的那篇文章的对应通道；结束后的提示若不在当前文章，就带上标题以免看不出是哪篇。
+   * lanes 默认只占正文通道；只改封面的操作占封面通道，同时动两边的两条都占。
    */
-  const guarded = async (key: string, run: (say: (message: string) => void, here: () => boolean) => Promise<void>) => {
+  const guarded = async (key: string, run: (say: (message: string) => void, here: () => boolean) => Promise<void>, lanes: Lane[] = ['main']) => {
     const id = key === 'create' ? CREATE_SLOT : selectedRef.current;
     if (id === null) return;
     const owner = tasks.find(item => item.id === id);
     const title = owner?.title || owner?.topic || '新文章';
-    setJobs(current => ({ ...current, [id]: { key, since: Date.now() } }));
+    setJobs(current => {
+      const next = { ...current };
+      for (const lane of lanes) next[laneSlot(id, lane)] = { key, since: Date.now() };
+      return next;
+    });
     const scoped = (message: string) => notify(id === CREATE_SLOT || onTask(id) ? message : `《${title}》${message}`);
-    try { await run(scoped, () => onTask(id)); } catch (error) { scoped(readableError(error)); } finally { setJob(id, ''); }
+    try { await run(scoped, () => onTask(id)); } catch (error) { scoped(readableError(error)); } finally { setJob(id, '', lanes); }
   };
-  /**
-   * 生图可能要等几十秒，期间这篇文章的按钮会被锁定（避免并发改同一篇），其它文章不受影响。
-   * 秒数走字 + 取消按钮是为了让「等」和「坏了」能区分开。
-   */
-  useEffect(() => {
-    if (!busy) { setBusySeconds(0); return; }
-    const started = busySince || Date.now();
-    setBusySeconds(0);
-    const timer = window.setInterval(() => setBusySeconds(Math.max(0, Math.round((Date.now() - started) / 1000))), 1000);
-    return () => window.clearInterval(timer);
-  }, [busy, busySince]);
-  const imageJob = busy === 'cover' || busy === 'images' || busy === 'images-all';
+  const imageJob = [busy, coverBusy].some(key => key === 'cover' || key === 'images' || key === 'images-all');
   const cancelImages = async () => {
     if (!selected) return;
     const cancelled = await window.sydney.cancelContentImages(selected.id);
@@ -148,7 +167,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     setTasks(current => current.filter(item => item.id !== id));
     setCandidateSheet(id, null);
     say(`已删除《${name}》；已导出到知识库的文件不受影响`);
-  });
+  }, BOTH_LANES);
   const runStage = (stage: ContentStage, advance = true) => guarded(stage, async (say, here) => {
     if (!selected) return;
     await persistSelected();
@@ -172,35 +191,36 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     if (!dirty) { onOpenBackend(); return; }
     void guarded('save', async () => { replaceTask(await persistSelected()); onOpenBackend(); });
   };
-  /** 候选张数 > 1 时先生成候选（不落库），交给候选面板挑。 */
+  /** 候选张数 > 1 时先生成候选（不落库），交给候选面板挑；候选面板只有一个，所以出候选要两条通道都占。 */
   const wantCandidates = candidateCount > 1;
   const generateCover = () => guarded('cover', async say => {
     if (!selected) return;
-    await persistSelected();
     if (wantCandidates) {
+      await persistSelected();
       setCandidateSheet(selected.id, await window.sydney.generateContentImageCandidates(selected.id, 'cover', 3, candidateCount));
       say(`已生成 ${candidateCount} 张封面候选，挑一张再采用`);
       return;
     }
-    replaceTask(await window.sydney.generateContentCover(selected.id));
+    // 正文通道忙时后端不让保存；那时正文输入框是禁用的，不会有新的未保存修改。
+    if (dirty && !busy) await persistSelected();
+    replaceCover(await window.sydney.generateContentCover(selected.id));
     say('封面图已生成');
-  });
+  }, wantCandidates ? BOTH_LANES : ['cover']);
   /** IP 模板出封面：成功后返回另存的 1:1 分享图，失败（已提示）返回 null。 */
   const ipCover = (input: WechatIpCoverInput) => new Promise<{ path: string; thumbnail: string } | null>(resolve => {
     void guarded('ip-cover', async say => {
       if (!selected) return;
-      await persistSelected();
       const result = await window.sydney.renderContentIpCover(selected.id, input);
-      replaceTask(result.task);
+      replaceCover(result.task);
       say('IP 封面与 1:1 分享图已生成');
       resolve(result.share);
-    }).then(() => resolve(null));
+    }, ['cover']).then(() => resolve(null));
   });
   const chooseCover = () => guarded('cover-choose', async say => {
     if (!selected) return;
     const task = await window.sydney.chooseContentCover(selected.id);
-    if (task) { replaceTask(task); say('已关联封面图'); }
-  });
+    if (task) { replaceCover(task); say('已关联封面图'); }
+  }, ['cover']);
   /** 排版主题只影响呈现，不使审稿失效，所以保存后可以立即看到效果。 */
   const changeTheme = (theme: string) => guarded('theme', async () => {
     if (!selected) return;
@@ -217,7 +237,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     }
     replaceTask(await window.sydney.generateContentImages(selected.id, 3));
     say('已生成正文配图并插入正文，改动过正文需要重新审稿');
-  });
+  }, wantCandidates ? BOTH_LANES : ['main']);
   /** 封面与正文配图一次出：两条生成并发跑，部分失败时按已生成的结果入库并提示原因。 */
   const generateImagesWithCover = () => guarded('images-all', async say => {
     if (!selected) return;
@@ -230,7 +250,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     const task = await window.sydney.generateContentImagesWithCover(selected.id, 3);
     replaceTask(task);
     say(task.imageWarning || '封面与正文配图已生成');
-  });
+  }, BOTH_LANES);
   const applyCandidates = (picks: Array<{ key: string; path: string }>) => guarded('images-apply', async say => {
     if (!selected) return;
     try {
@@ -242,7 +262,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
       setCandidateSheet(selected.id, null);
       throw error;
     }
-  });
+  }, BOTH_LANES);
   const discardCandidates = () => guarded('images-discard', async () => {
     if (!selected) return;
     setCandidateSheet(selected.id, null);
@@ -254,7 +274,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
     const bundle = await window.sydney.openContentImageLibrary(selected.id, scope);
     setCandidateSheet(selected.id, bundle);
     say(bundle.warning || '从以前生成的图里挑一张');
-  });
+  }, BOTH_LANES);
   /** 「文章配图」里逐张换图：只换那一张，用的是这篇文章生成过的图。 */
   const swapImage = (index: number, target: string, expected: string) => guarded('images-swap', async say => {
     if (!selected) return;
@@ -323,11 +343,12 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
       await persistSelected();
       replaceTask(await window.sydney.publishContentTask(selected.id, allowUnreviewed));
       say('已推送到公众号草稿箱');
-    });
+    }, BOTH_LANES);
   };
 
   const locked = busy !== '';
-  const creating = Boolean(jobs[CREATE_SLOT]);
+  const coverLocked = coverBusy !== '';
+  const creating = Boolean(jobs[laneSlot(CREATE_SLOT, 'main')]);
   const autoStage = busy.startsWith('auto:') ? busy.slice('auto:'.length) as ContentStage : null;
   const autoStageLabel = autoStage ? stageLabels[autoStage] : '准备中';
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
@@ -360,7 +381,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
             <strong>{task.title || task.topic || taskScopeLabel(task)}</strong>
             <span>{taskScopeLabel(task)} · {steps.every(item => item.state === 'done') ? '已完成' : `第 ${current?.index} 步 ${current?.label}`}</span>
             <div className="flow-mini" aria-hidden="true">{steps.map(item => <i key={item.key} className={`flow-mini-${item.state}`} />)}</div>
-            <small>{jobs[task.id] ? '处理中…' : shortTime(task.updatedAt)}</small>
+            <small>{jobs[laneSlot(task.id, 'main')] || jobs[laneSlot(task.id, 'cover')] ? '处理中…' : shortTime(task.updatedAt)}</small>
           </button>;
         }) : <p className="native-empty">还没有文章任务</p>}
       </aside>
@@ -380,7 +401,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
                 {busy.startsWith('auto') ? `自动生成中：${autoStageLabel}…` : '自动生成'}
               </button>
               <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
-              {!locked && <ConfirmButton className="button button-danger-quiet" armedLabel="确认删除" title="删除这篇文章和它的配图；已导出到知识库的文件不受影响" onConfirm={() => void remove()}>删除</ConfirmButton>}
+              {!locked && !coverLocked && <ConfirmButton className="button button-danger-quiet" armedLabel="确认删除" title="删除这篇文章和它的配图；已导出到知识库的文件不受影响" onConfirm={() => void remove()}>删除</ConfirmButton>}
             </div>
           </div>
 
@@ -407,16 +428,18 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
               {nextStepKey(step) && <button className="button button-quiet" onClick={() => setStep(nextStepKey(step)!)}>下一步：{PIPELINE_STEPS.find(item => item.key === nextStepKey(step))?.label} →</button>}
             </div>
             {activeStep.reason && <p className={activeStep.state === 'locked' ? 'flow-locked-note' : 'flow-attention-note'}>{activeStep.reason}</p>}
-            {locked && <p className="flow-locked-note">
-              {`正在处理中，已等待 ${busySeconds} 秒；完成前这一页的按钮会保持禁用。`}
+            {(locked || coverLocked) && <p className="flow-locked-note">
+              {locked
+                ? `正在处理中，已等待 ${busySeconds} 秒；完成前会改动正文的按钮保持禁用${coverLocked ? '' : '，封面仍可同时生成'}。`
+                : `封面生成中，已等待 ${coverSeconds} 秒；正文、正文配图可以同时操作。`}
               {imageJob && <button className="button button-quiet button-small" onClick={() => void cancelImages()}>取消生成</button>}
             </p>}
 
-            {step === 'topic' && <TopicStep task={selected} taxonomy={taxonomy} locked={locked} busy={busy} onEdit={editSelected} onRun={() => void runStage('topics')} />}
+            {step === 'topic' && <TopicStep task={selected} taxonomy={taxonomy} locked={locked} busy={busy} onEdit={editSelected} onRun={() => void runStage('topics')} notify={notify} />}
             {step === 'brief' && <JsonStep value={selected.briefJson} empty="还没有任务书。任务书会给出目标读者、读者问题、核心主张、章节和边界，初稿严格按它展开。"
               labels={{ target_reader: '目标读者', reader_problem: '读者问题', promise: '文章承诺', core_claim: '核心主张', sections: '章节结构', evidence_needed: '需要的证据', boundaries: '写作边界', framework: '框架' }} />}
             {step === 'evidence' && <EvidenceStep task={selected} locked={locked} onSources={items => editSelected({ sourcesJson: JSON.stringify({ sources: items }) })} />}
-            {step === 'draft' && <DraftStep task={selected} assets={assets} locked={locked} busy={busy} busySeconds={busySeconds}
+            {step === 'draft' && <DraftStep task={selected} assets={assets} locked={locked} coverLocked={coverLocked} busy={busy} busySeconds={busySeconds}
               candidateCount={candidateCount} onCandidateCount={setCandidateCount}
               onEdit={draft => editSelected({ draft })} onTheme={theme => void changeTheme(theme)} onGenerateImages={() => void generateImages()} onGenerateImagesWithCover={() => void generateImagesWithCover()}
               onPickFromLibrary={() => void openImageLibrary('inline')} onSwapImage={(index, target, expected) => void swapImage(index, target, expected)} />}
@@ -427,6 +450,8 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
               locked={locked}
               busy={busy}
               busySeconds={busySeconds}
+              coverBusy={coverBusy}
+              coverSeconds={coverSeconds}
               candidateCount={candidateCount}
               onCandidateCount={setCandidateCount}
               onChoose={() => void chooseCover()}
@@ -439,7 +464,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
             />}
             {step === 'publish' && <PublishStep task={selected} env={env} />}
 
-            {candidateSheet && candidateSheet.taskId === selected.id && <ImageCandidatePicker bundle={candidateSheet} busy={busy} onApply={picks => void applyCandidates(picks)} onDiscard={() => void discardCandidates()} />}
+            {candidateSheet && candidateSheet.taskId === selected.id && <ImageCandidatePicker bundle={candidateSheet} busy={busy || coverBusy} onApply={picks => void applyCandidates(picks)} onDiscard={() => void discardCandidates()} />}
           </section>
         </> : <div className="native-empty native-editor-empty"><strong>先创建一个文章任务</strong><span>选择类别后，按 选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布 逐步推进。</span></div>}
       </div>

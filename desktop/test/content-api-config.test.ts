@@ -113,6 +113,18 @@ test('ImageJobs 取消只对进行中的任务生效；配图张数夹在 1..5',
   assert.deepEqual([clampImageCount(0), clampImageCount(9), clampImageCount('2'), clampImageCount('x')], [3, 5, 2, 3]);
 });
 
+test('ImageJobs 同一篇封面与配图并行：取消一起中断，结束一个不影响另一个', () => {
+  const jobs = new ImageJobs();
+  const cover = jobs.begin(1);
+  const inline = jobs.begin(1);
+  jobs.end(1, cover);
+  assert.equal(jobs.cancel(1), true);
+  assert.equal(inline.aborted, true);
+  assert.equal(cover.aborted, false);
+  jobs.end(1, inline);
+  assert.equal(jobs.cancel(1), false);
+});
+
 test('候选张数夹在 1..3，默认 1 张＝沿用生成即插入', () => {
   assert.deepEqual([clampCandidateCount(undefined), clampCandidateCount(0), clampCandidateCount(9), clampCandidateCount('2'), clampCandidateCount('x')], [1, 1, 3, 2, 1]);
 });

@@ -3,6 +3,7 @@ import type { AppState, WorkEvent } from '../shared';
 import WeWritePanel from './WeWritePanel';
 import VideoPanel from './VideoPanel';
 import EmbeddedSitePanel from './EmbeddedSitePanel';
+import HeroSmsPanel from './HeroSmsPanel';
 import XiaohongshuPanel from './XiaohongshuPanel';
 import SitePanel from './SitePanel';
 import EvolutionPanel from './EvolutionPanel';
@@ -14,7 +15,7 @@ import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui'
 import { TitleBar, useWindowChrome } from './TitleBar';
 import { useTheme } from './theme';
 
-type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'site' | 'settings';
+type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
@@ -26,7 +27,7 @@ const NAV: Array<{ group: string; items: Array<{ view: View; label: string; icon
   { group: '工作记录', items: [{ view: 'today', label: '今日工作', icon: 'today' }, { view: 'review', label: '待确认', icon: 'inbox' }] },
   { group: '成长', items: [{ view: 'evolve', label: '自我进化', icon: 'spark' }, { view: 'links', label: '链接收藏', icon: 'link' }] },
   { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }] },
-  { group: '变现', items: [{ view: 'xianyu', label: '闲鱼', icon: 'tag' }, { view: 'site16688', label: '16688', icon: 'chart' }, { view: 'site', label: 'AI 代充', icon: 'card' }] }
+  { group: '变现', items: [{ view: 'xianyu', label: '闲鱼', icon: 'tag' }, { view: 'site16688', label: '16688', icon: 'chart' }, { view: 'heroSms', label: '接码', icon: 'phone' }, { view: 'site', label: 'AI 代充', icon: 'card' }] }
 ];
 
 const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { title: string; subtitle: string }> = {
@@ -36,6 +37,7 @@ const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { titl
   links: { title: '链接收藏', subtitle: '看到值得回头看的文章、工具、教程，随手存在这里，按标签和关键词找回来。数据只存在本机。' },
   xianyu: { title: '闲鱼', subtitle: '闲鱼网页版直接嵌在这里：首次使用在页面里扫码登录，登录态只留在这个模块自己的会话里。' },
   site16688: { title: '16688', subtitle: '16688 商家后台直接嵌在这里：首次使用在页面里登录，登录态只留在这个模块自己的会话里。' },
+  heroSms: { title: '接码', subtitle: '通过 HeroSMS 官方开放 API 查余额、购买号码、接收验证码和管理激活；Key 只保存在系统安全存储。' },
   site: { title: 'AI 代充', subtitle: '把常用的代充 / 发卡站点都放进来：上面选站点，下面直接操作。站点开在它自己的会话里，应用只负责给它让出这块位置。' },
   settings: { title: '隐私与设置', subtitle: '采集范围、AI 对话监听和知识库位置。所有数据默认只保存在本机。' }
 };
@@ -50,7 +52,7 @@ function crumbsOf(view: View): string[] {
   return [];
 }
 
-const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'site', 'settings'];
+const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'heroSms', 'site', 'settings'];
 const VIEW_KEY = 'sydney.view';
 
 /** 上次退出时停在哪个模块，重新打开应用就回到那里。 */
@@ -149,6 +151,7 @@ export default function App() {
         privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />;
       case 'site16688': return <EmbeddedSitePanel siteKey="site16688" label="16688" overlay={hideWeb} covered={covered}
         privacy="页面由 16688 提供，登录请在页面里完成；应用不读它的 cookie，也不往页面里注入脚本，订单与账号问题以站点为准。" />;
+      case 'heroSms': return <HeroSmsPanel active={name === view} notify={notifyAny} />;
       case 'site': return <SitePanel overlay={hideWeb} notify={notifyAny} />;
       default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />;
     }

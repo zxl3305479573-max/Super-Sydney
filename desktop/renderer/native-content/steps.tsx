@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import type { ContentAssetBundle, ContentAssetView, ContentTask, ContentTaxonomy, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, WechatIpCoverInput } from '../../shared';
+import type { ContentAssetBundle, ContentAssetView, ContentTask, ContentTaxonomy, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, LlmKeyStatus, WechatIpCoverInput, XhsHotNote, XhsHotspotResult, XhsHotspotSource } from '../../shared';
 import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../../services/article-html';
 import { countInlineImages } from '../../services/content-images';
 import { renderEvidenceSection } from '../../services/evidence-section';
 import { FEATURED_SOURCE_LIMIT, pickFeaturedSources } from '../../services/content-sources';
 import { PIPELINE_STEPS, buildPipeline, currentStepKey, publishChecklist, type PipelineStep, type PipelineStepKey } from '../../services/content-pipeline';
+import { fuzzyCount } from '../../services/xhs-hotspot';
 import { findDirectionById, findSubdirectionById, subdirectionsOf, taskScopeLabel } from '../content-taxonomy';
-import { readableError } from '../ui';
+import { Icon, readableError, shortTime } from '../ui';
 import { WechatIpCoverPanel } from './IpCoverPanel';
-import { countChars, list, parseObject, readSources, stateNames, text, topicSuggestions, wrapPreviewHtml, type Env, type Source } from './format';
+import { countChars, list, parseObject, readSources, stateNames, text, topicResearchMeta, topicSuggestions, wrapPreviewHtml, type Env, type Source } from './format';
 
 /** 公众号创作流水线的各步骤面板。只负责展示与收集输入，动作由 NativeContentPanel 传入。 */
 
@@ -47,8 +48,144 @@ export function Board({ tasks, env, onOpen }: { tasks: ContentTask[]; env: Env; 
   })}</div>;
 }
 
-export function TopicStep({ task, taxonomy, locked, busy, onEdit, onRun }: { task: ContentTask; taxonomy: ContentTaxonomy | null; locked: boolean; busy: string; onEdit: (patch: Partial<ContentTask>) => void; onRun: () => void }) {
+const CONTENT_TOPIC_DAYS = [3, 7, 14, 30];
+const CONTENT_TOPIC_SIZES = [10, 20];
+const CONTENT_TOPIC_SOURCES: Array<{ value: XhsHotspotSource; label: string }> = [
+  { value: 'auto', label: '自动（红狐优先）' },
+  { value: 'redfox', label: '只用红狐' },
+  { value: 'web', label: '只用联网搜索' }
+];
+
+function contentDaysAgo(days: number): string {
+  const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function WechatTopicSearchRow({ note, adopted, onAdopt, onOpen }: {
+  note: XhsHotNote; adopted: boolean; onAdopt: () => void; onOpen: () => void;
+}) {
+  const heat = note.readCount ? { value: note.readCount, label: '阅读' } : { value: note.interactive, label: '互动' };
+  return <li className="xhs-hot">
+    <div className="xhs-hot-main">
+      <button className="xhs-hot-title" title="在浏览器中打开原文" disabled={!note.link} onClick={onOpen}>{note.title}</button>
+      <p className="xhs-hot-meta">
+        <span>{note.author.nickname}{note.author.fans ? `（${fuzzyCount(note.author.fans)}粉）` : ''}</span>
+        {note.createTime && <span>{note.createTime.slice(0, 10)}</span>}
+        {note.topics.length > 0 && <span>{note.topics.slice(0, 2).join(' · ')}</span>}
+      </p>
+      {note.desc && <p className="xhs-hot-desc">{note.desc}</p>}
+    </div>
+    <div className="xhs-hot-stats">
+      <strong>{note.unverified && !note.readCount ? '—' : fuzzyCount(heat.value)}</strong>
+      <small>{note.unverified && !note.readCount ? '热度未知' : heat.label}</small>
+    </div>
+    <button className="button button-secondary" disabled={adopted} onClick={onAdopt}>{adopted ? '已采用' : <><Icon name="plus" />采用</>}</button>
+  </li>;
+}
+
+/**
+ * 公众号选题研究：优先红狐公众号作品库，失败后按关键词联网搜索。
+ * 采用热点只填标题和选题方向；后续任务书与正文仍必须重新核实事实。
+ */
+function WechatTopicResearch({ task, profile, subdirection, locked, onEdit, notify }: {
+  task: ContentTask;
+  profile: { id: number; name: string; audience: string } | null;
+  subdirection: { id: number; name: string } | null;
+  locked: boolean;
+  onEdit: (patch: Partial<ContentTask>) => void;
+  notify: (message: string) => void;
+}) {
+  const suggested = task.topic.trim() || subdirection?.name || profile?.name || '';
+  const [keyword, setKeyword] = useState(suggested);
+  const [days, setDays] = useState(7);
+  const [pageSize, setPageSize] = useState(20);
+  const [source, setSource] = useState<XhsHotspotSource>('auto');
+  const [result, setResult] = useState<XhsHotspotResult | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<LlmKeyStatus | null>(null);
+
+  useEffect(() => {
+    setKeyword(suggested);
+    setResult(null);
+  }, [task.id, profile?.id ?? 0, subdirection?.id ?? 0]);
+  useEffect(() => {
+    void window.sydney.getRedfoxKeyStatus().then(setKeyStatus).catch(() => setKeyStatus(null));
+  }, []);
+
+  const search = async (word = keyword, refresh = false) => {
+    if (!word.trim()) {
+      notify('先填写选题方向、具体方向或搜索关键词');
+      return;
+    }
+    if (searching) return;
+    setSearching(true);
+    try {
+      setKeyword(word.trim());
+      setResult(await window.sydney.searchContentTopics({
+        keyword: word.trim(),
+        startDate: contentDaysAgo(days),
+        pageSize,
+        source,
+        refresh
+      }));
+    } catch (error) {
+      notify(readableError(error));
+    } finally {
+      setSearching(false);
+    }
+  };
+  const adopt = (note: XhsHotNote) => {
+    const context = note.desc.replace(/\s+/g, ' ').trim().slice(0, 500) || note.title;
+    onEdit({ title: note.title.slice(0, 100), topic: context });
+    notify(`已采用「${note.title}」为公众号选题`);
+  };
+  const open = (note: XhsHotNote) => {
+    if (!note.link) return;
+    void window.sydney.openXhsLink(note.link).catch(error => notify(readableError(error)));
+  };
+  const adopted = Boolean(result?.notes.some(note => note.title === task.title));
+  const keyMissing = keyStatus !== null && !keyStatus.configured;
+
+  return <section className="content-topic-research" aria-label="公众号热点选题">
+    <div className="flow-sub-head">
+      <h4>从公众号热点里找选题<small>优质库 → 广域库 → 联网搜索；红狐数据为 T+1，按阅读数优先。</small></h4>
+    </div>
+    {keyMissing && <p className="xhs-hint"><Icon name="key" size={14} />还没有保存红狐 API Key，当前自动改用联网搜索。可在「隐私与设置 → 数据服务」里配置。</p>}
+    <form className="xhs-search" onSubmit={event => { event.preventDefault(); void search(); }}>
+      <input className="input" value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="公众号选题关键词，例如：中老年早餐、控糖误区" />
+      <select className="input" aria-label="数据源" value={source} onChange={event => setSource(event.target.value as XhsHotspotSource)}>
+        {CONTENT_TOPIC_SOURCES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+      </select>
+      <select className="input" aria-label="时间范围" value={days} onChange={event => setDays(Number(event.target.value))}>
+        {CONTENT_TOPIC_DAYS.map(value => <option key={value} value={value}>近 {value} 天</option>)}
+      </select>
+      <select className="input" aria-label="选题数量" value={pageSize} onChange={event => setPageSize(Number(event.target.value))}>
+        {CONTENT_TOPIC_SIZES.map(value => <option key={value} value={value}>{value} 条</option>)}
+      </select>
+      <button className="button button-primary" type="submit" disabled={locked || searching}><Icon name="search" />{searching ? '搜索中…' : '搜索热点'}</button>
+    </form>
+    {result && <div className="xhs-result">
+      {result.notice && <p className="xhs-hint xhs-hint-warn"><Icon name="alert" size={14} />{result.notice}</p>}
+      <p className="xhs-result-meta">
+        <span className={`chip ${result.source === 'redfox' ? 'chip-accent' : ''}`}>{result.source === 'redfox' ? '红狐公众号' : '联网搜索'}</span>
+        「{result.keyword}」共 {result.total} 条，显示 {result.notes.length} 条 · {result.cached ? `缓存于 ${shortTime(result.fetchedAt)}` : `查询于 ${shortTime(result.fetchedAt)}`}
+        {result.cached && <button className="button button-quiet" type="button" disabled={locked || searching} onClick={() => void search(result.keyword, true)}><Icon name="refresh" />重新查询</button>}
+      </p>
+      {result.tips && <p className="xhs-hint">{result.tips}</p>}
+      {result.notes.length
+        ? <ul className="xhs-hot-list">{result.notes.map(note => <WechatTopicSearchRow key={note.id} note={note} adopted={adopted && note.title === task.title} onAdopt={() => adopt(note)} onOpen={() => open(note)} />)}</ul>
+        : <p className="flow-empty">没有搜到可用文章。换个关键词，或把时间范围放宽。</p>}
+    </div>}
+  </section>;
+}
+
+export function TopicStep({ task, taxonomy, locked, busy, onEdit, onRun, notify }: {
+  task: ContentTask; taxonomy: ContentTaxonomy | null; locked: boolean; busy: string;
+  onEdit: (patch: Partial<ContentTask>) => void; onRun: () => void; notify: (message: string) => void;
+}) {
   const suggestions = topicSuggestions(task.topicsJson);
+  const research = topicResearchMeta(task.topicsJson);
   const directions = taxonomy?.directions ?? [];
   // 分类只在选题这一步可改：换了方向就等于换了一篇要写的东西，后续步骤跟着走。
   const changeDirection = (next: number | null) => onEdit({ directionId: next, subdirectionId: subdirectionsOf(directions, next)[0]?.id ?? null });
@@ -73,7 +210,19 @@ export function TopicStep({ task, taxonomy, locked, busy, onEdit, onRun }: { tas
     {!profile || !subdirection
       ? <p className="flow-attention-note">这篇文章还没归到内容方向：先在上面选好「内容方向 / 具体方向」再生成，否则读者定位、语气与禁忌都用不上你改过的资料。</p>
       : <p className="ww-muted">{`将使用「${profile.name}」的资料：读者定位 ${profile.audience || '未填'}｜语气 ${profile.tone || '未填'}｜具体方向 ${subdirection.name}`}</p>}
-    <div className="flow-inline-actions"><button className="button button-secondary" disabled={locked} onClick={onRun}>{busy === 'topics' ? '生成中…' : suggestions.length ? '换一批 AI 选题' : 'AI 生成 5 个候选选题'}</button><small>点选候选会填入标题和方向；选好标题后点右上角「自动生成」，可一次跑完任务书 → 证据计划 → 初稿 → AI 审稿。</small></div>
+    <WechatTopicResearch task={task} profile={profile} subdirection={subdirection} locked={locked} onEdit={onEdit} notify={notify} />
+    <div className="flow-inline-actions">
+      <button className="button button-secondary" disabled={locked} onClick={onRun}>{busy === 'topics' ? '生成中…' : suggestions.length ? '换一批 AI 选题' : 'AI 结合热点生成 5 个候选选题'}</button>
+      <small>生成时会自动检索红狐公众号数据；点选候选会填入标题和方向，之后仍需人工核实事实与来源。</small>
+    </div>
+    {research && <p className={`xhs-hint ${research.source === 'none' ? 'xhs-hint-warn' : ''}`}>
+      <Icon name={research.source === 'redfox' ? 'check' : 'alert'} size={14} />
+      {research.source === 'redfox'
+        ? `这批候选参考了红狐公众号「${research.keyword}」的 ${research.count} 篇文章${research.cached ? '（本地缓存）' : ''}`
+        : research.source === 'web'
+          ? `这批候选参考了联网搜索「${research.keyword}」的 ${research.count} 条结果，未使用公众号阅读数据`
+          : `这批候选没有拿到实时热点数据${research.notice ? `：${research.notice}` : ''}`}
+    </p>}
     {suggestions.length > 0 && <div className="native-topic-options">{suggestions.map(item => <button key={item.title} disabled={locked} className={`native-task ${task.title === item.title ? 'is-selected' : ''}`} onClick={() => onEdit({ title: item.title, topic: item.angle })}>
       <strong>{item.title}</strong><small>{item.angle}</small>{item.risk && <small className="flow-risk">风险提示：{item.risk}</small>}<span>{task.title === item.title ? '已采用' : '采用这个选题'}</span></button>)}</div>}
   </div>;
@@ -123,14 +272,15 @@ export function EvidenceStep({ task, locked, onSources }: { task: ContentTask; l
   </div>;
 }
 
-export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onEdit, onTheme, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage }: {
-  task: ContentTask; assets: ContentAssetBundle | null; locked: boolean; busy: string; busySeconds: number;
+export function DraftStep({ task, assets, locked, coverLocked, busy, busySeconds, candidateCount, onCandidateCount, onEdit, onTheme, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage }: {
+  task: ContentTask; assets: ContentAssetBundle | null; locked: boolean; coverLocked: boolean; busy: string; busySeconds: number;
   candidateCount: number; onCandidateCount: (count: number) => void;
   onEdit: (draft: string) => void; onTheme: (theme: string) => void; onGenerateImages: () => void; onGenerateImagesWithCover: () => void;
   onPickFromLibrary: () => void; onSwapImage: (index: number, path: string, expected: string) => void;
 }) {
   const [preview, setPreview] = useState(false);
   const images = countInlineImages(task.draft);
+  const candidates = candidateCount > 1;
   return <div className="flow-body">
     <div className="flow-sub-head"><h4>{preview ? '正文预览（公众号排版）' : '文章正文（Markdown）'}<small>约 {countChars(task.draft)} 字</small></h4>
       <div className="flow-mode"><button className={!preview ? 'is-active' : ''} onClick={() => setPreview(false)}>编辑</button><button className={preview ? 'is-active' : ''} onClick={() => setPreview(true)}>预览</button></div></div>
@@ -139,13 +289,15 @@ export function DraftStep({ task, assets, locked, busy, busySeconds, candidateCo
     <details className="flow-secondary-tools">
       <summary>排版与配图<small>可选 · 当前 {images} 张正文配图 · 切换排版，或生成 / 替换配图</small></summary>
       <ThemePicker value={task.theme} locked={locked} onPick={theme => { onTheme(theme); setPreview(true); }} />
-      <div className="flow-inline-actions">
-        <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? `重新生成正文配图（现有 ${images} 张）` : 'AI 生成正文配图'}</button>
-        <button className="button button-secondary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
-        <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇正文以前生成过的配图列出来，挑一张插到对应的小节" onClick={onPickFromLibrary}>从已生成的图里挑</button>
-        <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
-        <small>按小标题自动挑位置插入配图；导出时图片一起复制到知识库，推送时自动上传到微信。插入配图会改动正文，需要重新审稿。</small>
+      <div className="flow-image-toolbar">
+        <button className="button button-secondary" disabled={locked || (candidates && coverLocked)} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? `重新生成正文配图（现有 ${images} 张）` : 'AI 生成正文配图'}</button>
+        <button className="button button-quiet" disabled={locked || coverLocked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : '封面 + 正文配图一起生成'}</button>
+        <span className="flow-image-toolbar-side">
+          <button className="button button-quiet button-small" disabled={locked || coverLocked} title="不打接口、不花钱：把这篇正文以前生成过的配图列出来，挑一张插到对应的小节" onClick={onPickFromLibrary}>从已生成的图里挑</button>
+          <CandidateCountField locked={locked || coverLocked} value={candidateCount} onChange={onCandidateCount} />
+        </span>
       </div>
+      <small className="flow-image-note">按小标题自动挑位置插入配图；导出时图片一起复制到知识库，推送时自动上传到微信。插入配图会改动正文，需要重新审稿。</small>
       <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
     </details>
   </div>;
@@ -174,35 +326,64 @@ function ThemePicker({ value, locked, onPick }: { value: string; locked: boolean
   </div>;
 }
 
-export function CoverStep({ task, assets, locked, busy, busySeconds, candidateCount, onCandidateCount, onChoose, onGenerateCover, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage, onIpCover }: {
+/**
+ * 封面与正文配图并排成两张卡片，各管各的按钮：封面走自己的通道，生成封面时正文配图照样能点。
+ * 一次生成两种、从图库挑和候选张数会同时动封面和正文，放在下面的工具条里。
+ */
+export function CoverStep({ task, assets, locked, busy, busySeconds, coverBusy, coverSeconds, candidateCount, onCandidateCount, onChoose, onGenerateCover, onGenerateImages, onGenerateImagesWithCover, onPickFromLibrary, onSwapImage, onIpCover }: {
   task: ContentTask; assets: ContentAssetBundle | null; locked: boolean; busy: string; busySeconds: number;
+  coverBusy: string; coverSeconds: number;
   candidateCount: number; onCandidateCount: (count: number) => void;
   onChoose: () => void; onGenerateCover: () => void; onGenerateImages: () => void; onGenerateImagesWithCover: () => void;
   onPickFromLibrary: () => void; onSwapImage: (index: number, path: string, expected: string) => void;
   onIpCover: (input: WechatIpCoverInput) => Promise<{ path: string; thumbnail: string } | null>;
 }) {
+  const coverLocked = coverBusy !== '';
+  const candidates = candidateCount > 1;
+  const images = countInlineImages(task.draft);
+  const coverRunning = coverBusy === 'cover' || coverBusy === 'images-all';
+  const inlineRunning = busy === 'images' || busy === 'images-all';
   return <div className="flow-body">
-    <div className="flow-cover">
-      <figure className="flow-cover-figure">
-        {assets?.cover?.thumbnail
-          ? <img src={assets.cover.thumbnail} alt="封面预览" />
-          : <div className="flow-image-missing">还没有封面图</div>}
-        <figcaption>{task.coverPath ? task.coverPath.split(/[\\/]/).pop() : '未选择封面'}</figcaption>
-      </figure>
-      <div className="flow-cover-actions">
-        <button className="button button-primary" disabled={locked} onClick={onGenerateCover}>{busy === 'cover' ? `生成中… ${busySeconds}s` : 'AI 生成封面'}</button>
-        <button className="button button-secondary" disabled={locked} onClick={onChoose}>选择本地图片</button>
-        <small>封面是微信草稿的缩略图；正文配图按小标题插进正文，推送时会自动上传到微信。一次生成会同时消耗封面与配图的费用。</small>
-        <details className="flow-secondary-tools">
-          <summary>更多生成选项<small>正文配图、一次生成、历史图库与候选张数</small></summary>
-          <button className="button button-primary" disabled={locked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : 'AI 生成封面 + 正文配图'}</button>
-          <button className="button button-secondary" disabled={locked} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : '只生成正文配图'}</button>
-          <button className="button button-quiet button-small" disabled={locked} title="不打接口、不花钱：把这篇任务以前生成过的封面与配图列出来，挑一张换上" onClick={onPickFromLibrary}>从已生成的图里挑</button>
-          <CandidateCountField locked={locked} value={candidateCount} onChange={onCandidateCount} />
-        </details>
-      </div>
+    <div className="flow-image-board">
+      <section className="flow-image-card">
+        <header><h4>封面</h4><small>微信草稿的缩略图，横版 2.35:1</small></header>
+        <figure className={`flow-image-card-preview ${coverRunning ? 'is-running' : ''}`}>
+          {assets?.cover?.thumbnail
+            ? <img src={assets.cover.thumbnail} alt="封面预览" />
+            : <div className="flow-image-missing">还没有封面图</div>}
+          {coverRunning && <span className="flow-image-card-busy">封面生成中… {coverBusy === 'images-all' ? busySeconds : coverSeconds}s</span>}
+        </figure>
+        <small className="flow-image-card-file" title={task.coverPath}>{task.coverPath ? task.coverPath.split(/[\\/]/).pop() : '未选择封面'}</small>
+        <div className="flow-image-card-actions">
+          <button className="button button-primary" disabled={coverLocked || (candidates && locked)} onClick={onGenerateCover}>{coverBusy === 'cover' ? `生成中… ${coverSeconds}s` : task.coverPath ? '重新生成封面' : 'AI 生成封面'}</button>
+          <button className="button button-secondary" disabled={coverLocked} onClick={onChoose}>选择本地图片</button>
+        </div>
+      </section>
+      <section className="flow-image-card">
+        <header><h4>正文配图</h4><small>当前 {images} 张 · 按小标题插进正文，推送时自动上传</small></header>
+        <div className={`flow-image-card-preview flow-image-card-strip ${inlineRunning ? 'is-running' : ''}`}>
+          {assets?.images.length
+            ? assets.images.slice(0, 3).map((image, index) => image.thumbnail
+              ? <img key={`${image.path}-${index}`} src={image.thumbnail} alt={image.caption || `正文配图 ${index + 1}`} />
+              : <div key={`${image.path}-${index}`} className="flow-image-missing">图片不可用</div>)
+            : <div className="flow-image-missing">{task.draft.trim() ? '还没有正文配图' : '先写好正文，再生成配图'}</div>}
+          {inlineRunning && <span className="flow-image-card-busy">配图生成中… {busySeconds}s</span>}
+        </div>
+        <small className="flow-image-card-file">插入配图会改动正文，需要重新审稿</small>
+        <div className="flow-image-card-actions">
+          <button className="button button-primary" disabled={locked || (candidates && coverLocked) || !task.draft.trim()} onClick={onGenerateImages}>{busy === 'images' ? `配图中… ${busySeconds}s` : images ? '重新生成正文配图' : 'AI 生成正文配图'}</button>
+        </div>
+      </section>
     </div>
-    <WechatIpCoverPanel task={task} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />
+    <div className="flow-image-toolbar">
+      <button className="button button-secondary" disabled={locked || coverLocked} title="封面与 3 张正文配图一次生成；正文为空时只出封面" onClick={onGenerateImagesWithCover}>{busy === 'images-all' ? `封面与配图生成中… ${busySeconds}s` : '封面 + 正文配图一起生成'}</button>
+      <span className="flow-image-toolbar-side">
+        <button className="button button-quiet button-small" disabled={locked || coverLocked} title="不打接口、不花钱：把这篇任务以前生成过的封面与配图列出来，挑一张换上" onClick={onPickFromLibrary}>从已生成的图里挑</button>
+        <CandidateCountField locked={locked || coverLocked} value={candidateCount} onChange={onCandidateCount} />
+      </span>
+    </div>
+    <small className="flow-image-note">封面和正文配图可以同时生成，各按一次生图计费；选 2–3 张候选时会先出候选再挑，这时两边一起占用。</small>
+    <WechatIpCoverPanel task={task} locked={coverLocked} busy={coverBusy === 'ip-cover'} onRender={onIpCover} />
     <InlineImageGallery taskId={task.id} images={assets?.images ?? []} locked={locked} onSwap={onSwapImage} />
   </div>;
 }

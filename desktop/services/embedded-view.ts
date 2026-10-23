@@ -24,6 +24,11 @@ export const EMBEDDED_SITES: Record<EmbeddedSiteKey, EmbeddedSiteConfig> = {
     key: 'site16688', label: '16688', partition: 'persist:sydney-16688', home: 'https://www.16688.com.cn/',
     hosts: ['16688.com.cn']
   },
+  // HeroSMS 接码本身走开放 API；这里保留官网地址，只用于用户点「官网充值」或查看账户。
+  heroSms: {
+    key: 'heroSms', label: '接码', partition: 'persist:sydney-hero-sms', home: 'https://hero-sms.com/cn/purchases/numbers',
+    hosts: ['hero-sms.com']
+  },
   // 公众号模块里的「公众号后台」：微信公众平台（创作者发布平台）。扫码登录、草稿编辑器、
   // 预览都在 weixin.qq.com 下，编辑器从后台首页以新窗口打开，留在视图里继续编辑。
   wechatMp: {

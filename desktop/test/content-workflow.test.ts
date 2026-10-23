@@ -150,6 +150,30 @@ test('missing key or invalid stage never calls the provider', async () => {
   assert.equal(calls, 0);
 });
 
+test('公众号选题 prompt 使用红狐公众号参考，并禁止照抄标题或把热度当证据', async () => {
+  let sent: { messages?: unknown } = {};
+  const fetcher = (async (_url, init) => {
+    sent = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ topics: [{ title: '早餐怎么搭配更稳', angle: '结构', reader_problem: '早餐蛋白质不足', risk_note: '不写具体剂量', keywords: ['早餐'] }] }) } }] }));
+  }) as typeof fetch;
+  await requestContentStage(task({ topic: '中老年早餐' }), 'topics', { apiKey: 'k', baseUrl: 'https://example.test/v1', model: 'writer' }, fetcher, {
+    topicResearch: {
+      source: 'redfox', keyword: '中老年早餐', startDate: '2026-10-15', endDate: '2026-10-22', total: 1,
+      notes: [{
+        id: 'W-1', title: '冬天早餐怎么吃更稳', desc: '蛋白质、主食和蔬菜搭配', cover: '', link: '', createTime: '2026-10-20 08:30:00',
+        topics: ['健康养生'], author: { id: 'a1', nickname: '健康早餐研究所', fans: 0 }, interactive: 2930, readCount: 52000,
+        liked: 1200, collected: 600, comments: 90, shared: 240, score: null
+      }],
+      latest: [], relatedSearches: [], hotTopics: [], tips: '', fetchedAt: '2026-10-22T02:00:00Z', cached: false
+    }
+  });
+  const messages = JSON.stringify(sent.messages);
+  assert.match(messages, /红狐公众号数据/);
+  assert.match(messages, /冬天早餐怎么吃更稳/);
+  assert.match(messages, /不得照抄标题/);
+  assert.match(messages, /不得把热度当事实依据/);
+});
+
 test('writer secret is never serialized into configuration', () => {
   const config = {
     style: { theme: 'elder-clear' }, wechat: { appid: '', secret: '', author: '' },

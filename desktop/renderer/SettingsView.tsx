@@ -13,7 +13,7 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'files', label: '文件与屏幕', icon: 'folder' },
   { id: 'models', label: '模型', icon: 'key' },
   { id: 'ip', label: 'IP 形象', icon: 'user' },
-  { id: 'data', label: '小红书数据', icon: 'chart' }
+  { id: 'data', label: '选题数据', icon: 'chart' }
 ];
 
 function statusBadge(status: { state: string; error: string }) {
@@ -210,7 +210,7 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
       <IpLibraryCard notify={notify} />
 
       <section id="set-data" className="set-card">
-        <header><Icon name="chart" size={18} /><div><h2>小红书 · 热点数据（红狐）</h2><p>小红书模块的热点选题数据。只在你点「搜索」时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
+        <header><Icon name="chart" size={18} /><div><h2>内容选题 · 热点数据（红狐）</h2><p>公众号、小红书和视频模块共用这一个红狐 Key。只在你点搜索或生成选题时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
         <Row title="红狐 API Key" badge={<span className={`badge ${redfoxStatus.configured ? 'badge-on' : 'badge-off'}`}>{redfoxFromEnv ? '使用环境变量' : redfoxStatus.configured ? `已保存 ${redfoxStatus.masked}` : '未保存'}</span>}
           description={redfoxStatus.encryptionAvailable ? '使用系统安全存储加密，不写入项目、数据库或知识库；未保存时回退到环境变量 REDFOX_API_KEY。获取地址：redfox.hk/settings/api-keys' : '当前系统安全存储不可用，无法保存密钥。'}>
           <div className="key-row">

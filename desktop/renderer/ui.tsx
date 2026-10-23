@@ -47,6 +47,7 @@ const paths: Record<string, ReactNode> = {
   mic: <><rect x="9" y="3" width="6" height="10.5" rx="3" /><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3.2" /></>,
   tag: <><path d="M4.5 4.5h6.2L20 13.8 13.8 20 4.5 10.7z" /><circle cx="8.6" cy="8.6" r="1.25" /></>,
   note: <><rect x="4.5" y="3.5" width="15" height="17" rx="3" /><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" /></>,
+  phone: <><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.4" /><path d="M10.5 17.8h3" /></>,
   card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>
 };
 export type IconName = keyof typeof paths;
@@ -69,10 +70,10 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
 }
 
 /** Click once to arm, click again within 3s to confirm. Avoids blocking dialogs for routine deletes. */
-export function ConfirmButton({ onConfirm, children, armedLabel = '确认删除？', className = '', title }: { onConfirm: () => void; children: ReactNode; armedLabel?: string; className?: string; title?: string }) {
+export function ConfirmButton({ onConfirm, children, armedLabel = '确认删除？', className = '', title, disabled = false }: { onConfirm: () => void; children: ReactNode; armedLabel?: string; className?: string; title?: string; disabled?: boolean }) {
   const [armed, setArmed] = useState(false);
   useEffect(() => { if (!armed) return; const timer = window.setTimeout(() => setArmed(false), 3000); return () => window.clearTimeout(timer); }, [armed]);
-  return <button type="button" title={title} className={`${className} ${armed ? 'is-armed' : ''}`} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? armedLabel : children}</button>;
+  return <button type="button" title={title} disabled={disabled} className={`${className} ${armed ? 'is-armed' : ''}`} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? armedLabel : children}</button>;
 }
 
 export function Modal({ open, onClose, title, eyebrow, children, footer, width = 720 }: { open: boolean; onClose: () => void; title: ReactNode; eyebrow?: string; children: ReactNode; footer?: ReactNode; width?: number }) {

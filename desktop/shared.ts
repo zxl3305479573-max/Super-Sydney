@@ -578,6 +578,8 @@ export type XhsHotNote = {
   collected: number;
   comments: number;
   shared: number;
+  /** 公众号 / 图文平台有明确阅读数时单独保留；小红书原接口没有这个字段。 */
+  readCount?: number;
   /** 有关键词时红狐给的评分：总分 15 = 相关性 10 + 热度 3 + 时效 2；全站热门时为 null。 */
   score: { total: number; relevance: number; popularity: number; recency: number } | null;
   /** 联网搜索得来、没有互动数据的条目。 */
@@ -697,9 +699,51 @@ export type XhsAnalyticsView = {
 export type XhsStatsImportResult = { file: string; added: number; updated: number; view: XhsAnalyticsView };
 
 export type XhsViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
-/** 变现分组里固定嵌入的站点（闲鱼、16688）：状态结构与小红书窗口一致，走 embed:* 通道、按 key 区分。 */
-export type EmbeddedSiteKey = 'xianyu' | 'site16688' | 'wechatMp';
+/** 变现分组里固定嵌入的站点（闲鱼、16688、接码）：状态结构与小红书窗口一致，走 embed:* 通道、按 key 区分。 */
+export type EmbeddedSiteKey = 'xianyu' | 'site16688' | 'heroSms' | 'wechatMp';
 export type EmbeddedViewState = XhsViewState;
+
+/* ── 变现 · HeroSMS 接码 API ───────────────────────────────────
+ * 接码模块走 HeroSMS 官方开放 API（SMS-Activate / handler_api 兼容层）。
+ * key 只存在系统安全存储，渲染进程只拿到掩码状态；同一次调用只返回一个号码结果。
+ */
+export type HeroSmsCountry = { id: number; name: string; englishName: string };
+export type HeroSmsService = { code: string; name: string };
+export type HeroSmsOffer = { cost: number | null; count: number };
+export type HeroSmsCountryOffer = HeroSmsOffer & { countryId: number };
+export type HeroSmsPhase = 'waiting' | 'code' | 'retry' | 'canceled' | 'completed' | 'unknown';
+export type HeroSmsActivation = {
+  id: string;
+  phone: string;
+  serviceCode: string;
+  countryId: number;
+  cost: number | null;
+  currency: string;
+  createdAt: string;
+  endsAt: string;
+  canGetAnotherSms: boolean;
+  operator: string;
+  phase: HeroSmsPhase;
+  code: string;
+  text: string;
+  receivedAt: string;
+};
+export type HeroSmsActivationStatus = {
+  id: string;
+  phase: HeroSmsPhase;
+  code: string;
+  text: string;
+  receivedAt: string;
+  message: string;
+};
+export type HeroSmsOverview = {
+  balance: number;
+  currency: string;
+  countries: HeroSmsCountry[];
+  services: HeroSmsService[];
+  activations: HeroSmsActivation[];
+  refreshedAt: string;
+};
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
 export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
@@ -764,6 +808,23 @@ export interface SydneyApi {
   getLlmKeyStatus(): Promise<LlmKeyStatus>;
   saveLlmKey(value: string): Promise<LlmKeyStatus>;
   deleteLlmKey(): Promise<LlmKeyStatus>;
+  getHeroSmsKeyStatus(): Promise<LlmKeyStatus>;
+  saveHeroSmsKey(value: string): Promise<LlmKeyStatus>;
+  deleteHeroSmsKey(): Promise<LlmKeyStatus>;
+  /** 用当前 HeroSMS key 查询余额，作为最小连通性测试。 */
+  testHeroSmsKey(): Promise<{ balance: number; currency: string }>;
+  /** 余额、国家、服务和当前活跃号码；只在用户打开 / 刷新模块时请求。 */
+  getHeroSmsOverview(): Promise<HeroSmsOverview>;
+  /** 查询所选国家 / 服务当前的号码数量与价格。 */
+  getHeroSmsOffer(serviceCode: string, countryId: number): Promise<HeroSmsOffer>;
+  /** 查询一个服务在所有国家的报价，用于直接写进国家下拉项。 */
+  getHeroSmsCountryOffers(serviceCode: string): Promise<HeroSmsCountryOffer[]>;
+  /** 明确点击确认后才调用；返回刚购买的号码。 */
+  buyHeroSmsNumber(serviceCode: string, countryId: number, maxPrice?: number): Promise<HeroSmsActivation>;
+  getHeroSmsActivation(id: string): Promise<HeroSmsActivationStatus>;
+  resendHeroSmsCode(id: string): Promise<HeroSmsActivationStatus>;
+  finishHeroSmsActivation(id: string): Promise<void>;
+  cancelHeroSmsActivation(id: string): Promise<void>;
   listContentTasks(): Promise<ContentTask[]>;
   getContentTaxonomy(): Promise<ContentTaxonomy>;
   /** 保存两级内容方向；返回归一化后的结果（含新分配的 id 与默认具体方向）。 */
@@ -776,6 +837,8 @@ export interface SydneyApi {
   /** 删除文章任务与它在应用目录里的配图；已导出到知识库的文件不动。 */
   deleteContentTask(id: number): Promise<void>;
   updateContentTask(id: number, patch: Partial<ContentTask>): Promise<ContentTask>;
+  /** 公众号选题：优先查红狐公众号作品库，失败时按关键词联网搜索。 */
+  searchContentTopics(query: XhsHotspotQuery): Promise<XhsHotspotResult>;
   generateContentStage(id: number, stage: ContentStage): Promise<ContentTask>;
   generateContentCover(id: number): Promise<ContentTask>;
   generateContentImages(id: number, count?: number): Promise<ContentTask>;

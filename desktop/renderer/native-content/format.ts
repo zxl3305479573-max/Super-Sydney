@@ -34,6 +34,27 @@ export function topicSuggestions(value: string): Array<{ title: string; angle: s
   const parsed = parseObject(value) as { topics?: Array<{ title?: string; angle?: string; risk_note?: string }> } | null;
   return (parsed?.topics || []).filter(item => typeof item.title === 'string').map(item => ({ title: item.title!, angle: item.angle || '', risk: item.risk_note || '' }));
 }
+export type TopicResearchMeta = {
+  source: 'redfox' | 'web' | 'none';
+  keyword: string;
+  count: number;
+  cached: boolean;
+  fetchedAt: string;
+  notice: string;
+};
+export function topicResearchMeta(value: string): TopicResearchMeta | null {
+  const parsed = parseObject(value) as { research?: Partial<TopicResearchMeta> } | null;
+  const research = parsed?.research;
+  if (!research || !['redfox', 'web', 'none'].includes(String(research.source))) return null;
+  return {
+    source: research.source as TopicResearchMeta['source'],
+    keyword: String(research.keyword ?? ''),
+    count: Math.max(0, Number(research.count) || 0),
+    cached: research.cached === true,
+    fetchedAt: String(research.fetchedAt ?? ''),
+    notice: String(research.notice ?? '')
+  };
+}
 export function readSources(value: string): Source[] {
   const data = parseObject(value || '{}') as { sources?: Array<{ title?: string; url?: string; excerpt?: string; status?: string; featured?: boolean }> } | null;
   return (data?.sources || []).map(item => ({ title: item.title || '', url: item.url || '', excerpt: item.excerpt || '', status: item.status === 'ai_suggested' ? 'ai_suggested' : 'user_provided', featured: item.featured === true }));

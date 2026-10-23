@@ -2,13 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
-import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, ImageCandidateScope } from '../shared';
+import type { ContentDirectionInput, ContentStage, ContentTask, DirectionNoteSuggestion, ImageCandidateBundle, ImageCandidateGroup, ImageCandidateOption, ImageCandidateScope, XhsHotspotQuery } from '../shared';
 import type { ImageSlot } from '../services/content-images';
 import { COVER_CANDIDATE_KEY, applyGeneratedImages, articleLeadExcerpt, buildImagePrompt, classifyAssetFile, collectTaskAssets, listInlineImages, mergeCandidateOptions, placeImages, replaceInlineImage, planCoverAndInlineImages, planImageSlots, resolveCandidatePicks, slotCandidateKey } from '../services/content-images';
 import { coverImagePrompt, imagePromptScope } from '../services/content-api-config';
 import { chosenDefaultSubdirectionName, createContentTask, deleteContentTask, getContentTask, listContentTasks, optionalId, saveTaxonomyTree, updateContentTask } from '../services/content-store';
 import { findSubdirection, subdirectionNames } from '../services/content-taxonomy';
 import { requestContentStage } from '../services/content-workflow';
+import { searchWechatTopicHotspots } from '../services/wechat-topic-search';
+import { wechatTopicKeyword } from '../services/wechat-redfox-hotspot';
 import { normalizeDirectionNoteRequest, requestDirectionNote } from '../services/direction-note';
 import { normalizeImageStyleRequest, requestImageStyle } from '../services/image-style-note';
 import { exportContentArticle, parseContentSources } from '../services/content-export';
@@ -31,6 +33,13 @@ import { ipReferenceImage, ipRenderKit } from './ip';
 export function registerContentIpc(ctx: AppContext): void {
   const { db } = ctx;
   const requests = new RequestLock('这篇文章正在处理，请等待当前操作完成');
+  /**
+   * 封面另走一条通道：封面只写 coverPath，和改正文的操作（初稿、审稿、正文配图）互不干扰，
+   * 所以生成封面时可以同时生成正文配图或继续写。会同时动封面和正文的操作要两把锁都拿到。
+   */
+  const coverRequests = new RequestLock('这篇文章的封面正在生成，请等这一张完成');
+  const runBoth = <T>(id: number, operation: () => Promise<T>): Promise<T> =>
+    requests.run(id, () => coverRequests.run(id, operation));
   const imageJobs = new ImageJobs();
   const weChat = new WeChatClient();
 
@@ -40,7 +49,10 @@ export function registerContentIpc(ctx: AppContext): void {
     return task;
   };
   const assertIdle = (id: number, action: string) => {
-    if (requests.has(id)) throw new Error(`文章正在处理，请稍后${action}`);
+    if (requests.has(id) || coverRequests.has(id)) throw new Error(`文章正在处理，请稍后${action}`);
+  };
+  const assertCoverIdle = (id: number, action: string) => {
+    if (coverRequests.has(id)) throw new Error(`封面正在生成，请稍后${action}`);
   };
 
   /** 公众号选用的 IP 角色参考图：AI 生图时把角色融进画面；没选 IP 时为 null，照原样生图。 */
@@ -195,12 +207,45 @@ export function registerContentIpc(ctx: AppContext): void {
     }
     return update(id, prepareContentEdit(getContentTask(db, id), patch));
   });
+  ipcMain.handle('content:topics:search', (_event, query: XhsHotspotQuery) =>
+    searchWechatTopicHotspots(db, query, ctx.redfoxApiKey()));
   ipcMain.handle('content:generate', async (_event, id: number, stage: ContentStage) => requests.run(id, async () => {
     const task = getContentTask(db, id);
     assertContentStage(task, stage);
-    const generated = await requestContentStage(task, stage, contentApiConfig(ctx, task.subdirectionId));
+    let topicResearch: Awaited<ReturnType<typeof searchWechatTopicHotspots>> | null = null;
+    let topicResearchNotice = '';
+    if (stage === 'topics') {
+      const keyword = wechatTopicKeyword(task);
+      if (keyword) {
+        try {
+          topicResearch = await searchWechatTopicHotspots(db, { keyword, pageSize: 12, source: 'auto' }, ctx.redfoxApiKey());
+        } catch (error) {
+          topicResearchNotice = error instanceof Error ? error.message : String(error);
+        }
+      } else {
+        topicResearchNotice = '还没有填写选题方向，也没有可用的具体方向';
+      }
+    }
+    const generated = await requestContentStage(task, stage, contentApiConfig(ctx, task.subdirectionId), fetch, {
+      topicResearch,
+      topicResearchNotice
+    });
     const patch: Partial<ContentTask> = { ...generated, finalArticle: '', reviewJson: '' };
-    if (stage === 'topics') patch.status = 'idea';
+    if (stage === 'topics') {
+      const topics = generated.topicsJson ? JSON.parse(generated.topicsJson) as Record<string, unknown> : { topics: [] };
+      patch.topicsJson = JSON.stringify({
+        ...topics,
+        research: topicResearch ? {
+          source: topicResearch.source,
+          keyword: topicResearch.keyword,
+          count: topicResearch.notes.length,
+          cached: topicResearch.cached,
+          fetchedAt: topicResearch.fetchedAt,
+          notice: topicResearch.notice || ''
+        } : { source: 'none', keyword: '', count: 0, notice: topicResearchNotice }
+      });
+      patch.status = 'idea';
+    }
     if (stage === 'brief' || stage === 'claims') patch.status = 'brief';
     if (stage === 'draft' || stage === 'revise') patch.status = 'draft';
     if (stage === 'review') {
@@ -212,7 +257,7 @@ export function registerContentIpc(ctx: AppContext): void {
     return update(id, patch);
   }));
   ipcMain.handle('content:cover:choose', async (_event, id: number) => {
-    assertIdle(id, '选择封面');
+    assertCoverIdle(id, '选择封面');
     const result = await dialog.showOpenDialog(ctx.window()!, { properties: ['openFile'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     return update(id, { coverPath: result.filePaths[0] });
@@ -221,7 +266,7 @@ export function registerContentIpc(ctx: AppContext): void {
    * 用公众号当前选用的 IP 本地排版出图，不调图片接口：2.35:1 的写成这篇的封面（推草稿时就用它），
    * 1:1 的分享图另存在素材目录（微信草稿接口只收一张封面，分享图由用户自行取用）。
    */
-  ipcMain.handle('content:ip-cover:render', async (_event, id: number, raw: unknown) => requests.run(id, async () => {
+  ipcMain.handle('content:ip-cover:render', async (_event, id: number, raw: unknown) => coverRequests.run(id, async () => {
     const ipId = ctx.ipLibrary.selections().wechat;
     if (!ipId) throw new Error('公众号还没有选用 IP：先在封面步骤里选一个');
     const input = normalizeWechatIpCoverInput(raw);
@@ -301,12 +346,12 @@ export function registerContentIpc(ctx: AppContext): void {
     });
     return { ...saved, mediaId };
   }));
-  ipcMain.handle('content:cover:generate', async (_event, id: number) => requests.run(id, async () => {
+  ipcMain.handle('content:cover:generate', async (_event, id: number) => coverRequests.run(id, async () => {
+    // 不清待挑的候选：正文配图的候选位置不受封面影响，挑图面板可以照常采用。
     const task = getContentTask(db, id);
-    pendingCandidates.delete(id);
     const signal = imageJobs.begin(id);
     try { return update(id, { coverPath: await generateCover(task, signal) }); }
-    finally { imageJobs.end(id); }
+    finally { imageJobs.end(id, signal); }
   }));
   /**
    * 正文配图：按小节挑位置，逐张生成后插回初稿。
@@ -323,7 +368,7 @@ export function registerContentIpc(ctx: AppContext): void {
       const { paths, failures } = await generateInline(task, slots, Date.now(), signal);
       if (!paths.some(Boolean)) throw new Error(signal.aborted ? '已取消生成' : failures[0] || '正文配图生成失败');
       return update(id, { draft: applyGeneratedImages(task.draft, slots, paths).draft, finalArticle: '', reviewJson: '', status: 'draft' });
-    } finally { imageJobs.end(id); }
+    } finally { imageJobs.end(id, signal); }
   }));
   /**
    * 一次动作同时出封面与正文配图：封面和配图并发生成，省掉来回点两次、等两轮。
@@ -333,7 +378,7 @@ export function registerContentIpc(ctx: AppContext): void {
    * 2. 部分图片失败不影响已经生成的图片入库，失败原因一并放进 imageWarning；
    * 3. 封面与配图全失败才抛错。
    */
-  ipcMain.handle('content:images:generate-all', async (_event, id: number, count = 3) => requests.run(id, async () => {
+  ipcMain.handle('content:images:generate-all', async (_event, id: number, count = 3) => runBoth(id, async () => {
     const task = getContentTask(db, id);
     pendingCandidates.delete(id);
     const plan = planCoverAndInlineImages(task.draft, clampImageCount(count));
@@ -344,7 +389,7 @@ export function registerContentIpc(ctx: AppContext): void {
       plan.withInline
         ? generateInline(task, plan.slots, Date.now(), signal)
         : Promise.resolve({ paths: [] as Array<string | null>, failures: [] as string[] })
-    ]).finally(() => imageJobs.end(id));
+    ]).finally(() => imageJobs.end(id, signal));
     const patch: Partial<ContentTask> = {};
     const warnings: string[] = [];
     if (plan.note) warnings.push(plan.note);
@@ -367,7 +412,7 @@ export function registerContentIpc(ctx: AppContext): void {
    * 候选图：每处并发出 candidates 张，只落盘不成文，返回带缩略图的分组交给界面挑。
    * scope 决定出哪几处：封面、正文配图，或一次都出（和「生成即插入」入口一一对应）。
    */
-  ipcMain.handle('content:images:candidates', async (_event, id: number, scope: ImageCandidateScope = 'both', count = 3, candidates = 1) => requests.run(id, async () => {
+  ipcMain.handle('content:images:candidates', async (_event, id: number, scope: ImageCandidateScope = 'both', count = 3, candidates = 1) => runBoth(id, async () => {
     const task = getContentTask(db, id);
     const perSlot = clampCandidateCount(candidates);
     if (perSlot < 2) throw new Error('候选图至少要 2 张，1 张请直接用「生成即插入」');
@@ -405,7 +450,7 @@ export function registerContentIpc(ctx: AppContext): void {
       const warnings = [scope === 'cover' ? '' : plan.note, failures.length ? `有 ${failures.length} 张候选没生成成功` : ''].filter(Boolean);
       return { taskId: id, groups, warning: warnings.join('；') } satisfies ImageCandidateBundle;
     } finally {
-      imageJobs.end(id);
+      imageJobs.end(id, signal);
     }
   }));
   /**
@@ -440,7 +485,7 @@ export function registerContentIpc(ctx: AppContext): void {
    * 两道保险：只认这篇文章自己配图目录里的文件（界面回传的路径不能当可信输入，
    * 但历史图也算，换图不必重新生成），正文在挑图期间改过就拒绝插入——旧行号插回去会打乱文章结构。
    */
-  ipcMain.handle('content:images:candidates:apply', (_event, id: number, picks: Array<{ key: string; path: string }>) => requests.run(id, async () => {
+  ipcMain.handle('content:images:candidates:apply', (_event, id: number, picks: Array<{ key: string; path: string }>) => runBoth(id, async () => {
     const pending = pendingCandidates.get(id);
     if (!pending) throw new Error('没有待选用的候选图，请先生成候选');
     const task = getContentTask(db, id);
