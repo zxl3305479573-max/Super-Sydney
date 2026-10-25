@@ -634,7 +634,8 @@ button.chip { cursor: pointer; }
 .native-task { display: grid; gap: 4px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); text-align: left; }
 .native-task:hover { border-color: oklch(0.84 0.015 260); }
 .native-task.is-selected { border-color: oklch(0.72 0.09 263); background: oklch(0.975 0.015 263); }
-.native-task strong { font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.native-task strong { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.native-task strong .xhs-note-order { flex: none; min-width: 27px; padding: 1px 5px; border: 1px solid var(--primary-line); border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 10px; font-weight: 700; line-height: 1.55; text-align: center; font-variant-numeric: tabular-nums; }
 .native-task span { color: var(--primary); font-size: 11px; }
 .native-task small { color: var(--muted); font-size: 11px; }
 .native-empty { margin: 0; padding: 22px 16px; border: 1px dashed var(--line); border-radius: var(--radius); color: var(--muted); font-size: 12px; text-align: center; }

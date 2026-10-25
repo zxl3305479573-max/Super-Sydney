@@ -82,13 +82,11 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   useEffect(() => { if (editing !== 'add') setNameDraft(account?.name ?? ''); }, [account?.name, editing]);
 
   const goTo = useCallback((next: XhsTab) => setTab(next), []);
-  const [publishNonce, setPublishNonce] = useState(0);
-  const openPublish = useCallback(() => { setPublishNonce(Date.now()); setTab('browser'); }, []);
   const openNote = useCallback((id: number, step?: XhsStepKey) => { setNoteTarget({ id, step, nonce: Date.now() }); setTab('notes'); }, []);
 
   if (!account) return <section className="xhs-panel"><p className="empty-state"><strong>正在加载小红书模块…</strong></p></section>;
 
-  const ctx: XhsContext = { account, notes, notify, goTo, openPublish, openNote, refresh };
+  const ctx: XhsContext = { account, notes, notify, goTo, openNote, refresh };
   /** 子页的异步回包可能在切号后才到；不属于当前账号的账号对象不能写回页头。 */
   const applyAccount = (next: XhsAccount) => {
     if (next.id === selectedRef.current) setAccount(next);
@@ -104,7 +102,6 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
     if (id === account.id) return;
     if (notesDirty.current && !window.confirm('当前笔记有未保存的修改，切换账号后会丢失。继续？')) return;
     notesDirty.current = false;
-    setPublishNonce(0);
     selectedRef.current = id;
     rememberAccountId(id);
     setEditing('');
@@ -184,7 +181,7 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
       {visited.includes('notes') && <KeepAlive show={tab === 'notes'}><NotesTab ctx={ctx} target={noteTarget} onDirtyChange={trackDirty} /></KeepAlive>}
       {visited.includes('audit') && <KeepAlive show={tab === 'audit'}><AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} /></KeepAlive>}
       {visited.includes('analytics') && <KeepAlive show={tab === 'analytics'}><AnalyticsTab ctx={ctx} /></KeepAlive>}
-      {visited.includes('browser') && <KeepAlive show={tab === 'browser'}><BrowserTab ctx={ctx} overlay={overlay || tab !== 'browser'} publishNonce={publishNonce}
+      {visited.includes('browser') && <KeepAlive show={tab === 'browser'}><BrowserTab ctx={ctx} overlay={overlay || tab !== 'browser'}
         onNotes={(accountId, read, url) => {
           if (accountId !== selectedRef.current) return;
           setViewNotes({ notes: read, url });

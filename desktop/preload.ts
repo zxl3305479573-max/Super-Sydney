@@ -151,6 +151,7 @@ const api: SydneyApi = {
   navigateXhsView: (accountId, target) => ipcRenderer.invoke('xhs:view:navigate', accountId, target),
   xhsViewGo: (accountId, action) => ipcRenderer.invoke('xhs:view:go', accountId, action),
   readXhsView: accountId => ipcRenderer.invoke('xhs:view:read', accountId),
+  fillXhsDraft: (accountId, id) => ipcRenderer.invoke('xhs:draft:fill', accountId, id),
   getRedfoxKeyStatus: () => ipcRenderer.invoke('xhs:redfox-key:status'),
   saveRedfoxKey: value => ipcRenderer.invoke('xhs:redfox-key:save', value),
   deleteRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:delete'),

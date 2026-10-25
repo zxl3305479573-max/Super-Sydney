@@ -5,7 +5,7 @@ import {
 } from '../../services/xhs-catalog';
 import { renderCardsPreview } from '../../services/xhs-cards';
 import {
-  countChars, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, type XhsStep
+  countChars, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, xhsPackageImagePaths, type XhsStep
 } from '../../services/xhs-pipeline';
 import { ConfirmButton, Icon, TagEditor } from '../ui';
 import { ScoreBar, sourceOf } from './common';
@@ -114,10 +114,13 @@ export function TitleStep({ note, locked, busy, stale, onEdit, onRun, onConfirm 
 }
 
 function CoverPreview({ assets, title }: { assets: XhsNoteAssets | null; title: string }) {
+  const fallback = assets?.cover ? null : assets?.images[0] ?? null;
+  const preview = assets?.cover?.thumbnail || fallback?.thumbnail || '';
+  const label = assets?.cover ? '3:4 封面' : fallback ? '封面使用图组第 1 张' : '还没有封面';
   return <div className="xhs-cover-preview">
-    <figure className="xhs-cover-large">{assets?.cover?.thumbnail ? <img src={assets.cover.thumbnail} alt="封面" /> : <div className="flow-image-missing">还没有封面</div>}<figcaption>3:4 封面</figcaption></figure>
+    <figure className="xhs-cover-large">{preview ? <img src={preview} alt="封面" /> : <div className="flow-image-missing">还没有封面</div>}<figcaption>{label}</figcaption></figure>
     <figure className="xhs-feed-card" title="手机信息流里的大小（约 170 像素宽）">
-      {assets?.cover?.thumbnail ? <img src={assets.cover.thumbnail} alt="信息流预览" /> : <div className="flow-image-missing">—</div>}
+      {preview ? <img src={preview} alt="信息流预览" /> : <div className="flow-image-missing">—</div>}
       <figcaption>{title || '标题'}</figcaption>
       <small>信息流预览：这么小还看得清吗？</small>
     </figure>
@@ -153,7 +156,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
   };
 
   return <div className="flow-body">
-    <h4 className="xhs-step-sub">① 封面（3:4）</h4>
+    <h4 className="xhs-step-sub">① 封面（可选，3:4）</h4>
     {coverStale && <ConfirmStale text="标题改过，封面上的标题字可能和新标题不一致。" locked={locked} onConfirm={() => onConfirm('cover')} />}
     <div className="xhs-cover-row">
       <CoverPreview assets={assets} title={note.title} />
@@ -164,7 +167,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
           <button className="button button-secondary" disabled={locked} onClick={onChooseCover}>用本地图片</button>
           {imageBusy && <button className="button button-quiet" onClick={onCancel}>取消生成</button>}
         </div>
-        <small className="ww-muted">封面会把标题做成大字放在上半部分，画风按笔记内容与定位档案里的视觉建议。生成后在左右补边成 3:4，不裁切画面；换下来的旧封面留在下面的候选图库里。</small>
+        <small className="ww-muted">封面会把标题做成大字放在上半部分，画风按笔记内容与定位档案里的视觉建议。生成后在左右补边成 3:4，不裁切画面；换下来的旧封面留在下面的候选图库里。也可以不单独做封面，导出时会自动使用发布图组第 1 张。</small>
       </div>
     </div>
     <div className="xhs-ip-head">
@@ -206,13 +209,13 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
         <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('pages')}>{busy === 'info-pages' ? '生成中…' : `按分页出 ${plan?.pages.length ?? 6} 张`}</button>
         <small className="ww-muted">{plan ? '固定「轻盈信息图」风格：白底、紫蓝 + 青柠绿、圆角卡片、线性图标。' : '先拆好分页：信息图按卡片分页逐页出图。'}</small>
       </div>
-      <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
+      <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} hasCover={Boolean(note.coverPath)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
     </details>
 
-    <h4 className="xhs-step-sub">④ 发布图组<small>封面固定第 1 张，下面是之后的顺序；导出发布包只用这一组</small></h4>
+    <h4 className="xhs-step-sub">④ 发布图组<small>独立封面优先；没有封面时第 1 张自动作封面，同一张图不会重复导出</small></h4>
     {assets?.images.length ? <ol className="xhs-gallery">{assets.images.map((item, index) => <li key={item.path}>
       {item.thumbnail ? <img src={item.thumbnail} alt={item.caption} /> : <div className="flow-image-missing">缺图</div>}
-      <span>{index + 2}. {{ card: '卡片', info: '信息图', local: '本地' }[item.source]}{item.caption ? ` · ${item.caption}` : ''}</span>
+      <span>{index + (note.coverPath ? 2 : 1)}. {{ card: '卡片', info: '信息图', local: '本地' }[item.source]}{!note.coverPath && index === 0 ? ' · 封面' : ''}{item.caption ? ` · ${item.caption}` : ''}</span>
       <div className="btn-group">
         <button className="icon-button" title="前移" disabled={locked || index === 0} onClick={() => move(index, -1)}>↑</button>
         <button className="icon-button" title="后移" disabled={locked || index === assets.images.length - 1} onClick={() => move(index, 1)}>↓</button>
@@ -230,8 +233,8 @@ const candidateSource: Record<XhsCandidateView['source'], string> = { cover: '�
  * 候选图库：每次生成 / 添加的图按批次排开（新的在前），从这里挑出最终的封面和发布图组。
  * 新一批生成出来时会先自动替换图组里同来源的旧图，被换下的旧图留在这里，可以整组或单张挑回去。
  */
-function CandidateLibrary({ candidates, order, locked, onArrange, onUseCover, onRemove }: {
-  candidates: XhsCandidateView[]; order: string[]; locked: boolean;
+function CandidateLibrary({ candidates, order, hasCover, locked, onArrange, onUseCover, onRemove }: {
+  candidates: XhsCandidateView[]; order: string[]; hasCover: boolean; locked: boolean;
   onArrange: (paths: string[]) => void; onUseCover: (path: string) => void; onRemove: (path: string) => void;
 }) {
   const batches = useMemo(() => {
@@ -261,7 +264,7 @@ function CandidateLibrary({ candidates, order, locked, onArrange, onUseCover, on
         </header>
         <ol className="xhs-gallery">{items.map(item => <li key={item.path} className={item.inGroup || item.isCover ? 'is-picked' : ''}>
           <img src={item.thumbnail} alt={item.caption} />
-          <span title={item.caption}>{item.isCover ? '当前封面' : item.inGroup ? `图组第 ${order.indexOf(item.path) + 2} 张` : '未使用'}{item.caption ? ` · ${item.caption}` : ''}</span>
+          <span title={item.caption}>{item.isCover ? '当前封面' : item.inGroup ? `图组第 ${order.indexOf(item.path) + (hasCover ? 2 : 1)} 张` : '未使用'}{item.caption ? ` · ${item.caption}` : ''}</span>
           <div className="btn-group">
             {!item.isCover && <button className="button button-quiet button-small" disabled={locked} onClick={() => toggle(item)}>{item.inGroup ? '移出图组' : '加入图组'}</button>}
             {!item.isCover && <button className="button button-quiet button-small" disabled={locked} onClick={() => onUseCover(item.path)}>设为封面</button>}
@@ -294,11 +297,21 @@ export function ChecksStep({ note, locked, busy, stale, onRun, onRevise }: Commo
   </div>;
 }
 
-export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOpen, onCopy, onPublishPage }: Common & {
-  assets: XhsNoteAssets | null; onEdit: () => void; onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void; onPublishPage: () => void;
+export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOpen, onCopy, onFillDraft }: Common & {
+  assets: XhsNoteAssets | null; onEdit: () => void; onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void; onFillDraft: () => void;
 }) {
   const checklist = xhsExportChecklist(note);
   const ready = checklist.filter(item => !item.optional).every(item => item.ok);
+  const exportPaths = xhsPackageImagePaths(note);
+  const exportAssets: Array<{ path: string; caption: string; thumbnail: string; source: 'cover' | 'card' | 'info' | 'local' }> = [];
+  for (const file of exportPaths) {
+    if (assets?.cover?.path === file) {
+      exportAssets.push({ ...assets.cover, source: 'cover' });
+      continue;
+    }
+    const item = assets?.images.find(image => image.path === file);
+    if (item) exportAssets.push(item);
+  }
   return <div className="flow-body">
     <ul className="flow-checklist">{checklist.map(item => <li key={item.label} className={item.ok ? 'is-ok' : 'is-missing'}>
       <span aria-hidden="true">{item.ok ? '✓' : '○'}</span>
@@ -306,24 +319,23 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
     </li>)}</ul>
     <div className="flow-inline-actions">
       <button className="button button-primary" disabled={locked || !ready} onClick={onExport}>{busy === 'export' ? '导出中…' : note.exportPath ? '重新导出发布包' : '导出发布包'}</button>
+      <button className="button button-primary" disabled={locked || !ready} title="打开当前账号的创作者中心，自动上传图片并填入标题、正文与标签；不会点击发布" onClick={onFillDraft}>{busy === 'draft' ? '正在填入…' : '填入小红书草稿'}</button>
       {note.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开发布包目录</button>}
       <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
       <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>
-      <button className="button button-secondary" title="在「小红书窗口」里打开网页版创作者中心的发布页，由你自己上传图片、粘贴文字并发布" onClick={onPublishPage}>去创作者中心发布</button>
     </div>
     <div className="flow-sub-head">
-      <h4>将要导出的图组<small>{(assets?.cover ? 1 : 0) + (assets?.images.length ?? 0)} 张，按这个顺序导出为 01、02…</small></h4>
+      <h4>将要导出的图组<small>{exportAssets.length} 张，按这个顺序导出为 01、02…，同一路径只导出一次</small></h4>
       <button className="button button-quiet" onClick={onEdit}>去调整图组</button>
     </div>
-    {assets?.cover || assets?.images.length ? <ol className="xhs-gallery xhs-export-strip">
-      {assets.cover && <li><img src={assets.cover.thumbnail} alt="封面" /><span>01 · 封面</span></li>}
-      {assets.images.map((item, index) => <li key={item.path}>
+    {exportAssets.length ? <ol className="xhs-gallery xhs-export-strip">
+      {exportAssets.map((item, index) => <li key={item.path}>
         {item.thumbnail ? <img src={item.thumbnail} alt={item.caption} /> : <div className="flow-image-missing">缺图</div>}
-        <span>{String(index + 2).padStart(2, '0')}{item.caption ? ` · ${item.caption}` : ''}</span>
+        <span>{String(index + 1).padStart(2, '0')} · {index === 0 ? `封面${note.coverPath ? '' : '（图组第 1 张）'}` : item.caption || '图片'}</span>
       </li>)}
     </ol> : <p className="flow-empty">还没有封面和图组。</p>}
     {note.exportPath && <p className="native-export-path">最近导出：{note.exportPath}</p>}
-    <p className="ww-muted">发布包在知识库「08-小红书」下：笔记.md（标题、正文、标签、检测结果、发布提醒）+ 01.png（封面）、02.png… 按图组顺序。本模块不代发布：请在小红书 App 或网页版创作者中心手动发布；含 AI 生成内容时记得勾选平台的 AI 内容声明。</p>
+    <p className="ww-muted">「填入小红书草稿」会按发布顺序上传 01、02… 并填好标题、正文与标签，随后停在创作者中心；你只需要检查并手动点击发布。也可以继续导出本地发布包。含 AI 生成内容时，发布前记得勾选平台的 AI 内容声明。</p>
   </div>;
 }
 

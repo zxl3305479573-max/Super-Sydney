@@ -766,6 +766,7 @@ export type HeroSmsOverview = {
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
 export type XhsPageContent = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
 export type XhsPageRead = XhsPageContent & { accountId: number };
+export type XhsDraftFillResult = { accountId: number; imageCount: number; title: string; bodyChars: number };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
 
 /** 成长 · 链接收藏里的一条。tags 是用户自己打的分类，openedAt 为空表示存下以后还没打开过。 */
@@ -1025,6 +1026,8 @@ export interface SydneyApi {
   xhsViewGo(accountId: number, action: 'back' | 'reload'): Promise<XhsViewState>;
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
   readXhsView(accountId: number): Promise<XhsPageRead>;
+  /** 在当前账号的创作者中心打开图文发布页，上传图片并填入标题、正文与标签；不会点击发布。 */
+  fillXhsDraft(accountId: number, id: number): Promise<XhsDraftFillResult>;
   onXhsViewChanged(callback: (accountId: number) => void): () => void;
   /** 一次性把公众号现有的内容 / 图片接口配置（含 key）复制过来；之后两边各改各的。 */
   /** 用小红书的内容模型配置发一次最小请求。 */

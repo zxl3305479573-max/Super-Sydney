@@ -9,10 +9,8 @@ import { useBusy, type XhsContext } from './common';
  * 搜索结果 / 发现页 → 交给「热点选题」；博主主页 → 交给「账号诊断」。
  * 只读页面上已经显示出来的内容：不自动滚动、不翻页、不调接口；遇到验证或登录墙会停下来交给你。
  */
-export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile }: {
+export function BrowserTab({ ctx, overlay, onNotes, onProfile }: {
   ctx: XhsContext; overlay: boolean;
-  /** 从「发布包」点过来时变化一次：打开窗口后直接跳到发布页。 */
-  publishNonce?: number;
   onNotes: (accountId: number, notes: XhsHotNote[], url: string) => void;
   onProfile: (accountId: number, prefill: AuditPrefill) => void;
 }) {
@@ -56,12 +54,6 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
     };
   }, [overlay, readStage, notify, accountId, applyState]);
 
-  // 放在挂载视图的 effect 之后：IPC 按顺序处理，视图先挂上再跳转。
-  useEffect(() => {
-    if (!publishNonce) return;
-    void window.sydney.navigateXhsView(accountId, { kind: 'publish' }).then(applyState).catch(error => notify(readableError(error)));
-  }, [publishNonce, notify, accountId, applyState]);
-
   const onCreator = Boolean(state?.url && /^https:\/\/creator\.xiaohongshu\.com\//.test(state.url));
   const navigate = (kind: 'home' | 'search' | 'publish') => run('nav', async () => applyState(await window.sydney.navigateXhsView(accountId, { kind, value: keyword })));
   const go = (action: 'back' | 'reload') => run('nav', async () => applyState(await window.sydney.xhsViewGo(accountId, action)));
@@ -95,7 +87,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
       <button className="button button-primary" disabled={locked || !state?.url} onClick={() => void read()}>{busy === 'read' ? '读取中…' : '读取当前页面'}</button>
     </div>
     <p className="xhs-hint">{state?.loading ? '页面加载中…' : state?.title || '小红书'} {state?.url && <code className="path">{state.url.slice(0, 90)}</code>}</p>
-    {onCreator && <p className="xhs-hint">创作者中心：把发布包目录里的 01、02… 按顺序拖进上传区（或点上传区选文件），标题和正文在「笔记创作 → 发布包」里一键复制。填好后由你自己确认并点发布，应用不会代填或代点。</p>}
+    {onCreator && <p className="xhs-hint">创作者中心：从「笔记创作 → 发布包」点「填入小红书草稿」，应用会按发布顺序上传图片并填写标题、正文和标签；请检查内容后由你自己点击发布，应用不会代点。</p>}
     {state?.error && <p className="xhs-hint xhs-hint-warn"><Icon name="alert" size={14} />{state.error}</p>}
     <div ref={stageRef} className="site-stage xhs-stage">
       <p className="site-stage-hint">{overlay ? '有弹窗打开时，小红书窗口先收起来。' : '正在打开小红书…'}</p>

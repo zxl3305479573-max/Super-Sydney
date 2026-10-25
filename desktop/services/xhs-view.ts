@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { session, WebContentsView, type BrowserWindow } from 'electron';
+import { session, WebContentsView, type BrowserWindow, type WebContents } from 'electron';
 import { openUrl } from './browser';
 import type { AppContext } from '../app-context';
-import type { SiteViewBounds, XhsPageRead, XhsViewState } from '../shared';
+import type { SiteViewBounds, XhsDraftFillResult, XhsPageRead, XhsViewState } from '../shared';
 import { clampSiteBounds } from './site-config';
 import { XHS_PUBLISH_URL } from './xhs-catalog';
 import { isXhsHost, normalizePageRead, XHS_PAGE_EXTRACT_SCRIPT, type RawPageExtract } from './xhs-page-parse';
@@ -18,6 +18,77 @@ const LEGACY_PARTITION = 'sydney-xhs';
 const XHS_HOME = 'https://www.xiaohongshu.com/explore';
 /** 两次读取之间至少隔这么久：读取是用户点出来的，但连点也不该连续请求页面。 */
 const READ_INTERVAL_MS = 3000;
+const DRAFT_PAGE_TIMEOUT_MS = 20_000;
+const DRAFT_UPLOAD_TIMEOUT_MS = 120_000;
+
+/** 切到图文发布 tab；页面有多套响应式节点，只在可见节点里找。 */
+const XHS_IMAGE_PUBLISH_TAB_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const tab = Array.from(document.querySelectorAll('.creator-tab'))
+    .find(element => visible(element) && (element.textContent || '').includes('上传图文'));
+  if (!tab) return false;
+  if (!tab.classList.contains('active')) tab.click();
+  return true;
+})()`;
+
+const XHS_IMAGE_UPLOAD_READY_SCRIPT = `(() => Array.from(document.querySelectorAll('input.upload-input[type="file"]'))
+  .some(element => (element.getAttribute('accept') || '').includes('.jpg') || (element.getAttribute('accept') || '').includes('image/')))()`;
+
+const XHS_DRAFT_FORM_READY_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const title = Array.from(document.querySelectorAll('input.c-input_inner, input[placeholder*="标题"]')).find(visible);
+  const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+    .find(element => visible(element) && !element.closest('input'));
+  return Boolean(title && editor);
+})()`;
+
+function fillDraftScript(input: { title: string; body: string }): string {
+  return `(() => {
+    const payload = ${JSON.stringify(input)};
+    const visible = element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const title = Array.from(document.querySelectorAll('input.c-input_inner, input[placeholder*="标题"]')).find(visible);
+    const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+      .find(element => visible(element) && !element.closest('input'));
+    if (!title || !editor) return { ok: false, reason: '发布页标题或正文输入框还没出现' };
+
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    title.focus();
+    if (setter) setter.call(title, payload.title);
+    else title.value = payload.title;
+    title.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: payload.title }));
+    title.dispatchEvent(new Event('change', { bubbles: true }));
+    title.blur();
+
+    editor.focus();
+    const selection = window.getSelection();
+    if (selection) {
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    const inserted = document.execCommand('insertText', false, payload.body);
+    if (!inserted) {
+      editor.textContent = payload.body;
+      editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: payload.body }));
+    }
+    editor.blur();
+    return {
+      ok: true,
+      title: title.value,
+      bodyChars: (editor.innerText || editor.textContent || '').length
+    };
+  })()`;
+}
 
 /** 每个账号一个会话分区：登录状态、cookie 互不相通，切账号不用退出重登。 */
 export function xhsPartitionName(accountId: number): string {
@@ -140,6 +211,51 @@ export class XhsView {
     // 页面脚本执行期间切了账号：这次结果属于旧账号，不能交给新账号的诊断 / 选题区。
     this.assertCurrent(id);
     return { ...normalizePageRead(raw ?? {}), accountId: id };
+  }
+
+  /**
+   * 在当前账号的创作者中心前台页面里填入图文笔记。
+   * 只通过页面自己的上传控件和输入框操作，最后停在编辑器，绝不点击发布按钮或调用内部接口。
+   */
+  async fillDraft(accountId: unknown, input: { title: string; body: string; images: string[] }): Promise<XhsDraftFillResult> {
+    const id = this.requireAccount(accountId);
+    this.accountId = id;
+    this.wanted = true;
+    this.sync();
+    const current = this.ensureView();
+    const contents = current.view.webContents;
+    const images = [...new Set(input.images.map(file => path.resolve(file)))];
+    if (!images.length) throw new Error('请至少添加一张图片，再填入发布页');
+    if (images.length > 18) throw new Error('小红书图文笔记最多 18 张图片');
+    for (const file of images) if (!fs.existsSync(file)) throw new Error(`图片文件不存在：${path.basename(file)}`);
+
+    current.error = '';
+    current.started = true;
+    try {
+      await contents.loadURL(XHS_PUBLISH_URL);
+    } catch (error) {
+      if (!isAborted(error)) throw error;
+    }
+    this.assertCurrent(id);
+    await this.waitForScript(contents, XHS_IMAGE_PUBLISH_TAB_SCRIPT, DRAFT_PAGE_TIMEOUT_MS, '发布页没有出现「上传图文」入口，请先在当前账号的窗口里登录小红书');
+    await wait(400);
+    await this.waitForScript(contents, XHS_IMAGE_UPLOAD_READY_SCRIPT, DRAFT_PAGE_TIMEOUT_MS, '图文发布页没有出现图片上传控件');
+    await this.setFileInput(contents, images);
+    await this.waitForScript(contents, XHS_DRAFT_FORM_READY_SCRIPT, DRAFT_UPLOAD_TIMEOUT_MS, '图片上传后没有出现标题和正文编辑区；请检查图片是否上传成功');
+    this.assertCurrent(id);
+    const filled = await contents.executeJavaScript(fillDraftScript({ title: input.title, body: input.body }), true) as {
+      ok?: boolean; reason?: string; title?: string; bodyChars?: number;
+    };
+    if (!filled?.ok) throw new Error(filled?.reason || '没有成功填入发布页');
+    // 小红书在输入变化后自动把编辑中的笔记保存到浏览器草稿箱；留出一点时间让草稿状态落盘。
+    await wait(2500);
+    this.assertCurrent(id);
+    return {
+      accountId: id,
+      imageCount: images.length,
+      title: filled.title ?? input.title,
+      bodyChars: filled.bodyChars ?? [...input.body].length
+    };
   }
 
   /** 账号被删除：关掉它的窗口并清空它的会话数据（cookie、缓存、本地存储）。 */
@@ -276,6 +392,44 @@ export class XhsView {
     if (this.accountId !== id) throw new Error('小红书账号已切换，已取消上一个账号的操作');
     return id;
   }
+
+  private async waitForScript(contents: WebContents, script: string, timeoutMs: number, message: string): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    let lastError = '';
+    while (Date.now() < deadline) {
+      if (contents.isDestroyed()) throw new Error('小红书窗口已关闭');
+      try {
+        if (await contents.executeJavaScript(script, true)) return;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+      await wait(500);
+    }
+    throw new Error(`${message}${lastError ? `：${lastError}` : ''}`);
+  }
+
+  /** 文件框本身不接收脚本赋值，使用 Chromium 调试协议把本地图片交给它的 change 流程。 */
+  private async setFileInput(contents: WebContents, files: string[]): Promise<void> {
+    const cdp = contents.debugger;
+    let attached = false;
+    try {
+      if (!cdp.isAttached()) {
+        cdp.attach('1.3');
+        attached = true;
+      }
+      const document = await cdp.sendCommand('DOM.getDocument', { depth: -1, pierce: true }) as { root: { nodeId: number } };
+      const found = await cdp.sendCommand('DOM.querySelector', {
+        nodeId: document.root.nodeId,
+        selector: 'input.upload-input[type="file"][accept*=".jpg"]'
+      }) as { nodeId: number };
+      if (!found.nodeId) throw new Error('没有找到图片上传控件');
+      await cdp.sendCommand('DOM.setFileInputFiles', { nodeId: found.nodeId, files });
+    } finally {
+      if (attached) {
+        try { cdp.detach(); } catch { /* 页面已跳转 */ }
+      }
+    }
+  }
 }
 
 /**
@@ -298,4 +452,8 @@ function migrateLegacyPartition(ctx: AppContext): void {
 function isAborted(error: unknown): boolean {
   const record = error as { code?: unknown; errno?: unknown } | null;
   return record?.code === 'ERR_ABORTED' || record?.errno === -3;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

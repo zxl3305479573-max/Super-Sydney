@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
-  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsPipelineProgress, xhsStale
+  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, sortXhsNotesByCreation,
+  xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
 import { readableError, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
@@ -29,6 +30,8 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { account, notes, notify } = ctx;
+  const orderedNotes = useMemo(() => sortXhsNotesByCreation(notes), [notes]);
+  const creationOrder = useMemo(() => new Map(orderedNotes.map((item, index) => [item.id, index + 1])), [orderedNotes]);
   const [selectedId, setSelectedId] = useState<number | null>(target?.id ?? notes[0]?.id ?? null);
   const [draft, setDraft] = useState<XhsNote | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -56,6 +59,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   useEffect(() => { if (selectedId === null && notes[0]) setSelectedId(notes[0].id); }, [notes, selectedId]);
 
   const note = draft;
+  const noteOrder = note ? creationOrder.get(note.id) : undefined;
   const pipeline = useMemo(() => (note ? buildXhsPipeline(note) : []), [note]);
   const assets = useXhsAssets(account.id, note?.id ?? 0, note?.updatedAt ?? '');
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
@@ -173,6 +177,14 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const removeCandidate = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.removeXhsCandidate(account.id, note.id, file)); } });
   const exportPackage = () => run('export', async () => { if (note) { await persist(); const saved = await window.sydney.exportXhsNote(account.id, note.id); apply(saved); notify(`发布包已导出：${saved.exportPath}`); } });
   const openPackage = () => run('open', async () => { if (note) { const error = await window.sydney.openXhsPackage(account.id, note.id); if (error) notify(error); } });
+  const fillDraft = () => run('draft', async () => {
+    if (!note) return;
+    if (!window.confirm(`把「${note.title || note.topic || '未命名笔记'}」填入当前账号的小红书发布页？\n\n会按发布顺序上传图片并填写标题、正文和标签，不会点击发布。`)) return;
+    await persist();
+    ctx.goTo('browser');
+    const filled = await window.sydney.fillXhsDraft(account.id, note.id);
+    notify(`已上传 ${filled.imageCount} 张图片并填入标题、正文和标签。请在小红书页面检查后手动点击发布`);
+  });
   const copy = (kind: 'title' | 'body') => run('copy', async () => {
     if (!note) return;
     const tags = readTags(note).map(tag => `#${tag}`).join(' ');
@@ -186,20 +198,21 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
 
   return <div className="native-layout">
     <aside className="native-task-list">
-      <div className="native-list-head"><h2>笔记</h2><span>{notes.length}</span></div>
+      <div className="native-list-head"><h2>笔记</h2><span>{notes.length} 篇 · 按创建时间</span></div>
       <form className="xhs-new-note" onSubmit={event => { event.preventDefault(); void create(); }}>
         <input className="input" disabled={locked} value={newTopic} onChange={event => setNewTopic(event.target.value)} placeholder="新选题（可留空）" />
         <button className="button button-primary" type="submit" disabled={locked}>{busy === 'create' ? '…' : '新建'}</button>
       </form>
-      {notes.length ? notes.map(item => {
+      {orderedNotes.length ? orderedNotes.map(item => {
         const steps = buildXhsPipeline(item);
         const current = steps.find(entry => entry.key === currentXhsStepKey(item));
         const done = steps.every(entry => entry.state === 'done');
+        const order = creationOrder.get(item.id) ?? 0;
         return <button key={item.id} className={`native-task ${selectedId === item.id ? 'is-selected' : ''}`} onClick={() => select(item)}>
-          <strong>{item.title || item.topic || '未命名笔记'}</strong>
+          <strong><span className="xhs-note-order" title={`第 ${order} 篇创建`}>{String(order).padStart(2, '0')}</span>{item.title || item.topic || '未命名笔记'}</strong>
           <span>{xhsNoteTypeLabel(item.noteType)} · {done ? '已出发布包' : `第 ${current?.index} 步 ${current?.label}${current?.state === 'attention' ? '（需处理）' : ''}`}</span>
           <div className="flow-mini" aria-hidden="true">{steps.map(entry => <i key={entry.key} className={`flow-mini-${entry.state}`} />)}</div>
-          <small>{shortTime(item.updatedAt)}</small>
+          <small>创建 {shortTime(item.createdAt)}</small>
         </button>;
       }) : <p className="native-empty">还没有笔记。从「热点选题」或「账号定位」转选题，或在上面直接新建。</p>}
     </aside>
@@ -208,7 +221,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
       {note && activeStep ? <>
         <div className="native-editor-head">
           <div>
-            <p className="eyebrow">{xhsNoteTypeLabel(note.noteType)} · 进度 {progress?.done}/{progress?.total}</p>
+            <p className="eyebrow">{noteOrder ? `第 ${String(noteOrder).padStart(2, '0')} 篇 · ` : ''}{xhsNoteTypeLabel(note.noteType)} · 进度 {progress?.done}/{progress?.total}</p>
             <h2>{note.title || note.topic || '新笔记'}</h2>
           </div>
           <div className="native-editor-actions">
@@ -246,7 +259,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
             onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onIpCover={input => void ipCover(input)} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
             onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
-          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}
+          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onFillDraft={() => void fillDraft()} />}
 
         </section>
       </> : <div className="native-empty native-editor-empty"><strong>还没有选中笔记</strong><span>按 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包 推进。标题放在正文之后：要基于写成的正文做搜索词覆盖与收藏动机。</span></div>}

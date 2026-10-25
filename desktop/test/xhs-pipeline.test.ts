@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import type { XhsNote } from '../shared.ts';
 import {
   AUTO_XHS_STAGES, assertXhsExportable, autoXhsPlan, buildXhsPipeline, checksPassed, countChars, currentXhsStepKey, deriveXhsStatus, findRiskWords, fingerprint, localChecks,
-  addCandidates, mergeCheckItems, normalizeTags, pickAutoXhsTitle, prepareXhsEdit, readCandidates, readCardPlan, routeByRules, stampBasis, xhsExportChecklist, xhsStale
+  addCandidates, mergeCheckItems, normalizeTags, pickAutoXhsTitle, prepareXhsEdit, readCandidates, readCardPlan, routeByRules, sortXhsNotesByCreation, stampBasis,
+  xhsDraftContent, xhsExportChecklist, xhsPackageImagePaths, xhsStale
 } from '../services/xhs-pipeline.ts';
 
 function note(patch: Partial<XhsNote> = {}): XhsNote {
@@ -19,6 +20,16 @@ test('指纹稳定、内容一变就不同', () => {
   assert.equal(fingerprint('护膝'), fingerprint('护膝'));
   assert.notEqual(fingerprint('护膝'), fingerprint('护膝 '));
   assert.match(fingerprint(''), /^[0-9a-f]{8}$/);
+});
+
+test('内容创作顺序按创建时间排列，后续更新时间不改变序号', () => {
+  const items = [
+    note({ id: 8, createdAt: '2026-10-20T08:00:00.000Z', updatedAt: '2026-10-25T20:00:00.000Z' }),
+    note({ id: 5, createdAt: '2026-10-18T08:00:00.000Z', updatedAt: '2026-10-18T09:00:00.000Z' }),
+    note({ id: 6, createdAt: '2026-10-18T08:00:00.000Z', updatedAt: '2026-10-24T09:00:00.000Z' }),
+    note({ id: 9, createdAt: '', updatedAt: '2026-10-26T09:00:00.000Z' })
+  ];
+  assert.deepEqual(sortXhsNotesByCreation(items).map(item => item.id), [5, 6, 8, 9]);
 });
 
 test('步骤按依赖解锁：选题 → 正文 → 标题 → 视觉 → 检测 → 发布包', () => {
@@ -143,12 +154,34 @@ test('检测报告总是完整 14 项；有 error 级未通过就算没通过', 
   assert.equal(checksPassed(note()), null);
 });
 
-test('导出门槛：正文、标题、封面是硬门槛', () => {
+test('导出门槛：正文、标题必须有；独立封面可选，图组首图可自动作封面', () => {
   assert.throws(() => assertXhsExportable(note({ title: 't', coverPath: 'c' })), /正文/);
   assert.throws(() => assertXhsExportable(note({ body: 'b', coverPath: 'c' })), /标题/);
-  assert.throws(() => assertXhsExportable(note({ body: 'b', title: 't' })), /封面/);
-  const list = xhsExportChecklist(note({ body: 'b', title: 't', coverPath: 'c' }));
+  assert.throws(() => assertXhsExportable(note({ body: 'b', title: 't' })), /至少添加一张图片/);
+  const cards = JSON.stringify([{ path: 'card-1.png', source: 'card', caption: '第 1 页' }, { path: 'card-2.png', source: 'card', caption: '第 2 页' }]);
+  assert.doesNotThrow(() => assertXhsExportable(note({ body: 'b', title: 't', imagesJson: cards })));
+  const list = xhsExportChecklist(note({ body: 'b', title: 't', imagesJson: cards }));
   assert.ok(list.filter(item => !item.optional).every(item => item.ok));
+  assert.match(list.find(item => item.label === '封面')?.detail ?? '', /图组第 1 张/);
+});
+
+test('发布图顺序：独立封面优先，回退图组首图，并按路径去重', () => {
+  const cards = JSON.stringify([
+    { path: 'cover.png', source: 'card', caption: '首图' },
+    { path: 'card-2.png', source: 'card', caption: '第 2 页' }
+  ]);
+  assert.deepEqual(xhsPackageImagePaths(note({ coverPath: '', imagesJson: cards })), ['cover.png', 'card-2.png']);
+  assert.deepEqual(xhsPackageImagePaths(note({ coverPath: 'cover.png', imagesJson: cards })), ['cover.png', 'card-2.png']);
+});
+
+test('填入发布页：标题和正文带标签，并按平台上限截断', () => {
+  const filled = xhsDraftContent(note({ title: '一'.repeat(25), body: '正文内容', tagsJson: JSON.stringify(['护膝', '冬季']) }));
+  assert.equal(filled.title, '一'.repeat(20));
+  assert.equal(filled.body, '正文内容\n\n#护膝 #冬季');
+  assert.equal(xhsDraftContent(note({ title: '标题', body: '长'.repeat(1200) })).body.length, 1000);
+  const withTags = xhsDraftContent(note({ title: '标题', body: '长'.repeat(1200), tagsJson: JSON.stringify(['护膝']) }));
+  assert.equal(withTags.body.length, 1000);
+  assert.ok(withTags.body.endsWith('\n\n#护膝'));
 });
 
 test('卡片分页读取时丢掉空页并归一化风格', () => {

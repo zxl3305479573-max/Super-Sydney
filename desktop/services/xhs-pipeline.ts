@@ -42,9 +42,32 @@ function parse<T>(value: string, fallback: T): T {
   try { return JSON.parse(value) as T; } catch { return fallback; }
 }
 
+/**
+ * 笔记的创作顺序只看创建时间，和后面修改正文 / 标题的更新时间无关。
+ * 同一毫秒创建的笔记用 id 兜底，保证刷新列表时序号不会互换。
+ */
+export function sortXhsNotesByCreation<T extends Pick<XhsNote, 'id' | 'createdAt'>>(notes: readonly T[]): T[] {
+  const createdAt = (item: T) => {
+    const parsed = Date.parse(item.createdAt);
+    return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+  };
+  return [...notes].sort((left, right) => createdAt(left) - createdAt(right) || left.id - right.id);
+}
+
 export function readTags(note: Pick<XhsNote, 'tagsJson'>): string[] {
   const value = parse<unknown>(note.tagsJson, []);
   return Array.isArray(value) ? value.map(item => String(item).trim()).filter(Boolean) : [];
+}
+
+/** 小红书发布页的正文：原正文 + 标签；标题和正文都按平台输入上限截断。 */
+export function xhsDraftContent(note: Pick<XhsNote, 'title' | 'body' | 'tagsJson'>): { title: string; body: string } {
+  const tags = readTags(note).map(tag => `#${tag}`).join(' ');
+  const suffix = tags ? `\n\n${tags}` : '';
+  const body = `${[...note.body.trim()].slice(0, Math.max(0, XHS_BODY_LIMIT - [...suffix].length)).join('').trimEnd()}${suffix}`;
+  return {
+    title: [...note.title.trim()].slice(0, XHS_TITLE_LIMIT).join(''),
+    body
+  };
 }
 export function readBasis(note: Pick<XhsNote, 'basisJson'>): XhsBasis {
   const value = parse<unknown>(note.basisJson, {});
@@ -140,7 +163,7 @@ export function currentBasis(note: XhsNote): Required<XhsBasis> {
     body: note.noteType,
     title: fingerprint(note.body),
     cover: fingerprint(note.title),
-    cards: fingerprint(note.body),
+    cards: fingerprint(`${note.title}\n${note.body}`),
     checks: fingerprint(`${note.title}\n${note.body}\n${tags}`),
     package: fingerprint(`${note.title}\n${note.body}\n${tags}\n${note.coverPath}\n${images}`)
   };
@@ -164,7 +187,7 @@ export function xhsStale(note: XhsNote, key: keyof XhsBasis): boolean {
 
 export function deriveXhsStatus(note: XhsNote): XhsNoteStatus {
   if (note.exportPath.trim() && !xhsStale(note, 'package')) return 'packaged';
-  if (note.coverPath.trim() && note.title.trim() && note.body.trim()) return 'visual';
+  if (xhsPackageImagePaths(note).length && note.title.trim() && note.body.trim()) return 'visual';
   if (note.title.trim() && note.body.trim()) return 'title';
   if (note.body.trim()) return 'body';
   return 'idea';
@@ -182,6 +205,8 @@ export function buildXhsPipeline(note: XhsNote): XhsStep[] {
   const hasBody = Boolean(note.body.trim());
   const hasTitle = Boolean(note.title.trim());
   const hasCover = Boolean(note.coverPath.trim());
+  const images = readImages(note);
+  const hasPackageImage = xhsPackageImagePaths(note).length > 0;
   const report = readCheckReport(note);
   const steps = XHS_STEPS.map((item, position): XhsStep => {
     let state: XhsStepState = 'ready';
@@ -200,9 +225,9 @@ export function buildXhsPipeline(note: XhsNote): XhsStep[] {
       else state = 'done';
     } else if (item.key === 'visual') {
       if (!hasTitle) { state = 'locked'; reason = '先定标题：封面上要放标题'; }
-      else if (!hasCover) state = 'ready';
+      else if (!hasPackageImage) state = 'ready';
       else if (xhsStale(note, 'cover')) { state = 'attention'; reason = '标题改过，封面上的标题字需要复核'; }
-      else if (readImages(note).some(image => image.source !== 'local') && xhsStale(note, 'cards')) { state = 'attention'; reason = '正文改过，图文卡片 / 信息图需要重新生成'; }
+      else if (images.some(image => image.source !== 'local') && xhsStale(note, 'cards')) { state = 'attention'; reason = '标题或正文改过，图文卡片 / 信息图需要重新生成'; }
       else state = 'done';
     } else if (item.key === 'checks') {
       if (!hasBody || !hasTitle) { state = 'locked'; reason = '正文与标题都有了才能检测'; }
@@ -212,7 +237,7 @@ export function buildXhsPipeline(note: XhsNote): XhsStep[] {
       else state = 'done';
     } else {
       const gate = xhsExportChecklist(note).filter(entry => !entry.optional).every(entry => entry.ok);
-      if (!gate) { state = 'locked'; reason = '正文、标题、封面都齐了才能导出'; }
+      if (!gate) { state = 'locked'; reason = '正文、标题和至少一张图片都齐了才能导出'; }
       else if (!note.exportPath.trim()) state = 'ready';
       else if (xhsStale(note, 'package')) { state = 'attention'; reason = '导出后内容又改过，需要重新导出发布包'; }
       else state = 'done';
@@ -268,15 +293,33 @@ export function xhsPipelineProgress(note: XhsNote): { done: number; total: numbe
   return { done: steps.filter(step => step.state === 'done').length, total: steps.length };
 }
 
-/** 导出门槛：正文、标题、封面是硬门槛；检测通过是建议项。 */
+/**
+ * 发布包实际要导出的图片：独立封面优先；没有独立封面时，图组第一张自动当封面。
+ * 同一路径只出现一次，避免历史数据或手动排序把封面重复放进发布包。
+ */
+export function xhsPackageImagePaths(note: Pick<XhsNote, 'coverPath' | 'imagesJson'>): string[] {
+  const paths = [note.coverPath.trim(), ...readImages(note).map(item => item.path.trim())].filter(Boolean);
+  return [...new Set(paths)];
+}
+
+/** 导出门槛：正文、标题是硬门槛；独立封面可选，但至少要有一张图片可作封面。 */
 export function xhsExportChecklist(note: XhsNote): Array<{ label: string; ok: boolean; detail: string; optional?: boolean }> {
   const passed = checksPassed(note);
   const images = readImages(note);
+  const packageImages = xhsPackageImagePaths(note);
+  const hasCover = Boolean(note.coverPath.trim());
   return [
     { label: '正文', ok: Boolean(note.body.trim()), detail: note.body.trim() ? `${countChars(note.body)} 字` : '还没有正文' },
     { label: '标题', ok: Boolean(note.title.trim()), detail: note.title.trim() || '还没有选定标题' },
-    { label: '封面', ok: Boolean(note.coverPath.trim()), detail: note.coverPath.trim() ? '已设置 3:4 封面' : '还没有封面' },
-    { label: '图组', ok: images.length > 0, detail: images.length ? `封面之后还有 ${images.length} 张` : '只有封面也能发，图文笔记通常 6 张以上', optional: true },
+    {
+      label: '封面', ok: packageImages.length > 0,
+      detail: hasCover ? '已设置独立封面' : images.length ? '未单独设置，自动使用图组第 1 张' : '请至少添加一张图片作为封面'
+    },
+    {
+      label: '图组', ok: images.length > 0,
+      detail: hasCover ? (images.length ? `封面之后还有 ${images.length} 张` : '只有封面也能发，图文笔记通常 6 张以上') : (images.length ? `共 ${images.length} 张，第 1 张同时作为封面` : '还没有发布图组'),
+      optional: true
+    },
     { label: '发布前检测', ok: passed === true && !xhsStale(note, 'checks'), detail: passed === null ? '还没检测' : xhsStale(note, 'checks') ? '检测后内容改过' : passed ? '全部硬性项通过' : '有未通过的硬性项', optional: true }
   ];
 }
@@ -284,7 +327,7 @@ export function xhsExportChecklist(note: XhsNote): Array<{ label: string; ok: bo
 export function assertXhsExportable(note: XhsNote): void {
   if (!note.body.trim()) throw new Error('请先写好正文，再导出发布包');
   if (!note.title.trim()) throw new Error('请先选定标题，再导出发布包');
-  if (!note.coverPath.trim()) throw new Error('请先设置封面，再导出发布包');
+  if (!xhsPackageImagePaths(note).length) throw new Error('请至少添加一张图片作为封面，再导出发布包');
 }
 
 /**

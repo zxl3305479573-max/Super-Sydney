@@ -47,12 +47,30 @@ test('发布包：封面 01、图组按顺序编号，笔记.md 含标题正文�
 test('发布包：缺门槛报错；图片丢失时报错且不留半个目录', () => {
   const dir = tempDir();
   const vault = path.join(dir, 'vault');
-  assert.throws(() => exportXhsPackage(vault, note({ coverPath: '' })), /封面/);
+  assert.throws(() => exportXhsPackage(vault, note({ coverPath: '' })), /至少添加一张图片/);
   assert.throws(() => exportXhsPackage('', note({ coverPath: 'x' })), /知识库/);
   const cover = path.join(dir, 'cover.png');
   fs.writeFileSync(cover, 'x');
   assert.throws(() => exportXhsPackage(vault, note({ coverPath: cover, imagesJson: JSON.stringify([{ path: path.join(dir, 'gone.png'), source: 'card', caption: '' }]) })), /不存在：gone\.png/);
   assert.equal(fs.existsSync(path.join(vault, '08-小红书')), false);
+});
+
+test('发布包：没有独立封面时用图组首图，封面与图组同一路径只导出一次', () => {
+  const dir = tempDir();
+  const first = path.join(dir, 'card-cover.png');
+  const second = path.join(dir, 'card-2.png');
+  fs.writeFileSync(first, 'first');
+  fs.writeFileSync(second, 'second');
+  const vault = path.join(dir, 'vault');
+  const images = [{ path: first, source: 'card' as const, caption: '第 1 页' }, { path: second, source: 'card' as const, caption: '第 2 页' }];
+  const fallback = exportXhsPackage(vault, note({ coverPath: '', imagesJson: JSON.stringify(images) }));
+  assert.deepEqual(fs.readdirSync(fallback).sort(), ['01.png', '02.png', '笔记.md']);
+  assert.equal(fs.readFileSync(path.join(fallback, '01.png'), 'utf8'), 'first');
+  assert.match(fs.readFileSync(path.join(fallback, '笔记.md'), 'utf8'), /1\. 01\.png（封面）/);
+
+  const deduped = exportXhsPackage(vault, note({ coverPath: first, imagesJson: JSON.stringify(images) }));
+  assert.deepEqual(fs.readdirSync(deduped).sort(), ['01.png', '02.png', '笔记.md']);
+  assert.equal(fs.readFileSync(path.join(deduped, '01.png'), 'utf8'), 'first');
 });
 
 test('迁移给早期建的表补列，数据保留', () => {

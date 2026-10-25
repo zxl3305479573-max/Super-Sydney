@@ -19,8 +19,8 @@ import { ipReferenceImage, ipRenderKit } from './ip';
 import { hotspotCacheKey, isHttpLink, normalizeHotspotQuery, searchRedfox, type FetchLike } from '../services/xhs-hotspot';
 import { searchTopicHotspots } from '../services/topic-hotspot-search';
 import {
-  chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, addCandidates, readCandidates, readCardPlan, readCheckReport, readImages, readPositioning,
-  readPositioningChat, routeByRules, stampBasis
+  addCandidates, assertXhsExportable, chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, readCandidates, readCardPlan, readCheckReport,
+  readImages, readPositioning, readPositioningChat, routeByRules, stampBasis, xhsDraftContent, xhsPackageImagePaths
 } from '../services/xhs-pipeline';
 import { fitToThreeFour, renderHtmlPages } from '../services/xhs-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
@@ -516,6 +516,12 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   ipcMain.handle('xhs:view:navigate', (_event, accountId: number, target: { kind?: unknown; value?: unknown }) => view.navigate(accountId, target ?? {}));
   ipcMain.handle('xhs:view:go', (_event, accountId: number, action: 'back' | 'reload') => view.go(accountId, action === 'back' ? 'back' : 'reload'));
   ipcMain.handle('xhs:view:read', (_event, accountId: number) => view.read(accountId));
+  ipcMain.handle('xhs:draft:fill', async (_event, accountId: number, id: number) => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
+    assertXhsExportable(note);
+    const content = xhsDraftContent(note);
+    return view.fillDraft(accountId, { ...content, images: xhsPackageImagePaths(note) });
+  }));
 
   /* ── 红狐 Key 与链接 ───────────────────────────────────────── */
 
