@@ -42,53 +42,53 @@ const XHS_DRAFT_FORM_READY_SCRIPT = `(() => {
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0;
   };
-  const title = Array.from(document.querySelectorAll('input.c-input_inner, input[placeholder*="标题"]')).find(visible);
+  const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
   const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
     .find(element => visible(element) && !element.closest('input'));
   return Boolean(title && editor);
 })()`;
 
-function fillDraftScript(input: { title: string; body: string }): string {
+function focusDraftFieldScript(field: 'title' | 'body'): string {
   return `(() => {
-    const payload = ${JSON.stringify(input)};
     const visible = element => {
       const rect = element.getBoundingClientRect();
       return rect.width > 0 && rect.height > 0;
     };
-    const title = Array.from(document.querySelectorAll('input.c-input_inner, input[placeholder*="标题"]')).find(visible);
+    const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
     const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
       .find(element => visible(element) && !element.closest('input'));
-    if (!title || !editor) return { ok: false, reason: '发布页标题或正文输入框还没出现' };
-
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    title.focus();
-    if (setter) setter.call(title, payload.title);
-    else title.value = payload.title;
-    title.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: payload.title }));
-    title.dispatchEvent(new Event('change', { bubbles: true }));
-    title.blur();
-
+    if (${JSON.stringify(field)} === 'title') {
+      if (!title) return false;
+      title.focus();
+      title.select();
+      return true;
+    }
+    if (!editor) return false;
     editor.focus();
     const selection = window.getSelection();
-    if (selection) {
-      const range = document.createRange();
-      range.selectNodeContents(editor);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
-    const inserted = document.execCommand('insertText', false, payload.body);
-    if (!inserted) {
-      editor.textContent = payload.body;
-      editor.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: payload.body }));
-    }
-    editor.blur();
-    return {
-      ok: true,
-      title: title.value,
-      bodyChars: (editor.innerText || editor.textContent || '').length
-    };
+    if (!selection) return false;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
   })()`;
 }
+
+const XHS_READ_DRAFT_FIELDS_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
+  const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+    .find(element => visible(element) && !element.closest('input'));
+  return {
+    ok: Boolean(title && editor),
+    title: title?.value ?? '',
+    bodyChars: (editor?.innerText || editor?.textContent || '').length
+  };
+})()`;
 
 /** 每个账号一个会话分区：登录状态、cookie 互不相通，切账号不用退出重登。 */
 export function xhsPartitionName(accountId: number): string {
@@ -243,10 +243,16 @@ export class XhsView {
     await this.setFileInput(contents, images);
     await this.waitForScript(contents, XHS_DRAFT_FORM_READY_SCRIPT, DRAFT_UPLOAD_TIMEOUT_MS, '图片上传后没有出现标题和正文编辑区；请检查图片是否上传成功');
     this.assertCurrent(id);
-    const filled = await contents.executeJavaScript(fillDraftScript({ title: input.title, body: input.body }), true) as {
-      ok?: boolean; reason?: string; title?: string; bodyChars?: number;
+    if (!await contents.executeJavaScript(focusDraftFieldScript('title'), true)) throw new Error('没有找到标题输入框');
+    contents.insertText(input.title);
+    if (!await contents.executeJavaScript(focusDraftFieldScript('body'), true)) throw new Error('没有找到正文编辑器');
+    contents.insertText(input.body);
+    await wait(600);
+    const filled = await contents.executeJavaScript(XHS_READ_DRAFT_FIELDS_SCRIPT, true) as {
+      ok?: boolean; title?: string; bodyChars?: number;
     };
-    if (!filled?.ok) throw new Error(filled?.reason || '没有成功填入发布页');
+    if (!filled?.ok) throw new Error('没有成功填入发布页');
+    if (filled.title !== input.title || !filled.bodyChars) throw new Error('发布页没有接受填入的标题或正文，请刷新后重试');
     // 小红书在输入变化后自动把编辑中的笔记保存到浏览器草稿箱；留出一点时间让草稿状态落盘。
     await wait(2500);
     this.assertCurrent(id);

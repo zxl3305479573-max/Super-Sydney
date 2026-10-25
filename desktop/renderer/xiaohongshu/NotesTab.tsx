@@ -3,7 +3,7 @@ import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey }
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
   XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, sortXhsNotesByCreation,
-  xhsPipelineProgress, xhsStale
+  xhsExportChecklist, xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
 import { readableError, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
@@ -195,6 +195,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const index = XHS_STEPS.findIndex(item => item.key === step);
   const next = XHS_STEPS[index + 1]?.key;
   const progress = note ? xhsPipelineProgress(note) : null;
+  const draftReady = note ? xhsExportChecklist(note).filter(item => !item.optional).every(item => item.ok) : false;
 
   return <div className="native-layout">
     <aside className="native-task-list">
@@ -230,6 +231,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
               {autoStage ? `${AUTO_STAGE_LABEL[autoStage]}…` : '自动生成'}
             </button>
             <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
+            <button className="button button-secondary" disabled={locked || !draftReady} title={draftReady ? '自动上传图片并填入小红书发布页，不会点击发布' : '正文、标题和至少一张图片齐了才能填入草稿'} onClick={() => void fillDraft()}>{busy === 'draft' ? '填入中…' : '填入小红书草稿'}</button>
             <button className="button button-quiet" disabled={locked} onClick={() => void remove()}>删除</button>
           </div>
         </div>
