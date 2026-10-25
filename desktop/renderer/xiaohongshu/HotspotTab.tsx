@@ -44,7 +44,7 @@ export function HotspotTab({ ctx, viewNotes, onClearViewNotes }: { ctx: XhsConte
   const suggest = () => run('suggest', async () => setIdeas(await window.sydney.suggestXhsTopics(account.id, keyword)));
   const adoptIdea = (idea: XhsTopicIdea) => run(`idea:${idea.title}`, async () => {
     const created = await window.sydney.createXhsNote(account.id, idea.title, null);
-    await window.sydney.updateXhsNote(created.id, { noteType: idea.noteType, material: idea.angle ? `切入角度（模型建议，未经数据验证）：${idea.angle}` : '' });
+    await window.sydney.updateXhsNote(created.accountId, created.id, { noteType: idea.noteType, material: idea.angle ? `切入角度（模型建议，未经数据验证）：${idea.angle}` : '' });
     notify('已转为选题');
   });
   const adopted = adoptedIds(notes);

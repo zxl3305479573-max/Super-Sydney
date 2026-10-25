@@ -48,35 +48,47 @@ export class XhsView {
     migrateLegacyPartition(ctx);
   }
 
-  state(): XhsViewState {
-    const current = this.views.get(this.accountId);
-    const contents = this.liveContents();
+  state(accountId: unknown): XhsViewState {
+    const id = this.requireAccount(accountId);
+    const current = this.views.get(id);
+    const contents = this.liveContents(id);
     return {
+      accountId: id,
       url: contents?.getURL() ?? '',
       title: contents?.getTitle() ?? '',
       loading: Boolean(current?.loading),
       canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
-      visible: this.attachedId !== 0 && this.attachedId === this.accountId,
+      visible: this.wanted && this.attachedId === id && this.accountId === id,
       error: current?.error ?? ''
     };
   }
 
   /** 显示某个账号的窗口；换了账号就把上一个摘下来（它的进程留着，切回来原样）。 */
   show(accountId: unknown): XhsViewState {
-    const id = Number(accountId);
-    if (!Number.isInteger(id) || id <= 0 || !listXhsAccounts(this.ctx.db).some(account => account.id === id)) throw new Error('小红书账号不存在');
+    const id = this.requireAccount(accountId);
     this.accountId = id;
     this.wanted = true;
     this.sync();
-    return this.state();
+    return this.state(id);
   }
 
-  close(): void {
+  close(accountId?: unknown): void {
+    // 主界面重载 / 退出时没有账号上下文，只需把当前窗口摘下来。
+    if (accountId === undefined) {
+      this.wanted = false;
+      this.sync();
+      return;
+    }
+    const id = Number(accountId);
+    if (!Number.isInteger(id) || id <= 0) return;
+    // 旧账号卸载时发来的 close 可能晚于新账号的 open，不能把新账号的窗口关掉。
+    if (this.accountId !== id) return;
     this.wanted = false;
     this.sync();
   }
 
-  setBounds(input: unknown): void {
+  setBounds(accountId: unknown, input: unknown): void {
+    const id = this.requireCurrent(accountId);
     const win = this.liveWindow();
     if (!win) this.bounds = null;
     else {
@@ -84,9 +96,11 @@ export class XhsView {
       this.bounds = clampSiteBounds(input, { width, height });
     }
     this.sync();
+    this.assertCurrent(id);
   }
 
-  navigate(target: { kind?: unknown; value?: unknown }): XhsViewState {
+  navigate(accountId: unknown, target: { kind?: unknown; value?: unknown }): XhsViewState {
+    const id = this.requireCurrent(accountId);
     const current = this.ensureView();
     let url = XHS_HOME;
     if (target.kind === 'search') {
@@ -101,27 +115,31 @@ export class XhsView {
     }
     current.error = '';
     void this.load(current, url);
-    return this.state();
+    return this.state(id);
   }
 
-  go(action: 'back' | 'reload'): XhsViewState {
-    const contents = this.liveContents();
+  go(accountId: unknown, action: 'back' | 'reload'): XhsViewState {
+    const id = this.requireCurrent(accountId);
+    const contents = this.liveContents(id);
     if (contents) {
       if (action === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
       if (action === 'reload') contents.reload();
     }
-    return this.state();
+    return this.state(id);
   }
 
-  async read(): Promise<XhsPageRead> {
-    const contents = this.liveContents();
+  async read(accountId: unknown): Promise<XhsPageRead> {
+    const id = this.requireCurrent(accountId);
+    const contents = this.liveContents(id);
     if (!contents || !contents.getURL()) throw new Error('小红书窗口还没打开页面');
     if (!isXhsHost(contents.getURL())) throw new Error('当前页面不是小红书，无法读取');
     const now = Date.now();
     if (now - this.lastRead < READ_INTERVAL_MS) throw new Error('读取太频繁了，请过几秒再试');
     this.lastRead = now;
     const raw = await contents.executeJavaScript(XHS_PAGE_EXTRACT_SCRIPT, true) as RawPageExtract;
-    return normalizePageRead(raw ?? {});
+    // 页面脚本执行期间切了账号：这次结果属于旧账号，不能交给新账号的诊断 / 选题区。
+    this.assertCurrent(id);
+    return { ...normalizePageRead(raw ?? {}), accountId: id };
   }
 
   /** 账号被删除：关掉它的窗口并清空它的会话数据（cookie、缓存、本地存储）。 */
@@ -151,13 +169,13 @@ export class XhsView {
     return win && !win.isDestroyed() ? win : null;
   }
 
-  private liveContents() {
-    const contents = this.views.get(this.accountId)?.view.webContents;
+  private liveContents(accountId = this.accountId) {
+    const contents = this.views.get(accountId)?.view.webContents;
     return contents && !contents.isDestroyed() ? contents : null;
   }
 
-  private notify(): void {
-    this.ctx.window()?.webContents.send('xhs:view-changed');
+  private notify(accountId = this.accountId): void {
+    this.ctx.window()?.webContents.send('xhs:view-changed', accountId);
   }
 
   private detach(view: WebContentsView): void {
@@ -197,7 +215,7 @@ export class XhsView {
     const view = new WebContentsView({ webPreferences: { partition: `persist:${xhsPartitionName(accountId)}`, contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, spellcheck: false } });
     const current: AccountView = { view, loading: false, error: '', started: false };
     // 只有当前显示的账号的变化才需要让界面重新拉状态。
-    const changed = () => { if (this.accountId === accountId) this.notify(); };
+    const changed = () => { if (this.accountId === accountId) this.notify(accountId); };
     const contents = view.webContents;
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     contents.session.setPermissionCheckHandler(() => false);
@@ -238,8 +256,25 @@ export class XhsView {
       if (isAborted(error)) return;
       current.loading = false;
       if (!current.error) current.error = `页面打不开：${error instanceof Error ? error.message : String(error)}`;
-      this.notify();
+      this.notify(this.accountId);
     }
+  }
+
+  private requireAccount(value: unknown): number {
+    const id = Number(value);
+    if (!Number.isInteger(id) || id <= 0 || !listXhsAccounts(this.ctx.db).some(account => account.id === id)) throw new Error('小红书账号不存在');
+    return id;
+  }
+
+  /** 窗口操作必须属于当前选中的账号；上一个页面迟到的请求不能落到新账号上。 */
+  private requireCurrent(value: unknown): number {
+    const id = this.requireAccount(value);
+    return this.assertCurrent(id);
+  }
+
+  private assertCurrent(id: number): number {
+    if (this.accountId !== id) throw new Error('小红书账号已切换，已取消上一个账号的操作');
+    return id;
   }
 }
 

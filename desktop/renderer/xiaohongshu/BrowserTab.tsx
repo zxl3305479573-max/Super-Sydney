@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsHotNote, XhsViewState } from '../../shared';
-import { XHS_PUBLISH_URL } from '../../services/xhs-catalog';
 import { Icon, readableError, visibleStageBounds } from '../ui';
 import type { AuditPrefill } from './AuditTab';
 import { useBusy, type XhsContext } from './common';
@@ -14,8 +13,8 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   ctx: XhsContext; overlay: boolean;
   /** 从「发布包」点过来时变化一次：打开窗口后直接跳到发布页。 */
   publishNonce?: number;
-  onNotes: (notes: XhsHotNote[], url: string) => void;
-  onProfile: (prefill: AuditPrefill) => void;
+  onNotes: (accountId: number, notes: XhsHotNote[], url: string) => void;
+  onProfile: (accountId: number, prefill: AuditPrefill) => void;
 }) {
   const { notify } = ctx;
   const accountId = ctx.account.id;
@@ -27,39 +26,50 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   const readStage = useCallback(() => {
     return visibleStageBounds(stageRef.current);
   }, []);
-  const refresh = useCallback(() => void window.sydney.getXhsView().then(setState).catch(() => undefined), []);
-  useEffect(() => window.sydney.onXhsViewChanged(refresh), [refresh]);
+  const applyState = useCallback((next: XhsViewState) => {
+    // 主进程事件和 IPC 回包都可能晚于账号切换：只接受当前账号的窗口状态。
+    if (next.accountId === accountId) setState(next);
+  }, [accountId]);
+  const refresh = useCallback(() => {
+    void window.sydney.getXhsView(accountId).then(applyState).catch(() => undefined);
+  }, [accountId, applyState]);
+  useEffect(() => window.sydney.onXhsViewChanged(changed => {
+    if (changed === accountId) refresh();
+  }), [accountId, refresh]);
 
   useEffect(() => {
-    if (overlay) { void window.sydney.closeXhsView(); return; }
-    void window.sydney.openXhsView(accountId).then(setState).catch(error => notify(readableError(error)));
-    const report = () => void window.sydney.setXhsViewBounds(readStage());
+    let alive = true;
+    if (overlay) { void window.sydney.closeXhsView(accountId); return; }
+    void window.sydney.openXhsView(accountId).then(next => { if (alive) applyState(next); }).catch(error => { if (alive) notify(readableError(error)); });
+    const report = () => { if (alive) void window.sydney.setXhsViewBounds(accountId, readStage()).catch(() => undefined); };
     report();
     const observer = new ResizeObserver(report);
     if (stageRef.current) observer.observe(stageRef.current);
     window.addEventListener('resize', report);
     window.addEventListener('scroll', report, true);
     return () => {
+      alive = false;
       observer.disconnect();
       window.removeEventListener('resize', report);
       window.removeEventListener('scroll', report, true);
-      void window.sydney.closeXhsView();
+      void window.sydney.closeXhsView(accountId).catch(() => undefined);
     };
-  }, [overlay, readStage, notify, accountId]);
+  }, [overlay, readStage, notify, accountId, applyState]);
 
   // 放在挂载视图的 effect 之后：IPC 按顺序处理，视图先挂上再跳转。
   useEffect(() => {
     if (!publishNonce) return;
-    void window.sydney.navigateXhsView({ kind: 'publish' }).then(setState).catch(error => notify(readableError(error)));
-  }, [publishNonce, notify]);
+    void window.sydney.navigateXhsView(accountId, { kind: 'publish' }).then(applyState).catch(error => notify(readableError(error)));
+  }, [publishNonce, notify, accountId, applyState]);
 
   const onCreator = Boolean(state?.url && /^https:\/\/creator\.xiaohongshu\.com\//.test(state.url));
-  const navigate = (kind: 'home' | 'search' | 'publish') => run('nav', async () => setState(await window.sydney.navigateXhsView({ kind, value: keyword })));
-  const go = (action: 'back' | 'reload') => run('nav', async () => setState(await window.sydney.xhsViewGo(action)));
+  const navigate = (kind: 'home' | 'search' | 'publish') => run('nav', async () => applyState(await window.sydney.navigateXhsView(accountId, { kind, value: keyword })));
+  const go = (action: 'back' | 'reload') => run('nav', async () => applyState(await window.sydney.xhsViewGo(accountId, action)));
   const read = () => run('read', async () => {
-    const page = await window.sydney.readXhsView();
+    const page = await window.sydney.readXhsView(accountId);
+    if (page.accountId !== accountId) return;
     if (page.profile) {
-      onProfile({
+      onProfile(accountId, {
         name: page.profile.name, bio: page.profile.bio, fans: page.profile.fans, follows: page.profile.follows, likesAndCollects: page.profile.likesAndCollects,
         notesText: page.notes.map(note => `${note.title} | ${note.liked} | 0 | 0 |`).join('\n')
       });
@@ -67,7 +77,7 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
         ? `读到主页「${page.profile.name}」和 ${page.notes.length} 篇笔记，已填入账号诊断（收藏、评论、日期页面上没有，需要可以手动补）`
         : `读到主页「${page.profile.name}」，但笔记列表还没加载出来：等页面上出现笔记后再读一次`);
     } else {
-      onNotes(page.notes, page.url);
+      onNotes(accountId, page.notes, page.url);
       notify(`读到 ${page.notes.length} 篇笔记，已放到「热点选题」`);
     }
   });
@@ -78,7 +88,6 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
       <button className="icon-button" title="刷新" disabled={locked} onClick={() => void go('reload')}><Icon name="refresh" /></button>
       <button className="button button-quiet" disabled={locked} onClick={() => void navigate('home')}>发现页</button>
       <button className="button button-quiet" disabled={locked} title="打开网页版创作者中心的图文发布页" onClick={() => void navigate('publish')}>发布页</button>
-      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL).catch(error => notify(readableError(error)))}><Icon name="window" size={14} />在浏览器打开发布页</button>
       <form className="xhs-search" onSubmit={event => { event.preventDefault(); void navigate('search'); }}>
         <input className="input" value={keyword} onChange={event => setKeyword(event.target.value)} placeholder="在小红书里搜索（需要你在窗口里登录）" />
         <button className="button button-secondary" type="submit" disabled={locked || !keyword.trim()}><Icon name="search" />搜索</button>

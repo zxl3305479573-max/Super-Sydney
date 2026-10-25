@@ -717,10 +717,10 @@ export type XhsAnalyticsView = {
 };
 export type XhsStatsImportResult = { file: string; added: number; updated: number; view: XhsAnalyticsView };
 
-export type XhsViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
+export type EmbeddedViewState = { url: string; title: string; loading: boolean; canGoBack: boolean; visible: boolean; error: string };
+export type XhsViewState = EmbeddedViewState & { accountId: number };
 /** 变现分组里固定嵌入的站点（闲鱼、16688、接码）：状态结构与小红书窗口一致，走 embed:* 通道、按 key 区分。 */
 export type EmbeddedSiteKey = 'xianyu' | 'site16688' | 'heroSms' | 'wechatMp';
-export type EmbeddedViewState = XhsViewState;
 
 /* ── 变现 · HeroSMS 接码 API ───────────────────────────────────
  * 接码模块走 HeroSMS 官方开放 API（SMS-Activate / handler_api 兼容层）。
@@ -764,7 +764,8 @@ export type HeroSmsOverview = {
   refreshedAt: string;
 };
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
-export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
+export type XhsPageContent = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
+export type XhsPageRead = XhsPageContent & { accountId: number };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
 
 /** 成长 · 链接收藏里的一条。tags 是用户自己打的分类，openedAt 为空表示存下以后还没打开过。 */
@@ -965,16 +966,16 @@ export interface SydneyApi {
   listXhsNotes(accountId: number): Promise<XhsNote[]>;
   /** source 为热点笔记时，用它的标题做选题并记下来源。 */
   createXhsNote(accountId: number, topic: string, source?: XhsHotNote | null): Promise<XhsNote>;
-  updateXhsNote(id: number, patch: Partial<XhsNote>): Promise<XhsNote>;
-  deleteXhsNote(id: number): Promise<void>;
+  updateXhsNote(accountId: number, id: number, patch: Partial<XhsNote>): Promise<XhsNote>;
+  deleteXhsNote(accountId: number, id: number): Promise<void>;
   /** 正文 / 按检测回改 / 标题工坊 / 发布前检测 / 图文卡片分页。 */
-  generateXhsNote(id: number, stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }): Promise<XhsNote>;
+  generateXhsNote(accountId: number, id: number, stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }): Promise<XhsNote>;
   /** 上游改过之后，人工确认某个产物仍然可用（重新盖上当前指纹）。 */
-  confirmXhsBasis(id: number, key: keyof XhsBasis): Promise<XhsNote>;
-  generateXhsCover(id: number, brief: string): Promise<XhsNote>;
-  chooseXhsCover(id: number): Promise<XhsNote | null>;
+  confirmXhsBasis(accountId: number, id: number, key: keyof XhsBasis): Promise<XhsNote>;
+  generateXhsCover(accountId: number, id: number, brief: string): Promise<XhsNote>;
+  chooseXhsCover(accountId: number, id: number): Promise<XhsNote | null>;
   /** 用账号当前 IP 的封面模板本地排版出封面（不调图片接口），写成这篇笔记的封面。 */
-  renderXhsIpCover(id: number, input: XhsIpCoverInput): Promise<XhsNote>;
+  renderXhsIpCover(accountId: number, id: number, input: XhsIpCoverInput): Promise<XhsNote>;
   /** IP 库：全应用共用的 IP 形象，各内容模块各自选用。 */
   listIps(): Promise<IpLibraryView>;
   createIp(name: string): Promise<IpLibraryView>;
@@ -989,42 +990,42 @@ export interface SydneyApi {
   getIpKit(id: string): Promise<IpRenderKit>;
   onIpChanged(callback: () => void): () => void;
   /** 把图文卡片逐页渲染成 3:4 PNG，替换图组里旧的卡片图。 */
-  renderXhsCards(id: number): Promise<XhsNote>;
+  renderXhsCards(accountId: number, id: number): Promise<XhsNote>;
   /** 生图信息图：single 出 1 张总览图；pages 按卡片分页逐页出图（6–9 张）。 */
-  generateXhsInfoImages(id: number, mode: 'single' | 'pages'): Promise<XhsNote>;
-  cancelXhsImages(id: number): Promise<boolean>;
-  addXhsLocalImages(id: number): Promise<XhsNote | null>;
+  generateXhsInfoImages(accountId: number, id: number, mode: 'single' | 'pages'): Promise<XhsNote>;
+  cancelXhsImages(accountId: number, id: number): Promise<boolean>;
+  addXhsLocalImages(accountId: number, id: number): Promise<XhsNote | null>;
   /** 图组排序 / 删除：只接受当前图组里已有的路径。 */
-  arrangeXhsImages(id: number, paths: string[]): Promise<XhsNote>;
+  arrangeXhsImages(accountId: number, id: number, paths: string[]): Promise<XhsNote>;
   /** 把候选图库里的某张图设为封面。 */
-  useXhsCandidateAsCover(id: number, path: string): Promise<XhsNote>;
+  useXhsCandidateAsCover(accountId: number, id: number, path: string): Promise<XhsNote>;
   /** 从候选图库里删掉一张没在用的图（连同应用目录里的文件）。 */
-  removeXhsCandidate(id: number, path: string): Promise<XhsNote>;
-  getXhsNoteAssets(id: number): Promise<XhsNoteAssets>;
-  exportXhsNote(id: number): Promise<XhsNote>;
-  openXhsPackage(id: number): Promise<string>;
+  removeXhsCandidate(accountId: number, id: number, path: string): Promise<XhsNote>;
+  getXhsNoteAssets(accountId: number, id: number): Promise<XhsNoteAssets>;
+  exportXhsNote(accountId: number, id: number): Promise<XhsNote>;
+  openXhsPackage(accountId: number, id: number): Promise<string>;
   searchXhsHotspot(query: XhsHotspotQuery): Promise<XhsHotspotResult>;
   /** 没有热度数据时，按定位档案让模型给选题建议（标明未经数据验证）。 */
   suggestXhsTopics(accountId: number, keyword: string): Promise<XhsTopicIdea[]>;
   runXhsAudit(accountId: number, input: XhsAuditInput): Promise<XhsReport>;
   listXhsReports(accountId: number, kind: XhsReport['kind']): Promise<XhsReport[]>;
-  deleteXhsReport(id: number): Promise<void>;
+  deleteXhsReport(accountId: number, id: number): Promise<void>;
   getXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
   /** 弹出文件选择框导入创作者中心导出的笔记数据；用户取消时返回 null。 */
   importXhsStats(accountId: number): Promise<XhsStatsImportResult | null>;
-  deleteXhsStat(id: number): Promise<XhsAnalyticsView>;
+  deleteXhsStat(accountId: number, id: number): Promise<XhsAnalyticsView>;
   interpretXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
-  getXhsView(): Promise<XhsViewState>;
+  getXhsView(accountId: number): Promise<XhsViewState>;
   /** 显示某个账号的小红书窗口：每个账号一个独立会话，登录状态互不相通。 */
   openXhsView(accountId: number): Promise<XhsViewState>;
-  closeXhsView(): Promise<void>;
-  setXhsViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  closeXhsView(accountId: number): Promise<void>;
+  setXhsViewBounds(accountId: number, bounds: SiteViewBounds | null): Promise<void>;
   /** publish 打开网页版创作者中心的发布页（不代填、不代发，只是打开）。 */
-  navigateXhsView(target: { kind: 'home' | 'search' | 'publish' | 'url'; value?: string }): Promise<XhsViewState>;
-  xhsViewGo(action: 'back' | 'reload'): Promise<XhsViewState>;
+  navigateXhsView(accountId: number, target: { kind: 'home' | 'search' | 'publish' | 'url'; value?: string }): Promise<XhsViewState>;
+  xhsViewGo(accountId: number, action: 'back' | 'reload'): Promise<XhsViewState>;
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
-  readXhsView(): Promise<XhsPageRead>;
-  onXhsViewChanged(callback: () => void): () => void;
+  readXhsView(accountId: number): Promise<XhsPageRead>;
+  onXhsViewChanged(callback: (accountId: number) => void): () => void;
   /** 一次性把公众号现有的内容 / 图片接口配置（含 key）复制过来；之后两边各改各的。 */
   /** 用小红书的内容模型配置发一次最小请求。 */
   getRedfoxKeyStatus(): Promise<LlmKeyStatus>;

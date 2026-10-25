@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { XhsBasis, XhsCandidateView, XhsCardPlan, XhsIpCoverInput, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
 import {
-  XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
+  XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
 } from '../../services/xhs-catalog';
 import { renderCardsPreview } from '../../services/xhs-cards';
 import {
@@ -310,7 +310,6 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
       <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
       <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>
       <button className="button button-secondary" title="在「小红书窗口」里打开网页版创作者中心的发布页，由你自己上传图片、粘贴文字并发布" onClick={onPublishPage}>去创作者中心发布</button>
-      <button className="button button-quiet" title="用系统浏览器打开创作者中心发布页：应用窗口里登录不上或被要求验证时用这个" onClick={() => void window.sydney.openXhsLink(XHS_PUBLISH_URL)}><Icon name="window" size={14} />在浏览器打开发布页</button>
     </div>
     <div className="flow-sub-head">
       <h4>将要导出的图组<small>{(assets?.cover ? 1 : 0) + (assets?.images.length ?? 0)} 张，按这个顺序导出为 01、02…</small></h4>
@@ -329,13 +328,13 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
 }
 
 /** 封面与图组缩略图由主进程生成（渲染进程读不到本地文件），笔记变动后自动重新拉取。 */
-export function useXhsAssets(noteId: number, revision: string): XhsNoteAssets | null {
+export function useXhsAssets(accountId: number, noteId: number, revision: string): XhsNoteAssets | null {
   const [assets, setAssets] = useState<XhsNoteAssets | null>(null);
   useEffect(() => {
     if (!noteId) { setAssets(null); return; }
     let alive = true;
-    void window.sydney.getXhsNoteAssets(noteId).then(next => { if (alive) setAssets(next); }).catch(() => { if (alive) setAssets(null); });
+    void window.sydney.getXhsNoteAssets(accountId, noteId).then(next => { if (alive) setAssets(next); }).catch(() => { if (alive) setAssets(null); });
     return () => { alive = false; };
-  }, [noteId, revision]);
+  }, [accountId, noteId, revision]);
   return assets;
 }

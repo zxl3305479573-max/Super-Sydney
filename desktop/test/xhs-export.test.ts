@@ -7,7 +7,8 @@ import { DatabaseSync } from 'node:sqlite';
 import type { XhsNote } from '../shared.ts';
 import { exportXhsPackage } from '../services/xhs-export.ts';
 import {
-  createXhsNote, createXhsReport, deleteXhsStat, getXhsAccount, listXhsAccounts, listXhsReports, listXhsStats, migrateXhsTables, updateXhsAccount, upsertXhsStats
+  createXhsAccount, createXhsNote, createXhsReport, deleteXhsReport, deleteXhsStat, getXhsAccount, listXhsAccounts, listXhsReports, listXhsStats,
+  migrateXhsTables, updateXhsAccount, upsertXhsStats
 } from '../services/xhs-store.ts';
 import { emptyXhsMetrics } from '../services/xhs-stats.ts';
 
@@ -83,11 +84,15 @@ test('报告与笔记数据：同标题同日期再次导入是更新，可关�
   const stats = listXhsStats(db, account.id);
   assert.equal(stats.length, 1);
   assert.equal(stats[0].metrics.views, 200);
-  assert.equal(deleteXhsStat(db, stats[0].id), account.id);
-  assert.equal(deleteXhsStat(db, 999), null);
-  createXhsReport(db, account.id, 'audit', '自己 · x', { a: 1 }, { total: 7 });
+  const second = createXhsAccount(db, '副号');
+  assert.throws(() => deleteXhsStat(db, second.id, stats[0].id), /另一个小红书账号/);
+  assert.equal(deleteXhsStat(db, account.id, stats[0].id), account.id);
+  assert.throws(() => deleteXhsStat(db, account.id, 999), /不存在/);
+  const audit = createXhsReport(db, account.id, 'audit', '自己 · x', { a: 1 }, { total: 7 });
   createXhsReport(db, account.id, 'analytics', '复盘', {}, { summary: 's' });
-  assert.equal(listXhsReports(db, account.id, 'audit').length, 1);
+  assert.throws(() => deleteXhsReport(db, second.id, audit.id), /另一个小红书账号/);
+  deleteXhsReport(db, account.id, audit.id);
+  assert.equal(listXhsReports(db, account.id, 'audit').length, 0);
   assert.equal(JSON.parse(listXhsReports(db, account.id, 'analytics')[0].resultJson).summary, 's');
   assert.throws(() => getXhsAccount(db, 999), /账号不存在/);
 });

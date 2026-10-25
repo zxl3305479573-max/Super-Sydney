@@ -55,7 +55,7 @@ export function AuditTab({ ctx, prefill, onPrefillUsed }: { ctx: XhsContext; pre
   });
   const remove = (report: XhsReport) => run(`delete:${report.id}`, async () => {
     if (!window.confirm(`删除诊断「${report.title}」？`)) return;
-    await window.sydney.deleteXhsReport(report.id);
+    await window.sydney.deleteXhsReport(ctx.account.id, report.id);
     if (openId === report.id) setOpenId(null);
     await load();
   });

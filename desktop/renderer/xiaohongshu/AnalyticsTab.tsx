@@ -31,7 +31,7 @@ export function AnalyticsTab({ ctx }: { ctx: XhsContext }) {
     notify(`已导入 ${result.file}：新增 ${result.added} 篇，更新 ${result.updated} 篇`);
   });
   const interpret = () => run('interpret', async () => { setView(await window.sydney.interpretXhsAnalytics(account.id)); notify('复盘解读完成'); });
-  const remove = (id: number) => run(`delete:${id}`, async () => setView(await window.sydney.deleteXhsStat(id)));
+  const remove = (id: number) => run(`delete:${id}`, async () => setView(await window.sydney.deleteXhsStat(ctx.account.id, id)));
   const jump = (layer: XhsFunnelLayer | '', noteId: number | null) => {
     const target = XHS_FUNNEL_LAYERS.find(item => item.key === layer);
     if (!target) return;

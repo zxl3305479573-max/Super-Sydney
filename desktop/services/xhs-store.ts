@@ -158,6 +158,14 @@ export function getXhsNote(db: DatabaseSync, id: number): XhsNote {
   return xhsNoteFromRow(row);
 }
 
+/** 笔记操作必须同时带账号：只凭全局唯一的笔记 id 不能证明它属于界面当前账号。 */
+export function getXhsNoteForAccount(db: DatabaseSync, accountId: number, id: number): XhsNote {
+  getXhsAccount(db, accountId);
+  const note = getXhsNote(db, id);
+  if (note.accountId !== accountId) throw new Error('这篇笔记属于另一个小红书账号，已阻止跨账号操作');
+  return note;
+}
+
 /** 从热点笔记转选题时只留选题要用的字段，不存作者主页之外的个人信息。 */
 function sourceSnapshot(source: XhsHotNote): string {
   const { id, title, desc, link, createTime, topics, author, interactive, liked, collected, comments, shared, unverified } = source;
@@ -219,7 +227,10 @@ export function listXhsReports(db: DatabaseSync, accountId: number, kind: XhsRep
   return (db.prepare('SELECT * FROM xhs_reports WHERE account_id=? AND kind=? ORDER BY created_at DESC, id DESC').all(accountId, kind) as Array<Record<string, unknown>>).map(reportFromRow);
 }
 
-export function deleteXhsReport(db: DatabaseSync, id: number): void {
+export function deleteXhsReport(db: DatabaseSync, accountId: number, id: number): void {
+  const row = db.prepare('SELECT account_id FROM xhs_reports WHERE id=?').get(id) as { account_id: number } | undefined;
+  if (!row) throw new Error('小红书报告不存在');
+  if (Number(row.account_id) !== accountId) throw new Error('这份报告属于另一个小红书账号，已阻止跨账号操作');
   db.prepare('DELETE FROM xhs_reports WHERE id=?').run(id);
 }
 
@@ -258,9 +269,10 @@ export function listXhsStats(db: DatabaseSync, accountId: number): XhsNoteStat[]
   return (db.prepare('SELECT * FROM xhs_note_stats WHERE account_id=? ORDER BY publish_date DESC, id DESC').all(accountId) as Array<Record<string, unknown>>).map(statFromRow);
 }
 
-export function deleteXhsStat(db: DatabaseSync, id: number): number | null {
+export function deleteXhsStat(db: DatabaseSync, accountId: number, id: number): number {
   const row = db.prepare('SELECT account_id FROM xhs_note_stats WHERE id=?').get(id) as { account_id: number } | undefined;
-  if (!row) return null;
+  if (!row) throw new Error('这条笔记数据不存在');
+  if (Number(row.account_id) !== accountId) throw new Error('这条数据属于另一个小红书账号，已阻止跨账号操作');
   db.prepare('DELETE FROM xhs_note_stats WHERE id=?').run(id);
   return Number(row.account_id);
 }

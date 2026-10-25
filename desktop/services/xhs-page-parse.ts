@@ -1,4 +1,4 @@
-import type { VideoPlatform, XhsHotNote, XhsPageRead, XhsProfileRead } from '../shared.ts';
+import type { VideoPlatform, XhsHotNote, XhsPageContent, XhsPageRead, XhsProfileRead } from '../shared.ts';
 import { fingerprint } from './xhs-pipeline.ts';
 import { parseCount } from './xhs-hotspot.ts';
 
@@ -75,7 +75,7 @@ function interactionCount(lines: string[], label: RegExp): number {
 }
 
 /** 抽取结果 → 统一形状；登录墙 / 验证页且没有任何内容时抛出，提示用户去窗口里处理。 */
-export function normalizePageRead(raw: RawPageExtract): XhsPageRead {
+export function normalizePageRead(raw: RawPageExtract): XhsPageContent {
   const url = str(raw.url, 2000);
   const cards = Array.isArray(raw.cards) ? raw.cards : [];
   const seen = new Set<string>();

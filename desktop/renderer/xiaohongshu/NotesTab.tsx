@@ -4,7 +4,7 @@ import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
   XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
-import { shortTime, useWorkflowStepScroll } from '../ui';
+import { readableError, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
 import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, VisualStep, stateNames, useXhsAssets } from './note-steps';
 
@@ -57,7 +57,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
 
   const note = draft;
   const pipeline = useMemo(() => (note ? buildXhsPipeline(note) : []), [note]);
-  const assets = useXhsAssets(note?.id ?? 0, note?.updatedAt ?? '');
+  const assets = useXhsAssets(account.id, note?.id ?? 0, note?.updatedAt ?? '');
   const activeStep = pipeline.find(item => item.key === step) ?? pipeline[0];
   const flowRef = useWorkflowStepScroll(`${note?.id ?? 0}:${step}`);
 
@@ -77,7 +77,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
     if (!note) throw new Error('请先选择笔记');
     if (!dirty) return note;
     const patch = Object.fromEntries(EDITABLE.map(key => [key, note[key]])) as Partial<XhsNote>;
-    const saved = await window.sydney.updateXhsNote(note.id, patch);
+    const saved = await window.sydney.updateXhsNote(account.id, note.id, patch);
     setDraft(saved);
     setDirty(false);
     return saved;
@@ -94,7 +94,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   });
   const remove = () => run('delete', async () => {
     if (!note || !window.confirm(`删除笔记「${note.topic || note.title || '未命名'}」？已导出的发布包不受影响。`)) return;
-    await window.sydney.deleteXhsNote(note.id);
+    await window.sydney.deleteXhsNote(account.id, note.id);
     setSelectedId(null);
     setDraft(null);
     setDirty(false);
@@ -103,7 +103,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const generate = (stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }, next?: XhsStepKey) => run(stage, async () => {
     if (!note) return;
     await persist();
-    apply(await window.sydney.generateXhsNote(note.id, stage, options));
+    apply(await window.sydney.generateXhsNote(account.id, note.id, stage, options));
     notify(STAGE_DONE[stage]);
     if (next) setStep(next);
   });
@@ -130,12 +130,12 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
       try {
         for (const stage of plan.stages) {
           setAutoStage(stage);
-          current = await window.sydney.generateXhsNote(current.id, stage);
+          current = await window.sydney.generateXhsNote(account.id, current.id, stage);
           apply(current);
           if (stage === 'titles') {
             const chosen = pickAutoXhsTitle(readTitleWorkshop(current));
             if (chosen && chosen.title !== current.title) {
-              current = await window.sydney.updateXhsNote(current.id, { title: chosen.title });
+              current = await window.sydney.updateXhsNote(account.id, current.id, { title: chosen.title });
               apply(current);
             }
           }
@@ -151,25 +151,28 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
       }
     });
   };
-  const confirmBasis = (key: keyof XhsBasis) => run('confirm', async () => { if (note) { await persist(); apply(await window.sydney.confirmXhsBasis(note.id, key)); } });
-  const cover = (brief: string) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(note.id, brief)); notify('封面已生成'); } });
+  const confirmBasis = (key: keyof XhsBasis) => run('confirm', async () => { if (note) { await persist(); apply(await window.sydney.confirmXhsBasis(account.id, note.id, key)); } });
+  const cover = (brief: string) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(account.id, note.id, brief)); notify('封面已生成'); } });
   const selectIp = (ipId: string) => run('ip-select', async () => { await window.sydney.updateXhsAccount(account.id, { ipId }); });
-  const ipCover = (input: XhsIpCoverInput) => run('ip-cover', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsIpCover(note.id, input)); notify('IP 模板封面已生成'); } });
-  const chooseCover = () => run('cover-choose', async () => { if (note) { await persist(); const saved = await window.sydney.chooseXhsCover(note.id); if (saved) apply(saved); } });
-  const renderCards = () => run('render', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsCards(note.id)); notify('卡片图已导出到图组'); } });
+  const ipCover = (input: XhsIpCoverInput) => run('ip-cover', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsIpCover(account.id, note.id, input)); notify('IP 模板封面已生成'); } });
+  const chooseCover = () => run('cover-choose', async () => { if (note) { await persist(); const saved = await window.sydney.chooseXhsCover(account.id, note.id); if (saved) apply(saved); } });
+  const renderCards = () => run('render', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsCards(account.id, note.id)); notify('卡片图已导出到图组'); } });
   const info = (mode: 'single' | 'pages') => run(`info-${mode}`, async () => {
     if (!note) return;
     await persist();
-    try { apply(await window.sydney.generateXhsInfoImages(note.id, mode)); notify('信息图已加入图组'); }
+    try { apply(await window.sydney.generateXhsInfoImages(account.id, note.id, mode)); notify('信息图已加入图组'); }
     finally { await ctx.refresh(); }
   });
-  const cancel = () => void window.sydney.cancelXhsImages(note?.id ?? 0).then(stopped => notify(stopped ? '已取消生成' : '没有进行中的生图'));
-  const addLocal = () => run('add-local', async () => { if (note) { await persist(); const saved = await window.sydney.addXhsLocalImages(note.id); if (saved) apply(saved); } });
-  const arrange = (paths: string[]) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.arrangeXhsImages(note.id, paths)); } });
-  const pickCover = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.useXhsCandidateAsCover(note.id, file)); notify('已换成这张封面'); } });
-  const removeCandidate = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.removeXhsCandidate(note.id, file)); } });
-  const exportPackage = () => run('export', async () => { if (note) { await persist(); const saved = await window.sydney.exportXhsNote(note.id); apply(saved); notify(`发布包已导出：${saved.exportPath}`); } });
-  const openPackage = () => run('open', async () => { if (note) { const error = await window.sydney.openXhsPackage(note.id); if (error) notify(error); } });
+  const cancel = () => {
+    if (!note) return;
+    void window.sydney.cancelXhsImages(account.id, note.id).then(stopped => notify(stopped ? '已取消生成' : '没有进行中的生图')).catch(error => notify(readableError(error)));
+  };
+  const addLocal = () => run('add-local', async () => { if (note) { await persist(); const saved = await window.sydney.addXhsLocalImages(account.id, note.id); if (saved) apply(saved); } });
+  const arrange = (paths: string[]) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.arrangeXhsImages(account.id, note.id, paths)); } });
+  const pickCover = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.useXhsCandidateAsCover(account.id, note.id, file)); notify('已换成这张封面'); } });
+  const removeCandidate = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.removeXhsCandidate(account.id, note.id, file)); } });
+  const exportPackage = () => run('export', async () => { if (note) { await persist(); const saved = await window.sydney.exportXhsNote(account.id, note.id); apply(saved); notify(`发布包已导出：${saved.exportPath}`); } });
+  const openPackage = () => run('open', async () => { if (note) { const error = await window.sydney.openXhsPackage(account.id, note.id); if (error) notify(error); } });
   const copy = (kind: 'title' | 'body') => run('copy', async () => {
     if (!note) return;
     const tags = readTags(note).map(tag => `#${tag}`).join(' ');

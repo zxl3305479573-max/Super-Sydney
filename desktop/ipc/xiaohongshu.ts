@@ -25,8 +25,8 @@ import {
 import { fitToThreeFour, renderHtmlPages } from '../services/xhs-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
 import {
-  createXhsAccount, createXhsNote, createXhsReport, deleteXhsAccount, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
-  listXhsReports, listXhsStats, readHotspotCache, updateXhsAccount, updateXhsNote, upsertXhsStats, writeHotspotCache
+  createXhsAccount, createXhsNote, createXhsReport, deleteXhsAccount, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNoteForAccount,
+  listXhsAccounts, listXhsNotes, listXhsReports, listXhsStats, readHotspotCache, updateXhsAccount, updateXhsNote, upsertXhsStats, writeHotspotCache
 } from '../services/xhs-store';
 import type { XhsView } from '../services/xhs-view';
 import {
@@ -75,8 +75,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     return directory;
   };
   /** 写库前统一按内容重算状态。 */
-  const save = (id: number, patch: Partial<XhsNote>): XhsNote => {
-    const current = getXhsNote(db, id);
+  const save = (accountId: number, id: number, patch: Partial<XhsNote>): XhsNote => {
+    const current = getXhsNoteForAccount(db, accountId, id);
     const next = { ...current, ...patch };
     const note = updateXhsNote(db, id, { ...patch, status: deriveXhsStatus(next) });
     ctx.broadcast();
@@ -183,37 +183,38 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     ctx.broadcast();
     return note;
   });
-  ipcMain.handle('xhs:notes:update', (_event, id: number, patch: Partial<XhsNote>) => {
+  ipcMain.handle('xhs:notes:update', (_event, accountId: number, id: number, patch: Partial<XhsNote>) => {
     assertIdle(id, '保存');
-    return save(id, prepareXhsEdit(getXhsNote(db, id), patch ?? {}));
+    return save(accountId, id, prepareXhsEdit(getXhsNoteForAccount(db, accountId, id), patch ?? {}));
   });
-  ipcMain.handle('xhs:notes:delete', (_event, id: number) => {
+  ipcMain.handle('xhs:notes:delete', (_event, accountId: number, id: number) => {
     assertIdle(id, '删除');
+    getXhsNoteForAccount(db, accountId, id);
     deleteXhsNote(db, id);
     // 封面、卡片图、信息图、候选图库都在这个目录里；已导出的发布包在知识库，不受影响。
     fs.rmSync(path.join(ctx.dataDir, 'xhs-assets', String(id)), { recursive: true, force: true });
     ctx.broadcast();
   });
-  ipcMain.handle('xhs:notes:confirm', (_event, id: number, key: keyof XhsBasis) => {
+  ipcMain.handle('xhs:notes:confirm', (_event, accountId: number, id: number, key: keyof XhsBasis) => {
     if (!['body', 'title', 'cover', 'cards', 'checks'].includes(String(key))) throw new Error('未知的确认项');
     assertIdle(id, '确认');
-    return save(id, { basisJson: stampBasis(getXhsNote(db, id), key) });
+    return save(accountId, id, { basisJson: stampBasis(getXhsNoteForAccount(db, accountId, id), key) });
   });
 
-  ipcMain.handle('xhs:notes:generate', async (_event, id: number, stage: XhsGenerateStage, options: { pageCount?: number; style?: string } = {}) => noteLock.run(id, async () => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:notes:generate', async (_event, accountId: number, id: number, stage: XhsGenerateStage, options: { pageCount?: number; style?: string } = {}) => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     const account = getXhsAccount(db, note.accountId);
     const positioning = readPositioning(account);
     if (stage === 'body' || stage === 'revise') {
       if (!note.topic.trim()) throw new Error('请先填写选题');
       const result = await requestXhsBody(apiConfig(account), note, positioning, stage === 'body' ? 'write' : 'revise');
       const next: XhsNote = { ...note, body: result.body, tagsJson: JSON.stringify(result.tags), writerJson: JSON.stringify(result.meta) };
-      return save(id, { body: next.body, tagsJson: next.tagsJson, writerJson: next.writerJson, basisJson: stampBasis(next, 'body') });
+      return save(accountId, id, { body: next.body, tagsJson: next.tagsJson, writerJson: next.writerJson, basisJson: stampBasis(next, 'body') });
     }
     if (stage === 'titles') {
       if (!note.body.trim() && !note.title.trim() && !note.topic.trim()) throw new Error('请先写正文或填写选题');
       const workshop = await requestXhsTitles(apiConfig(account), note, positioning);
-      return save(id, { titleCandidatesJson: JSON.stringify(workshop) });
+      return save(accountId, id, { titleCandidatesJson: JSON.stringify(workshop) });
     }
     if (stage === 'checks') {
       if (!note.body.trim() || !note.title.trim()) throw new Error('正文和标题都有了才能检测');
@@ -223,13 +224,13 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
       catch (error) { modelError = error instanceof Error ? error.message : String(error); }
       const report = { items: mergeCheckItems(localChecks(note), modelItems), checkedAt: new Date().toISOString(), modelError };
       const next = { ...note, checksJson: JSON.stringify(report) };
-      return save(id, { checksJson: next.checksJson, basisJson: stampBasis(next, 'checks') });
+      return save(accountId, id, { checksJson: next.checksJson, basisJson: stampBasis(next, 'checks') });
     }
     if (stage === 'cards') {
       if (!note.body.trim()) throw new Error('请先写好正文，再拆图文卡片');
       const count = XHS_PAGE_COUNTS.includes(Number(options.pageCount)) ? Number(options.pageCount) : 6;
       const plan = await requestXhsCardPlan(apiConfig(account), note, count, String(options.style ?? readCardPlan(note)?.style ?? ''));
-      return save(id, { cardsJson: JSON.stringify(plan) });
+      return save(accountId, id, { cardsJson: JSON.stringify(plan) });
     }
     throw new Error('未知的生成步骤');
   }));
@@ -255,8 +256,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     finally { imageJobs.end(id); }
   };
 
-  ipcMain.handle('xhs:cover:generate', async (_event, id: number, brief: string) => noteLock.run(id, async () => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:cover:generate', async (_event, accountId: number, id: number, brief: string) => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     if (!note.title.trim()) throw new Error('请先选定标题：封面上要放标题');
     const account = getXhsAccount(db, note.accountId);
     const prompt = xhsCoverPrompt(note, readPositioning(account), String(brief ?? '').slice(0, 500));
@@ -264,10 +265,11 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     await withImageJob(id, signal => generateThreeFour(target, prompt, signal, note.accountId));
     const next = { ...note, coverPath: target };
     // 旧封面不丢：它和新封面都留在候选图库里，可以随时换回去。
-    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: 'AI 封面' }]), basisJson: stampBasis(next, 'cover') });
+    return save(accountId, id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: 'AI 封面' }]), basisJson: stampBasis(next, 'cover') });
   }));
-  ipcMain.handle('xhs:cover:choose', async (_event, id: number) => {
+  ipcMain.handle('xhs:cover:choose', async (_event, accountId: number, id: number) => {
     assertIdle(id, '选择封面');
+    const note = getXhsNoteForAccount(db, accountId, id);
     const parent = ctx.window();
     const options = { properties: ['openFile' as const], filters: IMAGE_FILTERS };
     const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
@@ -276,16 +278,15 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     // 拷进应用目录：原图之后被移动或删除，也不影响导出。
     const target = path.join(assetDir(id), `cover-local-${Date.now()}${path.extname(source).toLowerCase() || '.png'}`);
     fs.copyFileSync(source, target);
-    const note = getXhsNote(db, id);
-    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: path.basename(source) }]), basisJson: stampBasis({ ...note, coverPath: target }, 'cover') });
+    return save(accountId, id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: path.basename(source) }]), basisJson: stampBasis({ ...note, coverPath: target }, 'cover') });
   });
 
   /**
    * 用账号当前 IP 的封面模板本地排版出封面，不调图片接口；和其他封面一样进候选图库、盖封面指纹。
    * 品牌名、头像、配色、角色图都取自 IP 库（见 ipc/ip.ts）。
    */
-  ipcMain.handle('xhs:ip-cover:render', async (_event, id: number, raw: unknown) => noteLock.run(id, async () => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:ip-cover:render', async (_event, accountId: number, id: number, raw: unknown) => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     const account = getXhsAccount(db, note.accountId);
     if (!account.ipId) throw new Error('这个账号还没有选用 IP（在封面区或「账号定位」里选）');
     const kit = ipRenderKit(ctx.ipLibrary, account.ipId);
@@ -294,7 +295,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     const target = path.join(assetDir(id), `cover-ip-${Date.now()}.png`);
     await renderHtmlPages([renderIpCoverDocument(input, kit)], XHS_CARD_WIDTH, XHS_CARD_HEIGHT, [target]);
     const next = { ...note, coverPath: target };
-    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: `IP 模板 · ${kit.name}` }]), basisJson: stampBasis(next, 'cover') });
+    return save(accountId, id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: `IP 模板 · ${kit.name}` }]), basisJson: stampBasis(next, 'cover') });
   }));
 
   /**
@@ -306,8 +307,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     return JSON.stringify(source === 'card' ? [...fresh, ...others] : [...others, ...fresh]);
   };
 
-  ipcMain.handle('xhs:cards:render', async (_event, id: number) => noteLock.run(id, async () => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:cards:render', async (_event, accountId: number, id: number) => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     const plan = readCardPlan(note);
     if (!plan?.pages.length) throw new Error('请先拆好图文卡片的分页内容');
     const title = note.title.trim() || note.topic.trim();
@@ -320,12 +321,12 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     await renderHtmlPages(plan.pages.map((_, index) => renderCardDocument(plan, index, title, kit)), XHS_CARD_WIDTH, XHS_CARD_HEIGHT, targets);
     const fresh = targets.map((file, index) => ({ path: file, source: 'card' as const, caption: plan.pages[index].heading }));
     const next = { ...note, imagesJson: replaceImages(note, 'card', fresh) };
-    return save(id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
+    return save(accountId, id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
   }));
 
   /** 逐张生成，中途失败时保留已经生成的那几张再报错，不白花钱。 */
-  ipcMain.handle('xhs:info:generate', async (_event, id: number, mode: 'single' | 'pages') => noteLock.run(id, async () => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:info:generate', async (_event, accountId: number, id: number, mode: 'single' | 'pages') => noteLock.run(id, async () => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     const plan = readCardPlan(note);
     if (!plan?.pages.length) throw new Error('信息图按卡片分页出图：请先在「图文卡片」里拆好分页');
     const indexes: Array<number | null> = mode === 'single' ? [null] : plan.pages.map((_, index) => index);
@@ -346,50 +347,53 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     });
     if (!fresh.length) throw new Error(failure || '信息图生成失败');
     const next = { ...note, imagesJson: replaceImages(note, 'info', fresh) };
-    const saved = save(id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
+    const saved = save(accountId, id, { imagesJson: next.imagesJson, candidatesJson: addCandidates(note, fresh), basisJson: stampBasis(next, 'cards') });
     if (failure) throw new Error(`已生成 ${fresh.length}/${indexes.length} 张后中断：${failure}。已生成的图片保留在图组和候选图库里`);
     return saved;
   }));
-  ipcMain.handle('xhs:images:cancel', (_event, id: number) => imageJobs.cancel(id));
-  ipcMain.handle('xhs:images:add-local', async (_event, id: number) => {
+  ipcMain.handle('xhs:images:cancel', (_event, accountId: number, id: number) => {
+    getXhsNoteForAccount(db, accountId, id);
+    return imageJobs.cancel(id);
+  });
+  ipcMain.handle('xhs:images:add-local', async (_event, accountId: number, id: number) => {
     assertIdle(id, '添加图片');
+    const note = getXhsNoteForAccount(db, accountId, id);
     const parent = ctx.window();
     const options = { properties: ['openFile' as const, 'multiSelections' as const], filters: IMAGE_FILTERS };
     const result = parent ? await dialog.showOpenDialog(parent, options) : await dialog.showOpenDialog(options);
     if (result.canceled || !result.filePaths.length) return null;
-    const note = getXhsNote(db, id);
     const added = result.filePaths.slice(0, 18).map((source, index) => {
       const target = path.join(assetDir(id), `local-${Date.now()}-${index + 1}${path.extname(source).toLowerCase() || '.png'}`);
       fs.copyFileSync(source, target);
       return { path: target, source: 'local' as const, caption: path.basename(source) };
     });
-    return save(id, { imagesJson: JSON.stringify([...readImages(note), ...added]), candidatesJson: addCandidates(note, added) });
+    return save(accountId, id, { imagesJson: JSON.stringify([...readImages(note), ...added]), candidatesJson: addCandidates(note, added) });
   });
-  ipcMain.handle('xhs:images:arrange', (_event, id: number, paths: string[]) => {
+  ipcMain.handle('xhs:images:arrange', (_event, accountId: number, id: number, paths: string[]) => {
     assertIdle(id, '调整图组');
-    const note = getXhsNote(db, id);
+    const note = getXhsNoteForAccount(db, accountId, id);
     // 图组里的图只能来自当前图组或候选图库：界面传来的路径不在其中就忽略，不会把任意文件放进发布包。
     const pool = new Map<string, XhsImageItem>();
     for (const item of readCandidates(note)) pool.set(item.path, { path: item.path, source: item.source === 'cover' ? 'local' : item.source, caption: item.caption });
     for (const item of readImages(note)) pool.set(item.path, item);
     const ordered = (Array.isArray(paths) ? paths : []).flatMap(file => pool.has(String(file)) ? [pool.get(String(file)) as XhsImageItem] : []);
     const images = [...new Map(ordered.map(item => [item.path, item])).values()].filter(item => item.path !== note.coverPath);
-    return save(id, { imagesJson: JSON.stringify(images) });
+    return save(accountId, id, { imagesJson: JSON.stringify(images) });
   });
-  ipcMain.handle('xhs:candidates:use-cover', (_event, id: number, file: string) => {
+  ipcMain.handle('xhs:candidates:use-cover', (_event, accountId: number, id: number, file: string) => {
     assertIdle(id, '更换封面');
-    const note = getXhsNote(db, id);
+    const note = getXhsNoteForAccount(db, accountId, id);
     const picked = readCandidates(note).find(item => item.path === String(file));
     if (!picked) throw new Error('这张图不在候选图库里');
     if (!fs.existsSync(picked.path)) throw new Error('图片文件已经不在了，请重新生成');
     // 封面不再同时出现在图组里，避免发布包里第 1 张和后面某张重复。
     const images = readImages(note).filter(item => item.path !== picked.path);
     const next = { ...note, coverPath: picked.path, imagesJson: JSON.stringify(images) };
-    return save(id, { coverPath: picked.path, imagesJson: next.imagesJson, basisJson: stampBasis(next, 'cover') });
+    return save(accountId, id, { coverPath: picked.path, imagesJson: next.imagesJson, basisJson: stampBasis(next, 'cover') });
   });
-  ipcMain.handle('xhs:candidates:remove', (_event, id: number, file: string) => {
+  ipcMain.handle('xhs:candidates:remove', (_event, accountId: number, id: number, file: string) => {
     assertIdle(id, '整理候选图');
-    const note = getXhsNote(db, id);
+    const note = getXhsNoteForAccount(db, accountId, id);
     const target = String(file);
     if (target === note.coverPath) throw new Error('这张图正用作封面，先换一张封面再删除');
     if (readImages(note).some(item => item.path === target)) throw new Error('这张图在发布图组里，先移出图组再删除');
@@ -398,10 +402,10 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     // 只删应用目录里的副本：本地图片在添加时就拷进来了，原图不受影响。
     const owned = path.resolve(target).startsWith(path.resolve(assetDir(id)) + path.sep);
     if (owned) fs.rmSync(target, { force: true });
-    return save(id, { candidatesJson: JSON.stringify(candidates.filter(item => item.path !== target)) });
+    return save(accountId, id, { candidatesJson: JSON.stringify(candidates.filter(item => item.path !== target)) });
   });
-  ipcMain.handle('xhs:assets', (_event, id: number): XhsNoteAssets => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:assets', (_event, accountId: number, id: number): XhsNoteAssets => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     const inGroup = new Set(readImages(note).map(item => item.path));
     return {
       cover: note.coverPath ? { path: note.coverPath, caption: '封面', thumbnail: imageThumbnail(note.coverPath, 420) } : null,
@@ -412,15 +416,15 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     };
   });
 
-  ipcMain.handle('xhs:export', (_event, id: number) => {
+  ipcMain.handle('xhs:export', (_event, accountId: number, id: number) => {
     assertIdle(id, '导出');
-    const note = getXhsNote(db, id);
+    const note = getXhsNoteForAccount(db, accountId, id);
     const target = exportXhsPackage(ctx.settings.read().vaultPath, note);
     const next = { ...note, exportPath: target };
-    return save(id, { exportPath: target, basisJson: stampBasis(next, 'package') });
+    return save(accountId, id, { exportPath: target, basisJson: stampBasis(next, 'package') });
   });
-  ipcMain.handle('xhs:open-package', async (_event, id: number) => {
-    const note = getXhsNote(db, id);
+  ipcMain.handle('xhs:open-package', async (_event, accountId: number, id: number) => {
+    const note = getXhsNoteForAccount(db, accountId, id);
     if (!note.exportPath.trim() || !fs.existsSync(note.exportPath)) throw new Error('还没有可打开的发布包，请先导出');
     return shell.openPath(note.exportPath);
   });
@@ -467,8 +471,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     return report;
   }));
   ipcMain.handle('xhs:reports:list', (_event, accountId: number, kind: XhsReport['kind']) => listXhsReports(db, accountId, kind === 'analytics' ? 'analytics' : 'audit'));
-  ipcMain.handle('xhs:reports:delete', (_event, id: number) => {
-    deleteXhsReport(db, Number(id));
+  ipcMain.handle('xhs:reports:delete', (_event, accountId: number, id: number) => {
+    deleteXhsReport(db, accountId, Number(id));
     ctx.broadcast();
   });
 
@@ -487,9 +491,8 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     ctx.broadcast();
     return { file: path.basename(file), added, updated, view: analyticsView(accountId) };
   });
-  ipcMain.handle('xhs:stats:delete', (_event, id: number) => {
-    const accountId = deleteXhsStat(db, Number(id));
-    if (accountId === null) throw new Error('这条数据不存在');
+  ipcMain.handle('xhs:stats:delete', (_event, accountId: number, id: number) => {
+    deleteXhsStat(db, accountId, Number(id));
     ctx.broadcast();
     return analyticsView(accountId);
   });
@@ -506,13 +509,13 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
 
   /* ── 应用内小红书窗口 ───────────────────────────────────────── */
 
-  ipcMain.handle('xhs:view:state', () => view.state());
+  ipcMain.handle('xhs:view:state', (_event, accountId: number) => view.state(accountId));
   ipcMain.handle('xhs:view:open', (_event, accountId: number) => view.show(accountId));
-  ipcMain.handle('xhs:view:close', () => view.close());
-  ipcMain.handle('xhs:view:bounds', (_event, bounds: unknown) => view.setBounds(bounds));
-  ipcMain.handle('xhs:view:navigate', (_event, target: { kind?: unknown; value?: unknown }) => view.navigate(target ?? {}));
-  ipcMain.handle('xhs:view:go', (_event, action: 'back' | 'reload') => view.go(action === 'back' ? 'back' : 'reload'));
-  ipcMain.handle('xhs:view:read', () => view.read());
+  ipcMain.handle('xhs:view:close', (_event, accountId: number) => view.close(accountId));
+  ipcMain.handle('xhs:view:bounds', (_event, accountId: number, bounds: unknown) => view.setBounds(accountId, bounds));
+  ipcMain.handle('xhs:view:navigate', (_event, accountId: number, target: { kind?: unknown; value?: unknown }) => view.navigate(accountId, target ?? {}));
+  ipcMain.handle('xhs:view:go', (_event, accountId: number, action: 'back' | 'reload') => view.go(accountId, action === 'back' ? 'back' : 'reload'));
+  ipcMain.handle('xhs:view:read', (_event, accountId: number) => view.read(accountId));
 
   /* ── 红狐 Key 与链接 ───────────────────────────────────────── */
 

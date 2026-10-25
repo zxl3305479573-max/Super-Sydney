@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import type { XhsHotNote, XhsHotspotResult, XhsNoteStatus } from '../shared.ts';
-import { createXhsAccount, createXhsNote, deleteXhsAccount, deleteXhsNote, getXhsNote, listXhsAccounts, listXhsNotes, migrateXhsTables, readHotspotCache, updateXhsAccount, updateXhsNote, writeHotspotCache } from '../services/xhs-store.ts';
+import {
+  createXhsAccount, createXhsNote, deleteXhsAccount, deleteXhsNote, getXhsNote, getXhsNoteForAccount, listXhsAccounts, listXhsNotes,
+  migrateXhsTables, readHotspotCache, updateXhsAccount, updateXhsNote, writeHotspotCache
+} from '../services/xhs-store.ts';
 
 function database(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -95,4 +98,14 @@ test('多账号：新建不重名；只能删空账号，且至少留一个', ()
   assert.equal(listXhsAccounts(db).length, 2);
   deleteXhsAccount(db, first.id);
   assert.throws(() => deleteXhsAccount(db, second.id), /至少要保留一个账号/);
+});
+
+test('笔记读写必须匹配所属账号，不能只凭笔记 id 跨账号操作', () => {
+  const db = database();
+  const [first] = listXhsAccounts(db);
+  const second = createXhsAccount(db, '副号');
+  const note = createXhsNote(db, second.id, '副号的选题');
+  assert.equal(getXhsNoteForAccount(db, second.id, note.id).id, note.id);
+  assert.throws(() => getXhsNoteForAccount(db, first.id, note.id), /另一个小红书账号/);
+  assert.throws(() => getXhsNoteForAccount(db, 999, note.id), /账号不存在/);
 });

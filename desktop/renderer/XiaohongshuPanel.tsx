@@ -46,6 +46,8 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   const [accounts, setAccounts] = useState<XhsAccount[]>([]);
   /** 当前账号 id 放在 ref 里：全局 state:changed 触发的刷新要按「现在选中的」账号拉，而不是闭包里的旧值。 */
   const selectedRef = useRef(storedAccountId());
+  /** 连续刷新 / 切换账号时，只接受最后一次请求的结果。 */
+  const refreshSeq = useRef(0);
   const [editing, setEditing] = useState<'' | 'add' | 'rename'>('');
   /** 笔记创作里有没有未保存的修改：切换账号会重新挂载各分区，修改会丢。 */
   const notesDirty = useRef(false);
@@ -61,12 +63,14 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   const [nameDraft, setNameDraft] = useState('');
 
   const refresh = useCallback(async () => {
+    const ticket = ++refreshSeq.current;
     const list = await window.sydney.listXhsAccounts();
+    if (ticket !== refreshSeq.current) return;
     const current = list.find(item => item.id === selectedRef.current) ?? list[0] ?? null;
     if (current) selectedRef.current = current.id;
     const currentNotes = current ? await window.sydney.listXhsNotes(current.id) : [];
     // 拉取期间又切了账号：丢掉这次结果，等新账号的那次刷新。
-    if (current && current.id !== selectedRef.current) return;
+    if (ticket !== refreshSeq.current || (current && current.id !== selectedRef.current)) return;
     setAccounts(list);
     setAccount(current);
     setNotes(currentNotes);
@@ -85,8 +89,12 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   if (!account) return <section className="xhs-panel"><p className="empty-state"><strong>正在加载小红书模块…</strong></p></section>;
 
   const ctx: XhsContext = { account, notes, notify, goTo, openPublish, openNote, refresh };
+  /** 子页的异步回包可能在切号后才到；不属于当前账号的账号对象不能写回页头。 */
+  const applyAccount = (next: XhsAccount) => {
+    if (next.id === selectedRef.current) setAccount(next);
+  };
   const saveAccount = async (patch: Parameters<typeof window.sydney.updateXhsAccount>[1]) => {
-    try { setAccount(await window.sydney.updateXhsAccount(account.id, patch)); }
+    try { applyAccount(await window.sydney.updateXhsAccount(account.id, patch)); }
     catch (error) { notify(readableError(error)); }
   };
   const positioning = readPositioning(account);
@@ -171,14 +179,22 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
 
     <div key={account.id} className="xhs-account-scope">
       {visited.includes('home') && <KeepAlive show={tab === 'home'}><HomeTab ctx={ctx} /></KeepAlive>}
-      {visited.includes('positioning') && <KeepAlive show={tab === 'positioning'}><PositioningTab ctx={ctx} onAccount={setAccount} /></KeepAlive>}
+      {visited.includes('positioning') && <KeepAlive show={tab === 'positioning'}><PositioningTab ctx={ctx} onAccount={applyAccount} /></KeepAlive>}
       {visited.includes('hotspot') && <KeepAlive show={tab === 'hotspot'}><HotspotTab ctx={ctx} viewNotes={viewNotes} onClearViewNotes={() => setViewNotes(null)} /></KeepAlive>}
       {visited.includes('notes') && <KeepAlive show={tab === 'notes'}><NotesTab ctx={ctx} target={noteTarget} onDirtyChange={trackDirty} /></KeepAlive>}
       {visited.includes('audit') && <KeepAlive show={tab === 'audit'}><AuditTab ctx={ctx} prefill={viewProfile} onPrefillUsed={() => setViewProfile(null)} /></KeepAlive>}
       {visited.includes('analytics') && <KeepAlive show={tab === 'analytics'}><AnalyticsTab ctx={ctx} /></KeepAlive>}
       {visited.includes('browser') && <KeepAlive show={tab === 'browser'}><BrowserTab ctx={ctx} overlay={overlay || tab !== 'browser'} publishNonce={publishNonce}
-        onNotes={(read, url) => { setViewNotes({ notes: read, url }); setTab('hotspot'); }}
-        onProfile={prefill => { setViewProfile(prefill); setTab('audit'); }} /></KeepAlive>}
+        onNotes={(accountId, read, url) => {
+          if (accountId !== selectedRef.current) return;
+          setViewNotes({ notes: read, url });
+          setTab('hotspot');
+        }}
+        onProfile={(accountId, prefill) => {
+          if (accountId !== selectedRef.current) return;
+          setViewProfile(prefill);
+          setTab('audit');
+        }} /></KeepAlive>}
     </div>
   </section>;
 }
