@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import type { AutoUpdateStatus } from './shared';
 
 /** electron-updater is loaded at runtime so a source checkout can still run
  * before `npm install` has populated production dependencies. */
@@ -27,16 +28,6 @@ interface ElectronUpdater {
 // Keep the updater out of development runs. A packaged dependency is required at runtime;
 // package.json deliberately lists it under dependencies so electron-builder bundles it.
 const { autoUpdater } = require('electron-updater') as { autoUpdater: ElectronUpdater };
-
-export type AutoUpdatePhase = 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
-
-export interface AutoUpdateStatus {
-  supported: boolean;
-  phase: AutoUpdatePhase;
-  version?: string;
-  progress?: number;
-  message?: string;
-}
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
 

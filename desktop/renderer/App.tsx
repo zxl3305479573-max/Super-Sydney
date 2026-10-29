@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { AppState, WorkEvent } from '../shared';
+import type { AppState, AutoUpdateStatus, WorkEvent } from '../shared';
 import WeWritePanel from './WeWritePanel';
 import VideoPanel from './VideoPanel';
 import EmbeddedSitePanel from './EmbeddedSitePanel';
@@ -72,6 +72,18 @@ function greeting(): string {
   return `${hour < 6 ? '夜深了' : hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好'} · ${date}`;
 }
 
+function updateStatusMessage(status: AutoUpdateStatus): string {
+  switch (status.phase) {
+    case 'unsupported': return '当前是开发版或非 Windows 安装包，无法检查更新。';
+    case 'checking': return '正在检查 Sydney 更新…';
+    case 'available': return `发现 Sydney ${status.version ?? '新版本'}，请在弹出的窗口中确认是否下载。`;
+    case 'downloading': return `正在下载 Sydney ${status.version ?? '更新'}${status.progress === undefined ? '…' : `（${status.progress}%）`}`;
+    case 'downloaded': return `Sydney ${status.version ?? '更新'} 已下载完成，请在弹出的窗口中重启安装。`;
+    case 'error': return `检查更新失败：${status.message || '请稍后重试。'}`;
+    default: return 'Sydney 已是最新版本。';
+  }
+}
+
 export default function App() {
   const [state, setState] = useState<AppState>(empty);
   const [view, setView] = useState<View>(initialView);
@@ -87,6 +99,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const updateToastKey = useRef('');
 
   // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置，并淡入一下（只动透明度，不影响嵌入网页的定位）。
   useLayoutEffect(() => {
@@ -106,6 +119,20 @@ export default function App() {
   }, []);
   const notifyAny = useCallback((message: string) => notify(message, /失败|错误|无法|请先|不存在|超时|缺少/.test(message) ? 'error' : 'info'), [notify]);
   const guard = useCallback(async (run: () => Promise<unknown>) => { try { await run(); } catch (error) { notify(readableError(error), 'error'); } }, [notify]);
+  const showUpdateStatus = useCallback((status: AutoUpdateStatus) => {
+    // Download progress can be very chatty. A toast per ten percent still keeps the user informed.
+    const progress = status.phase === 'downloading' ? Math.floor((status.progress ?? 0) / 10) * 10 : '';
+    const key = `${status.phase}:${status.version ?? ''}:${progress}:${status.message ?? ''}`;
+    if (updateToastKey.current === key) return;
+    updateToastKey.current = key;
+    notify(updateStatusMessage(status), status.phase === 'error' ? 'error' : 'info');
+  }, [notify]);
+  useEffect(() => window.sydney.onAutoUpdateStatus(showUpdateStatus), [showUpdateStatus]);
+  const checkForUpdates = () => void guard(async () => {
+    const status = await window.sydney.checkForUpdates();
+    // Unsupported builds do not emit a status event, so report that result directly.
+    if (!status.supported) showUpdateStatus(status);
+  });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -159,7 +186,11 @@ export default function App() {
 
   return <div className={`app-shell platform-${chrome.platform} ${chrome.focused ? '' : 'is-blurred'}`}>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
+      <div className="brand">
+        <button type="button" className="brand-update" title="检查 Sydney 更新" aria-label="检查 Sydney 更新" onClick={checkForUpdates}>
+          <span className="brand-mark">S</span><span><strong>Sydney</strong><small>个人工作 OS</small></span>
+        </button>
+      </div>
       <nav className="nav" aria-label="主导航">
         {NAV.map(group => <div key={group.group} className="nav-group">
           <span className="nav-group-label">{group.group}</span>

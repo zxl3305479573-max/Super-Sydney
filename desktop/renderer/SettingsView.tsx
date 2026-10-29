@@ -14,7 +14,8 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'cloud', label: '云同步', icon: 'cloud' },
   { id: 'models', label: '模型', icon: 'key' },
   { id: 'ip', label: 'IP 形象', icon: 'user' },
-  { id: 'data', label: '选题数据', icon: 'chart' }
+  { id: 'data', label: '选题数据', icon: 'chart' },
+  { id: 'about', label: '关于', icon: 'spark' }
 ];
 
 function statusBadge(status: { state: string; error: string }) {
@@ -202,9 +203,11 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
   const [redfoxKey, setRedfoxKey] = useState('');
   const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [redfoxTesting, setRedfoxTesting] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   /** 没保存 key、靠环境变量 REDFOX_API_KEY 时主进程会在 masked 里注明来源，这时没有可删除的东西。 */
   const redfoxFromEnv = redfoxStatus.configured && redfoxStatus.masked.includes('环境变量');
   useEffect(() => { void window.sydney.getRedfoxKeyStatus().then(setRedfoxStatus); }, []);
+  useEffect(() => { void window.sydney.getAppVersion().then(setAppVersion).catch(() => setAppVersion('未知')); }, []);
   const saveRedfoxKey = async () => { setRedfoxStatus(await window.sydney.saveRedfoxKey(redfoxKey.trim())); setRedfoxKey(''); notify('红狐 API Key 已安全保存'); };
   const removeRedfoxKey = async () => { setRedfoxStatus(await window.sydney.deleteRedfoxKey()); notify('已删除程序内保存的红狐 Key'); };
   const testRedfoxKey = async () => {
@@ -290,6 +293,12 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
             {redfoxStatus.configured && !redfoxFromEnv && <button className="button button-quiet" onClick={() => void removeRedfoxKey()}>删除</button>}
           </div>
         </Row>
+      </section>
+
+      <section id="set-about" className="set-card">
+        <header><Icon name="spark" size={18} /><div><h2>关于 Sydney</h2><p>个人工作 OS：把工作记录、内容创作与知识沉淀放在同一个本地优先的工作台。</p></div></header>
+        <Row title="当前版本" description={<code className="path">v{appVersion ?? '读取中…'}</code>} />
+        <Row title="更新" description="已安装的 Windows 正式版会在启动后检查更新；也可以点击左上角 Sydney 立即检查。开发模式不会发起更新检查。" />
       </section>
     </div>
   </div>;

@@ -124,6 +124,10 @@ kbd { display: inline-block; min-width: 20px; padding: 1px 5px; border: 1px soli
 /* 侧栏顶部的品牌区兼作标题栏的一部分：按住可以拖动窗口 */
 .brand { display: flex; flex: none; align-items: center; gap: 11px; height: 76px; padding: 4px 10px 0; -webkit-app-region: drag; }
 .platform-darwin .brand { height: 92px; padding-top: 30px; }
+.brand-update { display: flex; align-items: center; gap: 11px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: inherit; text-align: left; -webkit-app-region: no-drag; transition: background .15s ease-out; }
+.brand-update:hover { background: var(--surface-raised); }
+.brand-update:active { background: var(--surface-hover); }
+.brand-update > span:last-child { min-width: 0; }
 .brand-mark { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(145deg, oklch(0.56 0.17 264), oklch(0.45 0.17 270)); color: white; font-size: 16px; font-weight: 750; box-shadow: 0 3px 10px oklch(0.5 0.17 264 / 28%); }
 .brand strong { display: block; font-size: 15px; letter-spacing: .01em; }
 .brand small { display: block; margin-top: 1px; color: var(--muted); font-size: 11.5px; }

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { dialog, ipcMain, shell } from 'electron';
+import { app, dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
 import type { CaptureMode, CaptureRuntime } from '../capture-runtime';
 import type { AiReviewResult, CardExtractResult, EvolutionState, Settings, WorkEvent } from '../shared';
@@ -23,6 +23,8 @@ export function registerCoreIpc(ctx: AppContext, capture: CaptureRuntime): void 
     if (!ctx.settings.read().llmEnabled) throw new Error('请先在「设置 → 模型」里允许调用内容模型');
   };
   const aiInsightsBetween = (from: Date, to: Date) => buildInsights(aiEventsSince(db, from), from, to);
+
+  ipcMain.handle('app:getVersion', () => app.getVersion());
 
   ipcMain.handle('state:get', () => ({
     settings: ctx.settings.read(),

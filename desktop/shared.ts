@@ -799,11 +799,23 @@ export type SiteModuleState = {
 export type WindowChromeState = { maximized: boolean; fullscreen: boolean; focused: boolean; platform: string };
 export type WindowControl = 'minimize' | 'toggle-maximize' | 'close';
 export type AppTheme = 'light' | 'dark';
+export type AutoUpdatePhase = 'unsupported' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error';
+
+/** The updater state is intentionally small so it can cross the IPC boundary safely. */
+export interface AutoUpdateStatus {
+  supported: boolean;
+  phase: AutoUpdatePhase;
+  version?: string;
+  progress?: number;
+  message?: string;
+}
 
 export interface SydneyApi {
   getState(): Promise<AppState>;
   /** 手动检查 GitHub Releases 中是否有可用的 Windows 更新。未打包的开发模式会安全跳过。 */
-  checkForUpdates(): Promise<{ supported: boolean; phase: string; version?: string; progress?: number; message?: string }>;
+  checkForUpdates(): Promise<AutoUpdateStatus>;
+  /** The packaged application version, supplied by Electron rather than a renderer constant. */
+  getAppVersion(): Promise<string>;
   createEvent(event: Partial<WorkEvent>): Promise<number>;
   updateEvent(id: number, patch: Partial<WorkEvent>): Promise<void>;
   deleteEvent(id: number): Promise<void>;
@@ -1074,6 +1086,7 @@ export interface SydneyApi {
   openEmbeddedInBrowser(key: EmbeddedSiteKey): Promise<void>;
   onEmbeddedViewChanged(key: EmbeddedSiteKey, callback: () => void): () => void;
   onChanged(callback: () => void): () => void;
+  onAutoUpdateStatus(callback: (status: AutoUpdateStatus) => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
   onSiteModuleChanged(callback: () => void): () => void;
   getWindowChrome(): Promise<WindowChromeState>;

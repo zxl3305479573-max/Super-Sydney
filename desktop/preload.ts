@@ -1,9 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { SydneyApi, VideoProgress, WindowChromeState } from './shared';
+import type { AutoUpdateStatus, SydneyApi, VideoProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
   getState: () => ipcRenderer.invoke('state:get'),
   checkForUpdates: () => ipcRenderer.invoke('auto-update:check'),
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
   createEvent: event => ipcRenderer.invoke('event:create', event),
   updateEvent: (id, patch) => ipcRenderer.invoke('event:update', id, patch),
   deleteEvent: id => ipcRenderer.invoke('event:delete', id),
@@ -189,6 +190,11 @@ const api: SydneyApi = {
   windowControl: action => ipcRenderer.invoke('window:control', action),
   setTheme: theme => ipcRenderer.invoke('window:theme', theme),
   onChanged: callback => { ipcRenderer.on('state:changed', callback); return () => ipcRenderer.removeListener('state:changed', callback); },
+  onAutoUpdateStatus: callback => {
+    const listener = (_event: unknown, status: AutoUpdateStatus) => callback(status);
+    ipcRenderer.on('auto-update:status', listener);
+    return () => ipcRenderer.removeListener('auto-update:status', listener);
+  },
   onWeWriteChanged: callback => {
     const listener = () => callback();
     ipcRenderer.on('wewrite:changed', listener);
