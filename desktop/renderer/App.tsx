@@ -99,6 +99,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<AutoUpdateStatus | null>(null);
   const updateToastKey = useRef('');
 
   // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置，并淡入一下（只动透明度，不影响嵌入网页的定位）。
@@ -120,6 +121,7 @@ export default function App() {
   const notifyAny = useCallback((message: string) => notify(message, /失败|错误|无法|请先|不存在|超时|缺少/.test(message) ? 'error' : 'info'), [notify]);
   const guard = useCallback(async (run: () => Promise<unknown>) => { try { await run(); } catch (error) { notify(readableError(error), 'error'); } }, [notify]);
   const showUpdateStatus = useCallback((status: AutoUpdateStatus) => {
+    setUpdateStatus(status);
     // Download progress can be very chatty. A toast per ten percent still keeps the user informed.
     const progress = status.phase === 'downloading' ? Math.floor((status.progress ?? 0) / 10) * 10 : '';
     const key = `${status.phase}:${status.version ?? ''}:${progress}:${status.message ?? ''}`;
@@ -130,6 +132,7 @@ export default function App() {
   useEffect(() => window.sydney.onAutoUpdateStatus(showUpdateStatus), [showUpdateStatus]);
   const checkForUpdates = () => void guard(async () => {
     const status = await window.sydney.checkForUpdates();
+    setUpdateStatus(status);
     // Unsupported builds do not emit a status event, so report that result directly.
     if (!status.supported) showUpdateStatus(status);
   });
@@ -159,6 +162,16 @@ export default function App() {
   const detailEvent = state.events.find(event => event.id === detailId) ?? null;
   const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
   const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
+  const updateBusy = updateStatus?.phase === 'checking' || updateStatus?.phase === 'downloading';
+  const updateLabel = updateStatus?.phase === 'checking'
+    ? '检查中…'
+    : updateStatus?.phase === 'downloading'
+      ? `下载中${updateStatus.progress === undefined ? '…' : ` ${Math.round(updateStatus.progress)}%`}`
+      : updateStatus?.phase === 'available'
+        ? '发现新版本'
+        : updateStatus?.phase === 'downloaded'
+          ? '准备安装'
+          : '检查更新';
 
   const covered = manualOpen || detailId !== null;
   /**
@@ -187,8 +200,11 @@ export default function App() {
   return <div className={`app-shell platform-${chrome.platform} ${chrome.focused ? '' : 'is-blurred'}`}>
     <aside className="sidebar">
       <div className="brand">
-        <button type="button" className="brand-update" title="检查 Sydney 更新" aria-label="检查 Sydney 更新" onClick={checkForUpdates}>
-          <span className="brand-mark">S</span><span><strong>Sydney</strong><small>个人工作 OS</small></span>
+        <div className="brand-identity">
+          <span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div>
+        </div>
+        <button type="button" className={`update-reminder ${updateBusy ? 'is-busy' : ''} ${updateStatus?.phase === 'available' ? 'has-update' : ''}`} title="检查 Sydney 更新" aria-label="检查 Sydney 更新" disabled={updateBusy} onClick={checkForUpdates}>
+          <Icon name="refresh" size={14} /><span>{updateLabel}</span>
         </button>
       </div>
       <nav className="nav" aria-label="主导航">
