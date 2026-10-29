@@ -3,6 +3,7 @@ import type { SydneyApi, VideoProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
   getState: () => ipcRenderer.invoke('state:get'),
+  checkForUpdates: () => ipcRenderer.invoke('auto-update:check'),
   createEvent: event => ipcRenderer.invoke('event:create', event),
   updateEvent: (id, patch) => ipcRenderer.invoke('event:update', id, patch),
   deleteEvent: id => ipcRenderer.invoke('event:delete', id),

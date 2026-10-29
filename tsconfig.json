@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["desktop/**/*.ts", "desktop/**/*.tsx", "electron.vite.config.ts"]
+  "include": ["desktop/**/*.ts", "desktop/**/*.tsx", "bridge/**/*.ts", "electron.vite.config.ts"]
 }

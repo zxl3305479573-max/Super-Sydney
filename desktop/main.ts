@@ -43,6 +43,7 @@ import { LastPages } from './services/last-pages';
 import { HeroSmsActivationStore } from './services/hero-sms-activations';
 import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
+import { AutoUpdateManager } from './auto-update';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -231,6 +232,9 @@ if (primaryInstance) app.whenReady().then(() => {
   app.on('will-quit', () => ctx.lastPages.flush());
   registerWindowIpc(() => windowRef, themeFile());
   createWindow();
+  const autoUpdate = new AutoUpdateManager(() => windowRef);
+  autoUpdate.registerIpc();
+  autoUpdate.checkAfterStartup();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });
 

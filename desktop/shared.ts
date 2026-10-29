@@ -802,6 +802,8 @@ export type AppTheme = 'light' | 'dark';
 
 export interface SydneyApi {
   getState(): Promise<AppState>;
+  /** 手动检查 GitHub Releases 中是否有可用的 Windows 更新。未打包的开发模式会安全跳过。 */
+  checkForUpdates(): Promise<{ supported: boolean; phase: string; version?: string; progress?: number; message?: string }>;
   createEvent(event: Partial<WorkEvent>): Promise<number>;
   updateEvent(id: number, patch: Partial<WorkEvent>): Promise<void>;
   deleteEvent(id: number): Promise<void>;

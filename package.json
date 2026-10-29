@@ -1,6 +1,6 @@
 {
   "name": "sydney-work-os",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sydney personal AI work OS desktop client",
   "author": "Sydney",
   "main": "out/main/main.js",
@@ -13,10 +13,12 @@
     "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-installer.ps1",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test desktop/test/*.test.*",
+    "bridge": "node --experimental-strip-types bridge/grokbot-codex-bridge.ts",
     "cloud": "python cloud_api/main.py"
   },
   "dependencies": {
     "active-win": "^8.2.1",
+    "electron-updater": "^6.8.11",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

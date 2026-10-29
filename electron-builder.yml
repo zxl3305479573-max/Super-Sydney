@@ -5,6 +5,14 @@ copyright: Copyright © 2026 Sydney
 directories:
   output: release
 
+# NSIS 构建会生成 latest.yml 和 Setup.exe.blockmap；electron-updater 从此 GitHub
+# Releases 源读取它们。发布仍由发版流程人工上传，构建本身不会推送任何远程内容。
+publish:
+  provider: github
+  owner: zxl3305479573-max
+  repo: Super-Sydney
+  releaseType: release
+
 electronDist: node_modules/electron/dist
 
 files:
@@ -28,6 +36,7 @@ win:
 
 nsis:
   artifactName: Sydney-Setup-${version}-${arch}.${ext}
+  differentialPackage: true
   oneClick: false
   perMachine: false
   allowElevation: true
