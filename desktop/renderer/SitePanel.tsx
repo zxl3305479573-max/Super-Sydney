@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SiteEntry, SiteModuleState } from '../shared';
-import { ConfirmButton, Icon, readableError, visibleStageBounds } from './ui';
+import { ConfirmButton, Icon, ModuleToolbar, MoreMenu, readableError, visibleStageBounds } from './ui';
 
 /**
  * 变现 · 站点模块（AI 代充）。
@@ -110,13 +110,13 @@ export default function SitePanel({ overlay, notify }: { overlay: boolean; notif
   };
 
   return <section className="site-panel" aria-label="AI 代充">
-    <form className="site-add-bar" onSubmit={addSite}>
+    <ModuleToolbar className="site-add-bar" label="添加站点"><form className="site-add-bar" onSubmit={addSite}>
       <span className="site-add-label">添加站点</span>
       <input className="input site-add-name" value={newName} onChange={event => setNewName(event.target.value)} placeholder="名称（留空按域名）" aria-label="新站点名称" />
       <input className="input site-add-url" value={newUrl} onChange={event => setNewUrl(event.target.value)} placeholder="https://…" aria-label="新站点地址" />
       <button className="button button-secondary button-small" type="submit"><Icon name="plus" size={14} />添加</button>
-    </form>
-    {active && <div className="site-bar">
+    </form></ModuleToolbar>
+    {active && <ModuleToolbar className="site-bar" label="当前站点">
       <form className="site-address" onSubmit={saveActive}>
         <label htmlFor="site-switch">站点</label>
         <select id="site-switch" className="site-switch" value={state?.activeId ?? ''} onChange={event => void activate(event.target.value)}>
@@ -134,10 +134,9 @@ export default function SitePanel({ overlay, notify }: { overlay: boolean; notif
       <div className="site-actions">
         <button className="button button-quiet button-small" type="button" onClick={() => go('back')} disabled={!state?.canGoBack}><Icon name="undo" size={14} />后退</button>
         <button className="button button-quiet button-small" type="button" onClick={() => go('reload')}><Icon name="refresh" size={14} />刷新</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => go('home')}><Icon name="link" size={14} />回到站点首页</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => void window.sydney.openSiteModuleInBrowser()}><Icon name="window" size={14} />在浏览器打开</button>
+        <MoreMenu>{<><button type="button" role="menuitem" onClick={() => go('home')}><Icon name="link" size={14} />回到站点首页</button><button type="button" role="menuitem" onClick={() => void window.sydney.openSiteModuleInBrowser()}><Icon name="window" size={14} />在浏览器打开</button></>}</MoreMenu>
       </div>
-    </div>}
+    </ModuleToolbar>}
     {(error || state?.error) && <p className="site-error" role="alert"><Icon name="alert" size={14} /><span>{error || state?.error}</span></p>}
     {active && <p className="site-meta">
       <span>当前页面</span>

@@ -94,6 +94,24 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Shared module framing. Individual modules may keep their existing content layout,
+ * but headers, toolbars and overflow actions always use this quiet hierarchy. */
+.module-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.module-header-copy { min-width: 0; }
+.module-header h1 { margin: 0; color: var(--ink); font-size: 20px; line-height: 1.3; letter-spacing: -.01em; }
+.module-header .eyebrow { margin: 0 0 3px; }
+.module-purpose { max-width: 76ch; margin: 5px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.module-header-actions { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.module-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.module-body { min-width: 0; }
+.more-menu { position: relative; display: inline-flex; flex: none; }
+.more-menu-popover { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; min-width: 156px; padding: 4px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-md); }
+.more-menu-popover > button, .more-menu-popover > a { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 8px; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; text-decoration: none; }
+.more-menu-popover > button:hover:not(:disabled), .more-menu-popover > a:hover { background: var(--surface-hover); }
+.more-menu-popover > button:focus-visible, .more-menu-popover > a:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.module-toolbar .search { margin-left: auto; }
+@media (max-width: 780px) { .module-header { align-items: stretch; flex-direction: column; } .module-header-actions { justify-content: flex-start; } }
 /*
  * 窗口最小宽度 980 是「窗外框」，减去边框与滚动条后内容区只有 940 上下；
  * 这里若写成 980，最小窗口下整页会横向溢出 30 多像素（右侧内容被裁掉、出现横向滚动条）。
