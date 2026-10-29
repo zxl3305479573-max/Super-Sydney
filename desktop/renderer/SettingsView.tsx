@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import type { AppState, CloudSyncStatus, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPresetKind, ModelPresetView, Settings } from '../shared';
+import type { AppState, AppTheme, CloudSyncStatus, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPresetKind, ModelPresetView, Settings, WindowChromeState } from '../shared';
 import ModelPresetBar from './ModelPresetBar';
 import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
 import { IpLibraryCard } from './IpLibrary';
+import { TitleBar } from './TitleBar';
 
 type Patch = Partial<Settings>;
 
@@ -197,7 +198,10 @@ function CloudSyncCard({ settings, onSetting, notify }: { settings: Settings; on
   </section>;
 }
 
-export function SettingsView({ state, onSetting, onChooseFiles, notify }: { state: AppState; onSetting: (patch: Patch) => Promise<void>; onChooseFiles: () => Promise<void>; notify: (message: string) => void }) {
+export function SettingsView({ open, onClose, state, onSetting, onChooseFiles, notify, chrome, theme, onToggleTheme }: {
+  open: boolean; onClose: () => void; state: AppState; onSetting: (patch: Patch) => Promise<void>; onChooseFiles: () => Promise<void>; notify: (message: string) => void;
+  chrome: WindowChromeState; theme: AppTheme; onToggleTheme: (origin: { x: number; y: number }) => void;
+}) {
   const settings = state.settings;
   const [active, setActive] = useState('vault');
   const [redfoxKey, setRedfoxKey] = useState('');
@@ -217,22 +221,33 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
     finally { setRedfoxTesting(false); }
   };
   const chooseVault = async () => { const next = await window.sydney.chooseVault(); if (next) notify(`知识库已切换到 ${next}`); };
-  const jump = (id: string) => { setActive(id); document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, open]);
 
-  return <div className="settings-layout">
-    <nav className="settings-nav" aria-label="设置分区">
-      {SECTIONS.map(section => <button key={section.id} className={active === section.id ? 'is-active' : ''} onClick={() => jump(section.id)}><Icon name={section.icon} size={15} />{section.label}</button>)}
-      <p className="settings-nav-note"><Icon name="shield" size={14} />所有数据默认只保存在本机；修改即时生效。</p>
-    </nav>
+  return <div className="settings-shell" hidden={!open}>
+    <TitleBar crumbs={['系统', '隐私与设置']} chrome={chrome} scrolled={false} theme={theme} onToggleTheme={onToggleTheme} />
+    <div className="settings-layout">
+      <nav className="settings-nav" aria-label="设置分区">
+        {SECTIONS.map(section => <button key={section.id} className={active === section.id ? 'is-active' : ''} aria-current={active === section.id ? 'page' : undefined} onClick={() => setActive(section.id)}><Icon name={section.icon} size={15} />{section.label}</button>)}
+      </nav>
 
-    <div className="settings-body">
-      <section id="set-vault" className="set-card">
+      <main className="settings-page">
+        <header className="settings-page-head">
+          <div><p>系统设置</p><h1>{SECTIONS.find(section => section.id === active)?.label}</h1></div>
+          <button className="button button-secondary" onClick={onClose}><Icon name="x" size={16} />返回工作台</button>
+        </header>
+        <div className="settings-body">
+      {active === 'vault' && <section className="set-card">
         <header><Icon name="book" size={18} /><div><h2>知识库</h2><p>确认后的事件、日报、周报和进化记录写入这个 Obsidian 目录。</p></div></header>
         <Row title="Obsidian 知识库目录" description={<code className="path">{settings.vaultPath || '未设置'}</code>}
           control={<div className="btn-group"><button className="button button-secondary" onClick={() => void chooseVault()}><Icon name="folder" />更换目录</button><button className="button button-quiet" onClick={() => void window.sydney.openVault()}>打开</button></div>} />
-      </section>
+      </section>}
 
-      <section id="set-activity" className="set-card">
+      {active === 'activity' && <section className="set-card">
         <header><Icon name="window" size={18} /><div><h2>活动记录</h2><p>只记录应用名称、窗口标题和使用时长，不记录键盘输入。</p></div></header>
         <Row title="先全部保存，再人工确认" description="不在允许名单里的非敏感窗口也会进入待确认列表，由你决定保留或删除。密码、支付与私人聊天始终跳过。"
           control={<Switch label="先全部保存" checked={settings.captureAllPending} onChange={value => void onSetting({ captureAllPending: value })} />} />
@@ -243,9 +258,9 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
         <Row title="禁止采集的应用 / 关键词" description="应用名或窗口标题包含这些词时直接跳过。">
           <TagEditor tone="danger" values={settings.blockedApps} placeholder="例如 1Password、微信" onChange={values => void onSetting({ blockedApps: values })} />
         </Row>
-      </section>
+      </section>}
 
-      <section id="set-ai" className="set-card">
+      {active === 'ai' && <section className="set-card">
         <header><Icon name="bot" size={18} /><div><h2>AI 对话采集</h2><p>只采集你输入的提示词和每轮最终答复；工具只记名称与改动的文件路径，不保存工具输出、思考过程和历史会话。</p></div></header>
         <Row title="Codex 对话" badge={statusBadge(state.codexCapture)} description="监听 ~/.codex/sessions 中新增的会话。"
           control={<Switch label="Codex 对话" checked={settings.codexCaptureEnabled} onChange={value => void onSetting({ codexCaptureEnabled: value })} />} />
@@ -256,9 +271,9 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
         {settings.claudeCaptureEnabled && <Row title="额外的 Claude 会话目录" description="每行一个目录，例如另一个 CLAUDE_CONFIG_DIR 下的 projects；失焦后保存。">
           <LinesEditor values={settings.claudeExtraRoots} placeholder="D:\\other-claude\\projects" onChange={values => void onSetting({ claudeExtraRoots: values })} />
         </Row>}
-      </section>
+      </section>}
 
-      <section id="set-files" className="set-card">
+      {active === 'files' && <section className="set-card">
         <header><Icon name="folder" size={18} /><div><h2>文件与屏幕</h2><p>文件只记录路径和变化类型；屏幕帧本地加密，不上传、不做 OCR。</p></div></header>
         <Row title="监听文件变化" description={settings.inputWatchPaths.length ? '监听下方关联的文件 / 目录。' : '未关联文件时监听知识库的 01-输入 目录。'}
           control={<Switch label="监听文件变化" checked={settings.inputWatchEnabled} onChange={value => void onSetting({ inputWatchEnabled: value })} />}>
@@ -274,15 +289,15 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           <Row title="截图间隔" control={<NumberInput value={settings.screenCaptureIntervalSeconds} min={15} suffix="秒" onCommit={value => void onSetting({ screenCaptureIntervalSeconds: value })} />} />
           <Row title="保留时间" description="超过时间的帧自动删除。" control={<NumberInput value={settings.screenRetentionHours} min={1} suffix="小时" onCommit={value => void onSetting({ screenRetentionHours: value })} />} />
         </>}
-      </section>
+      </section>}
 
-      <CloudSyncCard settings={settings} onSetting={onSetting} notify={notify} />
+      {active === 'cloud' && <CloudSyncCard settings={settings} onSetting={onSetting} notify={notify} />}
 
-      <ModelsCard enabled={settings.llmEnabled} onToggle={value => void onSetting({ llmEnabled: value })} notify={notify} />
+      {active === 'models' && <ModelsCard enabled={settings.llmEnabled} onToggle={value => void onSetting({ llmEnabled: value })} notify={notify} />}
 
-      <IpLibraryCard notify={notify} />
+      {active === 'ip' && <IpLibraryCard notify={notify} />}
 
-      <section id="set-data" className="set-card">
+      {active === 'data' && <section className="set-card">
         <header><Icon name="chart" size={18} /><div><h2>内容选题 · 热点数据（红狐）</h2><p>公众号、小红书和视频模块共用这一个红狐 Key。只在你点搜索或生成选题时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
         <Row title="红狐 API Key" badge={<span className={`badge ${redfoxStatus.configured ? 'badge-on' : 'badge-off'}`}>{redfoxFromEnv ? '使用环境变量' : redfoxStatus.configured ? `已保存 ${redfoxStatus.masked}` : '未保存'}</span>}
           description={redfoxStatus.encryptionAvailable ? '使用系统安全存储加密，不写入项目、数据库或知识库；未保存时回退到环境变量 REDFOX_API_KEY。获取地址：redfox.hk/settings/api-keys' : '当前系统安全存储不可用，无法保存密钥。'}>
@@ -293,14 +308,16 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
             {redfoxStatus.configured && !redfoxFromEnv && <button className="button button-quiet" onClick={() => void removeRedfoxKey()}>删除</button>}
           </div>
         </Row>
-      </section>
+      </section>}
 
-      <section id="set-about" className="set-card">
+      {active === 'about' && <section className="set-card">
         <header><Icon name="spark" size={18} /><div><h2>关于 Sydney</h2><p>个人工作 OS：把工作记录、内容创作与知识沉淀放在同一个本地优先的工作台。</p></div></header>
         <Row title="当前版本" description={<code className="path">v{appVersion ?? '读取中…'}</code>} />
         <Row title="更新" description="已安装的 Windows 正式版会在启动后检查更新；也可点侧栏「更新提醒」或下方按钮。开发模式不会发起更新检查。"
           control={<button className="button button-secondary" onClick={() => void window.sydney.checkForUpdates().then(status => notify(status.supported ? (status.message || `状态：${status.phase}`) : '当前环境不支持自动更新')).catch(error => notify(readableError(error)))}>检查更新</button>} />
-      </section>
+      </section>}
+        </div>
+      </main>
     </div>
   </div>;
 }

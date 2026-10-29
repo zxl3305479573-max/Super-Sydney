@@ -15,7 +15,7 @@ import { Icon, KeepAlive, Modal, readableError, useVisited, type IconName } from
 import { TitleBar, useWindowChrome } from './TitleBar';
 import { useTheme } from './theme';
 
-type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
+type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site';
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
@@ -38,13 +38,11 @@ const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { titl
   xianyu: { title: '闲鱼', subtitle: '闲鱼网页版直接嵌在这里：首次使用在页面里扫码登录，登录态只留在这个模块自己的会话里。' },
   site16688: { title: '16688', subtitle: '16688 商家后台直接嵌在这里：首次使用在页面里登录，登录态只留在这个模块自己的会话里。' },
   heroSms: { title: '接码', subtitle: '通过 HeroSMS 官方开放 API 查余额、购买号码、接收验证码和管理激活；Key 只保存在系统安全存储。' },
-  site: { title: 'AI 代充', subtitle: '把常用的代充 / 发卡站点都放进来：上面选站点，下面直接操作。站点开在它自己的会话里，应用只负责给它让出这块位置。' },
-  settings: { title: '隐私与设置', subtitle: '采集范围、AI 对话监听和知识库位置。所有数据默认只保存在本机。' }
+  site: { title: 'AI 代充', subtitle: '把常用的代充 / 发卡站点都放进来：上面选站点，下面直接操作。站点开在它自己的会话里，应用只负责给它让出这块位置。' }
 };
 
 /** 标题栏里的位置：分组 › 页面。 */
 function crumbsOf(view: View): string[] {
-  if (view === 'settings') return ['系统', '隐私与设置'];
   for (const group of NAV) {
     const item = group.items.find(entry => entry.view === view);
     if (item) return [group.group, item.label];
@@ -52,7 +50,7 @@ function crumbsOf(view: View): string[] {
   return [];
 }
 
-const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'heroSms', 'site', 'settings'];
+const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'heroSms', 'site'];
 const VIEW_KEY = 'sydney.view';
 
 /** 上次退出时停在哪个模块，重新打开应用就回到那里。 */
@@ -87,6 +85,8 @@ function updateStatusMessage(status: AutoUpdateStatus): string {
 export default function App() {
   const [state, setState] = useState<AppState>(empty);
   const [view, setView] = useState<View>(initialView);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsVisited, setSettingsVisited] = useState(false);
   // 进过的模块都留着不卸载，只是隐藏：切走时正在跑的生成、表单里没存的内容、子页签都原样保留。
   const mounted = useVisited(view);
   const scrollByView = useRef<Partial<Record<View, number>>>({});
@@ -174,7 +174,7 @@ export default function App() {
           ? '准备安装'
           : '更新提醒';
 
-  const covered = manualOpen || helpOpen || detailId !== null;
+  const covered = manualOpen || helpOpen || detailId !== null || settingsOpen;
   /**
    * 嵌入网页是主进程浮在界面之上的视图：模块被隐藏或有弹层时把它摘下来（overlay），
    * 页面进程本身留着，切回来登录态、浏览位置、表单内容都还在。
@@ -182,7 +182,6 @@ export default function App() {
   const renderView = (name: View) => {
     const hideWeb = covered || name !== view;
     switch (name) {
-      case 'settings': return <SettingsView state={state} onSetting={setting} onChooseFiles={chooseFiles} notify={notifyAny} />;
       case 'evolve': return <EvolutionPanel notify={notifyAny} />;
       case 'links': return <LinksPanel notify={notifyAny} />;
       case 'wewrite': return <WeWritePanel notify={notifyAny} overlay={hideWeb} />;
@@ -194,7 +193,8 @@ export default function App() {
         privacy="页面由 16688 提供，登录请在页面里完成；应用不读它的 cookie，也不往页面里注入脚本，订单与账号问题以站点为准。" />;
       case 'heroSms': return <HeroSmsPanel active={name === view} notify={notifyAny} />;
       case 'site': return <SitePanel overlay={hideWeb} notify={notifyAny} />;
-      default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />;
+      default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)}
+        onNavigate={next => { if (next === 'settings') { setSettingsVisited(true); setSettingsOpen(true); } else setView(next); }} onSummary={summary} onBulkDone={message => notify(message)} />;
     }
   };
 
@@ -218,7 +218,7 @@ export default function App() {
       </nav>
       <div className="sidebar-bottom">
         <button className="nav-item" onClick={() => setHelpOpen(true)}><Icon name="book" size={17} /><span>帮助</span></button>
-        <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>隐私与设置</span></button>
+        <button className={`nav-item ${settingsOpen ? 'active' : ''}`} onClick={() => { setSettingsVisited(true); setSettingsOpen(true); }}><Icon name="settings" size={17} /><span>隐私与设置</span></button>
         <div className={`rec-widget ${live ? 'is-live' : state.settings.captureEnabled ? 'is-paused' : ''}`}>
           <span className="rec-dot" aria-hidden="true" />
           <div><strong>{live ? '正在记录' : state.settings.captureEnabled ? '已暂停' : '未在记录'}</strong><small>{live ? state.captureStatus.appName || '等待采样' : '本地模式'}</small></div>
@@ -237,7 +237,7 @@ export default function App() {
             <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
             <div className="top-actions">
               {view === 'review' && <button className="button button-secondary" onClick={() => setManualOpen(true)}><Icon name="plus" />手动记录</button>}
-              {view !== 'today' && view !== 'settings' && (state.settings.captureEnabled
+              {view !== 'today' && (state.settings.captureEnabled
                 ? <span className={`live-tag ${live ? 'is-live' : ''}`}><span className="rec-dot" />{live ? '正在记录' : '已暂停'}</span>
                 : <button className="button button-primary" onClick={() => capture('start')}><Icon name="play" />开始记录</button>)}
             </div>
@@ -269,6 +269,8 @@ export default function App() {
     </Modal>
 
     <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />
+    {settingsVisited && <SettingsView open={settingsOpen} onClose={() => setSettingsOpen(false)} state={state} onSetting={setting} onChooseFiles={chooseFiles} notify={notifyAny}
+      chrome={chrome} theme={theme} onToggleTheme={toggleTheme} />}
     <div className="toasts" role="status" aria-live="polite">{toasts.map(toast => <div key={toast.id} className={`toast toast-${toast.tone}`}><Icon name={toast.tone === 'error' ? 'alert' : 'check'} size={15} /><span>{toast.message}</span></div>)}</div>
   </div>;
 }
