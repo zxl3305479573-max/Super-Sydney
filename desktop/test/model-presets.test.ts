@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { ModelPresetStore, matchActivePreset, normalizePresetInput, type PresetKeyVault } from '../services/model-presets.ts';
+import type { ModelPreset } from '../shared.ts';
 
 function memoryVault(): PresetKeyVault & { value: string } {
   return { value: '', read() { return this.value; }, save(value: string) { this.value = value; }, remove() { this.value = ''; } };
@@ -56,4 +57,14 @@ test('当前配置按地址 + 模型（图片再加 provider）对应预设，�
   assert.equal(matchActivePreset(list, 'image', { baseUrl: 'https://a.com/v1/', model: 'gpt-image-2', provider: 'openai' }), image.id);
   assert.equal(matchActivePreset(list, 'image', { baseUrl: 'https://a.com/v1', model: 'gpt-image-2', provider: 'doubao' }), '');
   assert.equal(matchActivePreset(list, 'writer', { baseUrl: 'https://a.com/v1', model: 'gpt-image-2' }), '');
+});
+
+test('相同地址与模型但不同 key 的预设，切换后仍能准确显示当前选中项', () => {
+  const { presets } = store();
+  const first = presets.save({ kind: 'writer', name: '工作账号', baseUrl: 'https://api.example.com/v1', model: 'chat-model', apiKey: 'sk-work' }, '');
+  const second = presets.save({ kind: 'writer', name: '个人账号', baseUrl: 'https://api.example.com/v1', model: 'chat-model', apiKey: 'sk-personal' }, '');
+  const list = presets.list();
+  const readKey = (preset: ModelPreset) => presets.apiKey(preset.id);
+  assert.equal(matchActivePreset(list, 'writer', { baseUrl: 'https://api.example.com/v1', model: 'chat-model', apiKey: 'sk-work' }, readKey), first.id);
+  assert.equal(matchActivePreset(list, 'writer', { baseUrl: 'https://api.example.com/v1', model: 'chat-model', apiKey: 'sk-personal' }, readKey), second.id);
 });

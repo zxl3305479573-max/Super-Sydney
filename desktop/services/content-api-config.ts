@@ -84,12 +84,13 @@ export type ImageApiConfig = { apiKey: string; baseUrl: string; model: string };
 
 /** 图片 API 配置读 config.yaml 的 image 段（简单标量键）。 */
 export function imageApiConfig(configText: string | null): ImageApiConfig {
-  const apiKey = yamlScalar(configText, 'api_key');
+  const image = yamlBlock(configText, 'image');
+  const apiKey = yamlScalar(image, 'api_key');
   if (!apiKey) throw new Error(`请先在${MODEL_SETTINGS_WHERE}里配置图片模型的 API Key`);
   return {
     apiKey,
-    baseUrl: (yamlScalar(configText, 'base_url') || 'https://api.openai.com/v1').replace(/\/$/, ''),
-    model: yamlScalar(configText, 'model') || 'gpt-image-2'
+    baseUrl: (yamlScalar(image, 'base_url') || 'https://api.openai.com/v1').replace(/\/$/, ''),
+    model: yamlScalar(image, 'model') || 'gpt-image-2'
   };
 }
 

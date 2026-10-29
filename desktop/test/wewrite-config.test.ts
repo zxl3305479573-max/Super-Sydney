@@ -98,7 +98,7 @@ test('parseStyleSummary keeps content topics and blacklist topics separate', () 
 });
 
 test('parseImageConfig masks the api key and never returns it in full', () => {
-  const image = parseImageConfig(CONFIG);
+  const image = parseImageConfig(`writer:\n  base_url: "https://llm.example/v1"\n  model: "chat-model"\n${CONFIG}`);
   assert.equal(image.provider, 'openai');
   assert.equal(image.model, 'gpt-image-2');
   assert.equal(image.baseUrl, 'https://api.example.com/v1');

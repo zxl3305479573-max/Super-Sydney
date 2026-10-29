@@ -50,15 +50,24 @@ export function normalizePresetInput(input: ModelPresetInput): Required<ModelPre
 }
 
 /**
- * 当前在用的配置对应哪一个预设：地址与模型（图片再加 provider）一致就算同一套，不比较 key。
- * 用户手动改过表单再保存，就自然落到「自定义」，不会误显示成某个预设。
+ * 当前在用的配置对应哪一个预设：地址与模型（图片再加 provider）一致；调用方能提供
+ * key 读取器时还会核对 key，避免相同模型、不同账号的配置彼此混淆。
  */
-export function matchActivePreset(presets: ModelPreset[], kind: ModelPresetKind, current: { baseUrl: string; model: string; provider?: string }): string {
+export function matchActivePreset(
+  presets: ModelPreset[],
+  kind: ModelPresetKind,
+  current: { baseUrl: string; model: string; provider?: string; apiKey?: string },
+  apiKeyForPreset?: (preset: ModelPreset) => string
+): string {
   const url = current.baseUrl.trim().replace(/\/+$/, '');
+  const apiKey = current.apiKey?.trim();
   const found = presets.find(preset => preset.kind === kind
     && preset.baseUrl === url
     && preset.model === current.model.trim()
-    && (kind !== 'image' || preset.provider === (current.provider ?? '').trim()));
+    && (kind !== 'image' || preset.provider === (current.provider ?? '').trim())
+    // 同一厂商、地址、模型可以用不同账号的 key。传入 key 读取器时必须一并比对，
+    // 否则切到第二套后下拉框又会错误地显示成第一套。
+    && (!apiKey || !apiKeyForPreset || apiKeyForPreset(preset).trim() === apiKey));
   return found?.id ?? '';
 }
 

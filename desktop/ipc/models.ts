@@ -4,7 +4,7 @@ import type { ModelConfigDraft, ModelConfigView, ModelPresetInput } from '../sha
 import { writerEndpoint } from '../services/content-api-config';
 import { requestChatContent } from '../services/llm-json';
 import { matchActivePreset } from '../services/model-presets';
-import { maskSecret, parseImageConfig, yamlScalar } from '../services/wewrite-config';
+import { maskSecret, parseImageConfig, yamlBlock, yamlScalar } from '../services/wewrite-config';
 import { readWeWriteFiles } from '../services/wewrite-files';
 import { rewriteModelConfig } from './wewrite';
 
@@ -18,6 +18,7 @@ function collectModelConfig(ctx: AppContext): ModelConfigView {
   const { configText } = readWeWriteFiles();
   const writer = writerEndpoint(configText);
   const image = parseImageConfig(configText);
+  const imageApiKey = yamlScalar(yamlBlock(configText, 'image'), 'api_key');
   const presets = ctx.modelPresets.list();
   return {
     enabled: ctx.settings.read().llmEnabled,
@@ -25,8 +26,8 @@ function collectModelConfig(ctx: AppContext): ModelConfigView {
     image,
     presets: presets.map(preset => ({ ...preset, apiKeyMasked: maskSecret(ctx.modelPresets.apiKey(preset.id)) })),
     activePresets: {
-      writer: matchActivePreset(presets, 'writer', writer),
-      image: matchActivePreset(presets, 'image', image)
+      writer: matchActivePreset(presets, 'writer', { ...writer, apiKey: ctx.llmApiKey() }, preset => ctx.modelPresets.apiKey(preset.id)),
+      image: matchActivePreset(presets, 'image', { ...image, apiKey: imageApiKey }, preset => ctx.modelPresets.apiKey(preset.id))
     }
   };
 }

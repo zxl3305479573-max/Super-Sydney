@@ -227,12 +227,13 @@ export function parseWechatAuthor(config: string | null): string {
 }
 
 export function parseImageConfig(config: string | null): { provider: string; model: string; baseUrl: string; apiKeyMasked: string; estimatedCost: string } {
+  const image = yamlBlock(config, 'image');
   return {
-    provider: yamlScalar(config, 'provider'),
-    model: yamlScalar(config, 'model'),
-    baseUrl: yamlScalar(config, 'base_url'),
-    apiKeyMasked: maskSecret(yamlScalar(config, 'api_key')),
-    estimatedCost: yamlScalar(config, 'estimated_cost_per_image')
+    provider: yamlScalar(image, 'provider'),
+    model: yamlScalar(image, 'model'),
+    baseUrl: yamlScalar(image, 'base_url'),
+    apiKeyMasked: maskSecret(yamlScalar(image, 'api_key')),
+    estimatedCost: yamlScalar(image, 'estimated_cost_per_image')
   };
 }
 

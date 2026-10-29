@@ -72,6 +72,8 @@ test('内容 API：config.yaml 里旧的 writer.enabled 不再参与判断', () 
 test('图片 API：缺密钥直接报错，地址去掉末尾斜杠', () => {
   assert.throws(() => imageApiConfig(null), /图片模型的 API Key/);
   assert.deepEqual(imageApiConfig('image:\n  api_key: "k"\n  base_url: "https://img.example/v1/"\n'), { apiKey: 'k', baseUrl: 'https://img.example/v1', model: 'gpt-image-2' });
+  // writer 和 image 都有 model/base_url 时，不能把内容模型段错当成图片模型段。
+  assert.deepEqual(imageApiConfig('writer:\n  base_url: "https://llm.example/v1"\n  model: "chat-model"\nimage:\n  api_key: "image-key"\n  base_url: "https://img.example/v1/"\n  model: "image-model"\n'), { apiKey: 'image-key', baseUrl: 'https://img.example/v1', model: 'image-model' });
 });
 
 test('封面提示词带上方向约束、读者定位，以及正文提要', () => {
