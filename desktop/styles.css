@@ -1514,3 +1514,15 @@ select:disabled { cursor: not-allowed; }
 .set-model-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 0 0; }
 .set-model-actions span { margin-right: auto; color: var(--muted); font-size: 12px; }
 .set-card .ww-preset { width: 100%; }
+
+/* 侧栏品牌右：更新提醒 */
+.brand { justify-content: space-between; gap: 8px; }
+.brand-identity { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.update-reminder { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 46%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-raised); color: var(--ink-soft); font-size: 11.5px; font-weight: 600; white-space: nowrap; -webkit-app-region: no-drag; transition: background .15s ease-out, border-color .15s ease-out; }
+.update-reminder:hover:not(:disabled) { background: var(--surface-hover); }
+.update-reminder:disabled { opacity: .72; }
+.update-reminder.has-update { border-color: oklch(0.62 0.16 35); color: oklch(0.48 0.16 35); }
+.update-reminder.is-busy { opacity: .85; }
+.help-doc { display: grid; gap: 12px; color: var(--ink-soft); font-size: 13.5px; line-height: 1.55; }
+.help-doc h3 { margin: 4px 0 0; font-size: 13px; color: var(--ink); }
+.help-doc ul { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }

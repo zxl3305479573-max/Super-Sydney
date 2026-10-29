@@ -298,7 +298,8 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
       <section id="set-about" className="set-card">
         <header><Icon name="spark" size={18} /><div><h2>关于 Sydney</h2><p>个人工作 OS：把工作记录、内容创作与知识沉淀放在同一个本地优先的工作台。</p></div></header>
         <Row title="当前版本" description={<code className="path">v{appVersion ?? '读取中…'}</code>} />
-        <Row title="更新" description="已安装的 Windows 正式版会在启动后检查更新；也可以点击左上角 Sydney 立即检查。开发模式不会发起更新检查。" />
+        <Row title="更新" description="已安装的 Windows 正式版会在启动后检查更新；也可点侧栏「更新提醒」或下方按钮。开发模式不会发起更新检查。"
+          control={<button className="button button-secondary" onClick={() => void window.sydney.checkForUpdates().then(status => notify(status.supported ? (status.message || `状态：${status.phase}`) : '当前环境不支持自动更新')).catch(error => notify(readableError(error)))}>检查更新</button>} />
       </section>
     </div>
   </div>;

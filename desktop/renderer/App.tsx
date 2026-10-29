@@ -11,7 +11,7 @@ import LinksPanel from './LinksPanel';
 import { TodayView } from './TodayView';
 import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
-import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui';
+import { Icon, KeepAlive, Modal, readableError, useVisited, type IconName } from './ui';
 import { TitleBar, useWindowChrome } from './TitleBar';
 import { useTheme } from './theme';
 
@@ -94,6 +94,7 @@ export default function App() {
   const [drafting, setDrafting] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const chrome = useWindowChrome();
   const [theme, toggleTheme] = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -171,9 +172,9 @@ export default function App() {
         ? '发现新版本'
         : updateStatus?.phase === 'downloaded'
           ? '准备安装'
-          : '检查更新';
+          : '更新提醒';
 
-  const covered = manualOpen || detailId !== null;
+  const covered = manualOpen || helpOpen || detailId !== null;
   /**
    * 嵌入网页是主进程浮在界面之上的视图：模块被隐藏或有弹层时把它摘下来（overlay），
    * 页面进程本身留着，切回来登录态、浏览位置、表单内容都还在。
@@ -216,6 +217,7 @@ export default function App() {
         </div>)}
       </nav>
       <div className="sidebar-bottom">
+        <button className="nav-item" onClick={() => setHelpOpen(true)}><Icon name="book" size={17} /><span>帮助</span></button>
         <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>隐私与设置</span></button>
         <div className={`rec-widget ${live ? 'is-live' : state.settings.captureEnabled ? 'is-paused' : ''}`}>
           <span className="rec-dot" aria-hidden="true" />
@@ -246,6 +248,26 @@ export default function App() {
     </div>
 
     <EventDetails event={detailEvent} drafting={drafting === detailId} actions={actions} onClose={() => setDetailId(null)} />
+    <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="帮助" eyebrow="Sydney" width={640}
+      footer={<button className="button button-primary" onClick={() => setHelpOpen(false)}>知道了</button>}>
+      <div className="help-doc">
+        <p><strong>Sydney</strong> 是面向个人的工作 OS：把工作记录、内容创作与知识沉淀放在同一个本地优先的工作台。</p>
+        <h3>数据与隐私</h3>
+        <p>所有数据默认只保存在本机。云同步、模型 Key 等能力需你在「隐私与设置」中主动开启或填写。</p>
+        <h3>检查更新</h3>
+        <p>点击侧栏顶部品牌右侧的「更新提醒」即可检查更新。Windows 正式安装版也会在启动约 10 秒后自动检查。开发模式不支持自动更新。</p>
+        <h3>设置入口</h3>
+        <p>侧栏底部「隐私与设置」可管理采集范围、模型、云同步等；其中的「关于」可查看当前版本号。</p>
+        <h3>常见问题</h3>
+        <ul>
+          <li>看不到更新？请确认使用的是安装版（Setup），不是便携调试包。</li>
+          <li>检查失败？检查网络或代理后，再点一次「更新提醒」。</li>
+          <li>想看版本？打开「隐私与设置」→「关于」。</li>
+          <li>数据在哪？默认写入本机知识库目录，可在设置里更换。</li>
+        </ul>
+      </div>
+    </Modal>
+
     <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />
     <div className="toasts" role="status" aria-live="polite">{toasts.map(toast => <div key={toast.id} className={`toast toast-${toast.tone}`}><Icon name={toast.tone === 'error' ? 'alert' : 'check'} size={15} /><span>{toast.message}</span></div>)}</div>
   </div>;
