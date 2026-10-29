@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IpColors, IpLibraryView, IpRenderKit } from '../shared';
 import { ConfirmButton, Icon, readableError } from './ui';
+import { SettingsSection } from './settings/SectionLayout';
 
 /**
  * IP 库的界面部分：各模块共用的数据钩子、IP 选择器，以及「设置 → IP 形象」里的管理卡片。
@@ -92,8 +93,7 @@ export function IpLibraryCard({ notify }: { notify: (message: string) => void })
     return () => clearTimeout(timer);
   }, [colors]);
 
-  return <section id="set-ip" className="set-card">
-    <header><Icon name="user" size={18} /><div><h2>IP 形象</h2><p>全应用共用的 IP：名称（也是封面上的品牌名）、头像、透明底角色动作、配色。公众号、小红书、视频在各自模块里选用，模板只从这里取品牌信息。</p></div></header>
+  return <SettingsSection id="set-ip" title="IP 形象" purpose="全应用共用的 IP：名称（也是封面上的品牌名）、头像、透明底角色动作、配色。公众号、小红书、视频在各自模块里选用，模板只从这里取品牌信息。">
     <div className="ip-library">
       <aside className="ip-list">
         {view.ips.map(ip => <button key={ip.id} className={ip.id === active?.id ? 'is-active' : ''} onClick={() => setActiveId(ip.id)}>
@@ -150,5 +150,5 @@ export function IpLibraryCard({ notify }: { notify: (message: string) => void })
         </div>
       </div> : <p className="flow-empty">还没有 IP。在左边输入名称新建一个。</p>}
     </div>
-  </section>;
+  </SettingsSection>;
 }

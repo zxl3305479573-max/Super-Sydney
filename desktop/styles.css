@@ -516,6 +516,12 @@ button.chip { cursor: pointer; }
 .settings-page-head p { margin: 0 0 3px; color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: .06em; }
 .settings-page-head h1 { margin: 0; font-size: 22px; font-weight: 650; }
 .settings-body { display: grid; max-width: 1040px; margin: 0 auto; padding: 24px 40px 56px; }
+.settings-section { display: grid; gap: 12px; min-width: 0; }
+.settings-section > .module-header { padding: 18px 20px; }
+.settings-section > .module-toolbar { min-height: 38px; padding: 6px 12px; }
+.settings-section-body { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.settings-section .set-row:first-child { border-top: 0; }
+.module-toolbar-note { color: var(--muted); font-size: 13px; }
 .set-card { scroll-margin-top: 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .set-card > header { display: flex; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .set-card > header > .icon { margin-top: 2px; color: var(--primary); }
