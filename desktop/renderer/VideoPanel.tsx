@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VideoIpCoverInput, VideoPlatform, VideoProgress, VideoProject, VideoRenderOptions, VideoStage } from '../shared';
-import { ConfirmButton, readableError, shortTime, useWorkflowStepScroll } from './ui';
+import { ConfirmButton, ModuleHeader, ModuleToolbar, readableError, shortTime, useWorkflowStepScroll } from './ui';
 import {
   AUTO_VIDEO_STAGES, VIDEO_PLATFORMS, VIDEO_STEPS, autoVideoPlan, buildVideoPipeline, currentVideoStepKey,
   nextVideoStepKey, parseVideoShots, videoPipelineProgress, videoPlatformLabel,
@@ -217,20 +217,14 @@ export default function VideoPanel({ notify }: { notify: (message: string) => vo
   const flowRef = useWorkflowStepScroll(`${selectedId ?? 0}:${step}`);
 
   return <section className="native-content video-panel">
-    <header className="ww-page-header">
-      <div>
-        <p className="eyebrow">内容工作区</p>
-        <h1>视频</h1>
-        <p>选题 → 口播脚本 → 分镜 → 配音与字幕 → 画面 → 成片 → 封面 → 制作包。模型写脚本和分镜，配音按镜头合成，字幕、画面与成片在本地生成。</p>
-      </div>
-      <div className="ww-page-header-note"><strong>中老年健康科普</strong><span>{projects.length} 条视频任务 · 出成片与制作包，不代发布</span></div>
-    </header>
+    <ModuleHeader className="ww-page-header" eyebrow="内容工作区" title="视频" purpose="选题 → 口播脚本 → 分镜 → 配音与字幕 → 画面 → 成片 → 封面 → 制作包。模型写脚本和分镜，配音按镜头合成，字幕、画面与成片在本地生成。"
+      action={<div className="ww-page-header-note"><strong>中老年健康科普</strong><span>{projects.length} 条视频任务 · 出成片与制作包，不代发布</span></div>} />
 
-    <div className="native-create">
+    <ModuleToolbar className="native-create" label="新建视频任务">
       <label><span>发布平台</span><select value={platform} disabled={locked} onChange={event => setPlatform(event.target.value as VideoPlatform)}>{VIDEO_PLATFORMS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label className="native-topic-seed"><span>已有选题或方向（可选）</span><input value={topicSeed} disabled={locked} onChange={event => setTopicSeed(event.target.value)} placeholder="例如：柚子和常用药的相互作用" /></label>
       <button className="button button-primary" disabled={locked} onClick={() => void create()}>{busy === 'create' ? '创建中…' : '新建视频任务'}</button>
-    </div>
+    </ModuleToolbar>
 
     <div className="native-layout">
       <aside className="native-task-list">

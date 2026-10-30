@@ -5,7 +5,7 @@ import NativeContentPanel from './NativeContentPanel';
 import ProfileConfig from './ProfileConfig';
 import WeWriteStats from './WeWriteStats';
 import { findDirectionById, initialProfileId } from './content-taxonomy';
-import { KeepAlive, readableError, useVisited } from './ui';
+import { KeepAlive, ModuleHeader, ModuleToolbar, readableError, useVisited } from './ui';
 
 /** 上次选中的公众号资料只是界面便利，存在本机；读写失败时退回默认资料。 */
 const PROFILE_KEY = 'sydney.wewrite.profile';
@@ -53,28 +53,22 @@ export default function WeWritePanel({ notify, overlay }: { notify: (message: st
   const profile = findDirectionById(taxonomy?.directions ?? [], profileId);
 
   return <section className="wewrite">
-    <header className="ww-page-header">
-      <div>
-        <p className="eyebrow">内容工作区</p>
-        <h1>公众号</h1>
-        <p>选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布，每一步状态都在界面上可见。</p>
-      </div>
-      <label className="ww-profile-switch">
+    <ModuleHeader className="ww-page-header" eyebrow="内容工作区" title="公众号" purpose="选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布，每一步状态都在界面上可见。"
+      action={<label className="ww-profile-switch">
         <span>当前公众号资料</span>
         <select value={profileId ?? ''} onChange={event => setProfileId(Number(event.target.value) || null)} disabled={!taxonomy}>
           {(taxonomy?.directions ?? []).map(item => <option key={item.id} value={item.id}>{item.name}{item.accountName && item.accountName !== item.name ? ` · ${item.accountName}` : ''}</option>)}
         </select>
         <small>{profile ? [profile.audience ? `读者：${profile.audience}` : '未设置读者定位', profile.theme || '默认排版'].join(' · ') : '正在读取…'}</small>
-      </label>
-    </header>
-    <nav className="ww-nav-dock" aria-label="公众号工作区">
+      </label>} />
+    <ModuleToolbar className="ww-nav-dock" label="公众号工作区">
       <div className="ww-tabs">
         <button type="button" className={`ww-tab ${tab === 'native' ? 'is-active' : ''}`} aria-current={tab === 'native' ? 'page' : undefined} onClick={() => setTab('native')}>创作流水线</button>
         <button type="button" className={`ww-tab ${tab === 'stats' ? 'is-active' : ''}`} aria-current={tab === 'stats' ? 'page' : undefined} onClick={() => setTab('stats')}>文章数据</button>
         <button type="button" className={`ww-tab ${tab === 'config' ? 'is-active' : ''}`} aria-current={tab === 'config' ? 'page' : undefined} onClick={() => setTab('config')}>环境与配置</button>
         <button type="button" className={`ww-tab ${tab === 'mp' ? 'is-active' : ''}`} aria-current={tab === 'mp' ? 'page' : undefined} title="在应用里打开微信公众平台（创作者发布平台）" onClick={() => setTab('mp')}>公众号后台</button>
       </div>
-    </nav>
+    </ModuleToolbar>
     {/* key 绑定资料：切换资料时子面板整体重建，不会把上一份资料的选中状态带过来。 */}
     {/* 子页签进过就常驻，切走只隐藏：写到一半的稿子、正在跑的步骤都还在。 */}
     {visited.includes('native') && <KeepAlive show={tab === 'native'}><NativeContentPanel key={profileId ?? 0} profile={profile} notify={notify} onOpenConfig={() => setTab('config')} onOpenBackend={() => setTab('mp')} /></KeepAlive>}

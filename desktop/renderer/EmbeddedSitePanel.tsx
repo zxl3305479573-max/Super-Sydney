@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EmbeddedSiteKey, EmbeddedViewState } from '../shared';
-import { Icon, readableError, visibleStageBounds } from './ui';
+import { Icon, ModuleToolbar, MoreMenu, readableError, visibleStageBounds } from './ui';
 
 /**
  * 变现分组里固定嵌入的站点（闲鱼、16688 …）。
@@ -58,14 +58,13 @@ export default function EmbeddedSitePanel({ siteKey, label, privacy, overlay, co
   };
 
   return <section className="site-panel" aria-label={label}>
-    <div className="site-bar">
+    <ModuleToolbar className="site-bar" label={`${label} 工具栏`}>
       <div className="site-actions">
         <button className="button button-quiet button-small" type="button" onClick={() => go('back')} disabled={!state?.canGoBack}><Icon name="undo" size={14} />后退</button>
         <button className="button button-quiet button-small" type="button" onClick={() => go('reload')}><Icon name="refresh" size={14} />刷新</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => go('home')}><Icon name="link" size={14} />回到{label}首页</button>
-        <button className="button button-quiet button-small" type="button" onClick={() => void window.sydney.openEmbeddedInBrowser(siteKey)}><Icon name="window" size={14} />在浏览器打开</button>
+        <MoreMenu>{<><button type="button" role="menuitem" onClick={() => go('home')}><Icon name="link" size={14} />回到{label}首页</button><button type="button" role="menuitem" onClick={() => void window.sydney.openEmbeddedInBrowser(siteKey)}><Icon name="window" size={14} />在浏览器打开</button></>}</MoreMenu>
       </div>
-    </div>
+    </ModuleToolbar>
     {(error || state?.error) && <p className="site-error" role="alert"><Icon name="alert" size={14} /><span>{error || state?.error}</span></p>}
     <p className="site-meta">
       <span>当前页面</span>

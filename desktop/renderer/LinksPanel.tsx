@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LinkEntry, LinkInput } from '../shared';
-import { ConfirmButton, EmptyState, Icon, Modal, TagEditor, readableError, relativeTime } from './ui';
+import { ConfirmButton, EmptyState, Icon, Modal, ModuleToolbar, TagEditor, readableError, relativeTime } from './ui';
 
 const blank: Required<LinkInput> = { url: '', title: '', note: '', tags: [] };
 
@@ -81,9 +81,9 @@ export default function LinksPanel({ notify }: { notify: (message: string) => vo
 
   return <div className="view links">
     <section className="panel">
-      <header className="panel-head">
+      <ModuleToolbar className="panel-head" label="收藏链接">
         <div className="panel-title"><h2>收藏一个链接</h2><p>只存地址、标题和你写的备注，不抓网页内容。同一个地址只会收藏一次。</p></div>
-      </header>
+      </ModuleToolbar>
       <form className="links-form" onSubmit={event => void add(event)}>
         <div className="links-form-row">
           <label className="field field-grow"><span>链接地址</span>
@@ -102,13 +102,13 @@ export default function LinksPanel({ notify }: { notify: (message: string) => vo
     </section>
 
     <section className="panel">
-      <header className="panel-head">
+      <ModuleToolbar className="panel-head" label="收藏筛选">
         <div className="panel-title"><h2>我的收藏<span className="segmented-count">{links.length}</span></h2></div>
         <label className="search"><Icon name="search" />
           <input value={query} onChange={event => setQuery(event.target.value)} placeholder="搜标题、地址、备注或标签" aria-label="搜索收藏" />
           {query && <button type="button" aria-label="清空搜索" onClick={() => setQuery('')}><Icon name="x" size={12} /></button>}
         </label>
-      </header>
+      </ModuleToolbar>
       {tagCounts.length > 0 && <div className="links-filter" role="group" aria-label="按标签筛选">
         <button type="button" className={`chip ${tag ? '' : 'chip-accent'}`} onClick={() => setTag('')}>全部 {links.length}</button>
         {tagCounts.map(([name, count]) => <button key={name} type="button" className={`chip ${tag === name ? 'chip-accent' : ''}`} onClick={() => setTag(tag === name ? '' : name)}>{name} {count}</button>)}

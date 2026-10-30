@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AppState, WorkEvent } from '../shared';
 import { EventItem, KIND_META, eventSummary, eventTitle, kindOf, type EventActions, type EventKindView } from './EventItem';
-import { EmptyState, Icon, Segmented, formatDuration, relativeTime } from './ui';
+import { EmptyState, Icon, ModuleBody, ModuleToolbar, Segmented, formatDuration, relativeTime } from './ui';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 type KindFilter = 'all' | 'ai' | EventKindView;
@@ -146,7 +146,7 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
         <div className="panel-title"><h2>{review ? '待确认事件' : '工作时间线'}</h2><p>{review ? '确认后的事件才会沉淀到知识库；忽略的事件保留在本地，可随时改回。' : '最近 200 条，按时间倒序'}</p></div>
         <label className="search"><Icon name="search" size={15} /><input placeholder="搜索标题、应用、目录…" value={query} onChange={change => setQuery(change.target.value)} />{query && <button aria-label="清除搜索" onClick={() => setQuery('')}><Icon name="x" size={13} /></button>}</label>
       </header>
-      <div className="toolbar">
+      <ModuleToolbar className="toolbar" label="事件筛选">
         {review
           ? <label className="bulk-select"><input type="checkbox" checked={allSelected} disabled={!visibleIds.length} onChange={change => setSelected(change.target.checked ? new Set(visibleIds) : new Set())} />{selectedVisible.length ? `已选 ${selectedVisible.length} 条` : '全选'}</label>
           : <Segmented label="状态" value={statusFilter} onChange={setStatusFilter} options={[
@@ -159,10 +159,10 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
         <span className="grow" />
         <div className="kind-filter">{KIND_FILTERS.map(item => <button key={item.value} className={`kind-chip ${kindFilter === item.value ? 'is-active' : ''}`} onClick={() => setKindFilter(item.value)}>
           {item.value !== 'all' && <Icon name={item.value === 'ai' ? 'bot' : KIND_META[item.value as EventKindView].icon} size={13} />}{item.label}</button>)}</div>
-      </div>
+      </ModuleToolbar>
       {review && <p className="kbd-hint"><Icon name="keyboard" size={14} />选中一行后：<kbd>A</kbd> 确认 <kbd>X</kbd> 忽略 <kbd>Enter</kbd> 详情 <kbd>Space</kbd> 勾选 · 双击打开详情</p>}
 
-      {groups.length ? groups.map(group => <div key={group.label} className="day-group">
+      <ModuleBody>{groups.length ? groups.map(group => <div key={group.label} className="day-group">
         <h3 className="day-label">{group.label}<span>{group.items.length} 条</span></h3>
         <div className="event-stack">{group.items.map(event => <EventItem key={event.id} event={event} drafting={drafting === event.id} actions={actions}
           selectable={review} selected={selected.has(event.id)} onSelect={value => toggle(event.id, value)} />)}</div>
@@ -171,7 +171,7 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
           ? <EmptyState icon="check" title="待确认的事件都处理完了">新采集的活动、AI 对话和文件变化会出现在这里。</EmptyState>
           : state.events.length
             ? <EmptyState icon="search" title="没有匹配的事件">换个关键词或筛选条件试试。</EmptyState>
-            : <EmptyState icon="today" title="还没有记录">点「开始记录」采集应用活动，或用「手动记录」写下正在做的事。</EmptyState>}
+            : <EmptyState icon="today" title="还没有记录">点「开始记录」采集应用活动，或用「手动记录」写下正在做的事。</EmptyState>}</ModuleBody>
     </section>
   </div>;
 }

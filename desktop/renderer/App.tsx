@@ -11,7 +11,7 @@ import LinksPanel from './LinksPanel';
 import { TodayView } from './TodayView';
 import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
-import { Icon, KeepAlive, Modal, readableError, useVisited, type IconName } from './ui';
+import { Icon, KeepAlive, Modal, ModuleHeader, readableError, useVisited, type IconName } from './ui';
 import { TitleBar, useWindowChrome } from './TitleBar';
 import { useTheme } from './theme';
 
@@ -233,15 +233,13 @@ export default function App() {
       <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} />
       <div className="main-scroll" ref={scrollRef} onScroll={event => { scrollByView.current[view] = event.currentTarget.scrollTop; setScrolled(event.currentTarget.scrollTop > 2); }}>
         <main ref={mainRef} className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
-          {header && <header className="topbar">
-            <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
-            <div className="top-actions">
+          {header && <ModuleHeader title={header.title} eyebrow={view === 'today' ? greeting() : 'Sydney 工作台'} purpose={header.subtitle}
+            action={<div className="top-actions">
               {view === 'review' && <button className="button button-secondary" onClick={() => setManualOpen(true)}><Icon name="plus" />手动记录</button>}
               {view !== 'today' && (state.settings.captureEnabled
                 ? <span className={`live-tag ${live ? 'is-live' : ''}`}><span className="rec-dot" />{live ? '正在记录' : '已暂停'}</span>
                 : <button className="button button-primary" onClick={() => capture('start')}><Icon name="play" />开始记录</button>)}
-            </div>
-          </header>}
+            </div>} />}
           {mounted.map(name => <KeepAlive key={name} show={name === view}>{renderView(name)}</KeepAlive>)}
         </main>
       </div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsAccount, XhsHotNote, XhsNote, XhsStepKey, XhsTab } from '../shared';
 import { XHS_TAB_LABELS } from '../services/xhs-catalog';
 import { readPositioning } from '../services/xhs-pipeline';
-import { ConfirmButton, Icon, KeepAlive, readableError, useVisited } from './ui';
+import { ConfirmButton, Icon, KeepAlive, ModuleHeader, ModuleToolbar, MoreMenu, readableError, useVisited } from './ui';
 import type { XhsContext } from './xiaohongshu/common';
 import { HomeTab } from './xiaohongshu/HomeTab';
 import { PositioningTab } from './xiaohongshu/PositioningTab';
@@ -141,13 +141,8 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
   };
 
   return <section className="xhs-panel native-content" aria-label="小红书">
-    <header className="ww-page-header">
-      <div>
-        <p className="eyebrow">内容工作区</p>
-        <h1>小红书</h1>
-        <p>定位 → 选题 → 写作 → 视觉 → 复盘，10 个能力按链路串起来。只交付发布包，由你手动发布。</p>
-      </div>
-      <div className="xhs-account-bar">
+    <ModuleHeader className="ww-page-header" eyebrow="内容工作区" title="小红书" purpose="定位 → 选题 → 写作 → 视觉 → 复盘，10 个能力按链路串起来。只交付发布包，由你手动发布。"
+      action={<div className="xhs-account-bar">
         {editing ? <form className="xhs-account-row" onSubmit={event => void submitName(event)}>
           <label><span>{editing === 'add' ? '新账号名称' : '账号改名'}</span>
             <input className="input" autoFocus maxLength={40} value={nameDraft} onChange={event => setNameDraft(event.target.value)} placeholder="例如：主号、职场副号" onKeyDown={event => { if (event.key === 'Escape') setEditing(''); }} />
@@ -161,18 +156,16 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
             </select>
           </label>
           <button className="button button-secondary button-small" type="button" onClick={() => { setNameDraft(''); setEditing('add'); }}><Icon name="plus" size={14} />添加账号</button>
-          <button className="button button-quiet button-small" type="button" onClick={() => { setNameDraft(account.name); setEditing('rename'); }}>改名</button>
-          {accounts.length > 1 && notes.length === 0 && <ConfirmButton className="button button-danger-quiet button-small" armedLabel="确认删除" title="只能删除还没有笔记和数据的账号" onConfirm={() => void removeAccount()}>删除</ConfirmButton>}
+          <MoreMenu>{<><button type="button" role="menuitem" onClick={() => { setNameDraft(account.name); setEditing('rename'); }}>改名</button>{accounts.length > 1 && notes.length === 0 && <ConfirmButton className="button button-danger-quiet button-small" armedLabel="确认删除" title="只能删除还没有笔记和数据的账号" onConfirm={() => void removeAccount()}>删除</ConfirmButton>}</>}</MoreMenu>
         </div>}
         <small>{positioning ? `定位：${positioning.statement}` : '还没有定位档案'} · {notes.length} 篇笔记{accounts.length > 1 ? ` · 共 ${accounts.length} 个账号` : ''}</small>
-      </div>
-    </header>
+      </div>} />
 
-    <nav className="ww-nav-dock" aria-label="小红书分区">
+    <ModuleToolbar className="ww-nav-dock" label="小红书分区">
       <div className="ww-tabs xhs-tabs" role="tablist" aria-label="小红书分区">
         {TABS.map(item => <button key={item} role="tab" aria-selected={tab === item} className={`ww-tab ${tab === item ? 'is-active' : ''}`} onClick={() => setTab(item)}>{XHS_TAB_LABELS[item]}</button>)}
       </div>
-    </nav>
+    </ModuleToolbar>
 
     <div key={account.id} className="xhs-account-scope">
       {visited.includes('home') && <KeepAlive show={tab === 'home'}><HomeTab ctx={ctx} /></KeepAlive>}

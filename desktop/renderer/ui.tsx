@@ -70,6 +70,44 @@ export function Segmented<T extends string>({ value, options, onChange, label }:
   </div>;
 }
 
+/** Shared page framing: a concise purpose, one primary action, and optional overflow actions. */
+export function ModuleHeader({ title, purpose, eyebrow, action, more, className = '' }: { title: ReactNode; purpose?: ReactNode; eyebrow?: ReactNode; action?: ReactNode; more?: ReactNode; className?: string }) {
+  return <header className={`module-header ${className}`.trim()}>
+    <div className="module-header-copy">
+      {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+      <h1>{title}</h1>
+      {purpose && <p className="module-purpose">{purpose}</p>}
+    </div>
+    {(action || more) && <div className="module-header-actions">{action}{more}</div>}
+  </header>;
+}
+
+export function ModuleToolbar({ children, className = '', label }: { children: ReactNode; className?: string; label?: string }) {
+  return <div className={`module-toolbar ${className}`.trim()} role={label ? 'toolbar' : undefined} aria-label={label}>{children}</div>;
+}
+
+export function ModuleBody({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`module-body ${className}`.trim()}>{children}</div>;
+}
+
+/** Accessible overflow menu. Menu actions close after activation, as well as on Escape or outside click. */
+export function MoreMenu({ children, label = '更多操作', className = '' }: { children: ReactNode; label?: string; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => { document.removeEventListener('mousedown', onPointerDown); window.removeEventListener('keydown', onKeyDown); };
+  }, [open]);
+  return <div ref={ref} className={`more-menu ${className}`.trim()}>
+    <button type="button" className="icon-button" aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}><Icon name="more" /></button>
+    {open && <div className="more-menu-popover" role="menu">{children}</div>}
+  </div>;
+}
+
 /** Click once to arm, click again within 3s to confirm. Avoids blocking dialogs for routine deletes. */
 export function ConfirmButton({ onConfirm, children, armedLabel = '确认删除？', className = '', title, disabled = false }: { onConfirm: () => void; children: ReactNode; armedLabel?: string; className?: string; title?: string; disabled?: boolean }) {
   const [armed, setArmed] = useState(false);
