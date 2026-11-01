@@ -5,6 +5,7 @@ import {
 import {
   VIDEO_SHOT_ROLES, contentHash, imageCoverage, isImageReady, isVoiceReady, normalizeRenderOptions, shotAudio, shotImage, voiceCoverage
 } from './video-production.ts';
+import { videoFrameSpec } from './video-frame-spec.ts';
 
 /**
  * 视频创作流水线：把一条视频任务映射成 8 个显式步骤。
@@ -32,7 +33,7 @@ export const VIDEO_STEPS: Array<{ key: VideoStepKey; label: string; hint: string
   { key: 'storyboard', label: '分镜', hint: '逐镜的作用、画面大字、口播与配图提示词', stage: 'storyboard' },
   { key: 'voice', label: '配音与字幕', hint: '逐镜配音，镜头时长以真实音频为准；字幕按句切分、每行不超过 14 字' },
   { key: 'visuals', label: '画面', hint: '选模板与配图方式，先看每镜一帧的预览再渲染' },
-  { key: 'render', label: '成片', hint: '静帧 + 配音 + 背景音乐合成 1080×1920 的 MP4；有效成片可直接另存导出' },
+  { key: 'render', label: '成片', hint: '按平台画布合成静帧、配音、字幕与背景音乐；有效成片可直接另存导出' },
   { key: 'cover', label: '封面', hint: '竖版封面：选本地图片或 AI 生成，导出时一起带走' },
   { key: 'export', label: '制作包', hint: '导出成片、脚本、分镜表、字幕与封面到知识库' }
 ];
@@ -271,6 +272,8 @@ export function renderSignature(project: VideoProject): string {
       : null;
   return signatureOf({
     kind: 'render',
+    platform: project.platform,
+    canvas: videoFrameSpec(project.platform),
     frame: frameSignatureInput(project, shots),
     lines: timeline.lines,
     audio: project.options.voiceMode === 'tts' ? shots.map(shot => shotAudio(project, shot)?.key ?? '') : [],
@@ -290,11 +293,17 @@ export function renderSignature(project: VideoProject): string {
 /** 预览帧的签名：只看画面（模板、标题、画面大字、配图、页脚），不看配音与音乐。 */
 export function previewSignature(project: VideoProject): string {
   const shots = parseVideoShots(project.storyboardJson);
-  return signatureOf({ kind: 'preview', frame: frameSignatureInput(project, shots), first: shots.map(shot => splitCaptionLines(shot.narration)[0] ?? '') });
+  return signatureOf({
+    kind: 'preview',
+    platform: project.platform,
+    canvas: videoFrameSpec(project.platform),
+    frame: frameSignatureInput(project, shots),
+    first: shots.map(shot => splitCaptionLines(shot.narration)[0] ?? '')
+  });
 }
 
 /** 画面模板的版本：改了模板排版就加一，旧成片和预览随之标成过期。 */
-export const FRAME_TEMPLATE_VERSION = 6;
+export const FRAME_TEMPLATE_VERSION = 7;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
   const { workflow, template, imageMode, footer, ipId, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;

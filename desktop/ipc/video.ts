@@ -33,6 +33,7 @@ import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../se
 import { searchVideoTopicHotspots } from '../services/video-topic-search';
 import { runVideoSkill } from '../services/video-skill-adapters';
 import { ensureAutoBgm } from '../services/video-bgm';
+import { videoFrameSpec } from '../services/video-frame-spec';
 import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
@@ -301,6 +302,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     directory: string, task: VideoProgress['task'], extension: 'png' | 'jpg'
   ) => {
     const shots = parseVideoShots(project.storyboardJson);
+    const frame = videoFrameSpec(project.platform);
     const title = project.title.trim() || project.topic.trim() || '健康科普';
     const pad = (value: number) => String(value).padStart(4, '0');
     const ip = frameIp(project.options.ipId);
@@ -322,13 +324,13 @@ export function registerVideoIpc(ctx: AppContext): void {
         imageUrl: imageFile && fs.existsSync(imageFile) ? pathToFileURL(imageFile).href : '',
         shotNumber: segment.shot + 1, shotCount: shots.length, footer: project.options.footer,
         role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip,
-        productMode, logoUrl, brandColors: project.options.brandColors
+        productMode, logoUrl, brandColors: project.options.brandColors, frame
       }), 'utf8');
       const stills = segment.stills.map((still, index) => ({ style: motionStyle(still.motion), target: path.join(directory, `frame-${pad(position + 1)}-${pad(index + 1)}.${extension}`) }));
       return { html, stills };
     });
     const total = jobs.reduce((sum, job) => sum + job.stills.length, 0);
-    await renderFrameFiles(jobs, done => {
+    await renderFrameFiles(jobs, frame, done => {
       if (done % 10 === 0 || done === total) progress({ id: project.id, task, done, total, message: `正在渲染画面 ${done}/${total}` });
     });
     for (const job of jobs) fs.rmSync(job.html, { force: true });
@@ -370,6 +372,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const blockers = renderBlockers(project);
     if (blockers.length) throw new Error(`还不能渲染成片：${blockers.join('；')}`);
     const shots = parseVideoShots(project.storyboardJson);
+    const frame = videoFrameSpec(project.platform);
     const {
       voiceMode, imageMode, bgmPath, bgmMode, bgmVolume, bgmDucking, bgmFadeIn, bgmFadeOut
     } = project.options;
@@ -410,6 +413,7 @@ export function registerVideoIpc(ctx: AppContext): void {
       fs.writeFileSync(listPath, buildConcatList(frames.map((file, index) => ({ path: file, frames: durations[index] }))), 'utf8');
       const temp = path.join(work, 'video.tmp.mp4');
       await runFfmpeg(tools, buildFfmpegArgs({
+        frame,
         narration: shots.map((shot, index) => ({ path: voiceMode === 'tts' ? shotAudio(project, shot)?.path ?? '' : '', seconds: seconds[index] })),
         bgm: resolvedBgmPath ? {
           path: resolvedBgmPath,

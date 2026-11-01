@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { BrowserWindow } from 'electron';
-import { FRAME_HEIGHT, FRAME_WIDTH } from './video-compose';
+import type { VideoFrameSpec } from './video-frame-spec';
 
 /**
  * 依赖 Electron 与子进程的成片工具：画面帧截图、ffprobe 取时长、ffmpeg 合成。
@@ -17,7 +17,7 @@ function wait(ms: number): Promise<void> {
 export type FrameJob = { html: string; stills: Array<{ style: string; target: string }> };
 
 /**
- * 把一组本地 HTML 画面截成 1080×1920 的图片：目标是 .png 就存 PNG，否则存 JPEG（质量 95）。
+ * 把一组本地 HTML 画面按平台画布截图：目标是 .png 就存 PNG，否则存 JPEG（质量 95）。
  *
  * 做法与小红书卡片导出一致（见 AGENTS.md 的 Electron 隐藏窗口截图坑）：离屏窗口 + 先载入 about:blank 再挂调试器 +
  * 设备模拟固定视口——普通隐藏窗口会被夹到屏幕尺寸、在主窗口显示时不出帧导致截图挂起。
@@ -29,10 +29,10 @@ export type FrameJob = { html: string; stills: Array<{ style: string; target: st
  * 离屏窗口的帧率调到 240：截图不用等 60Hz 的下一拍，实测每张从约 90ms 降到约 45ms。
  * 成片的中间帧用 JPEG：几百张 PNG 动辄上 GB，而最终的 H.264 本来就比 JPEG 95 损失大。
  */
-export async function renderFrameFiles(jobs: FrameJob[], onProgress?: (done: number) => void): Promise<void> {
+export async function renderFrameFiles(jobs: FrameJob[], frame: VideoFrameSpec, onProgress?: (done: number) => void): Promise<void> {
   const total = jobs.reduce((sum, job) => sum + job.stills.length, 0);
   const win = new BrowserWindow({
-    show: false, width: 540, height: 960, paintWhenInitiallyHidden: true, frame: false,
+    show: false, width: Math.round(frame.width / 2), height: Math.round(frame.height / 2), paintWhenInitiallyHidden: true, frame: false,
     webPreferences: { offscreen: true, javascript: false, sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'sydney-video-frames' }
   });
   win.webContents.setFrameRate(240);
@@ -44,7 +44,7 @@ export async function renderFrameFiles(jobs: FrameJob[], onProgress?: (done: num
         const cdp = win.webContents.debugger;
         cdp.attach('1.3');
         try {
-          await cdp.sendCommand('Emulation.setDeviceMetricsOverride', { width: FRAME_WIDTH, height: FRAME_HEIGHT, deviceScaleFactor: 1, mobile: false });
+          await cdp.sendCommand('Emulation.setDeviceMetricsOverride', { width: frame.width, height: frame.height, deviceScaleFactor: 1, mobile: false });
           let done = 0;
           for (const job of jobs) {
             // loadFile 在 load 事件后才返回，此时配图已经解码；再留一点时间给字体排版。
@@ -58,7 +58,7 @@ export async function renderFrameFiles(jobs: FrameJob[], onProgress?: (done: num
               const png = still.target.toLowerCase().endsWith('.png');
               const shot = await cdp.sendCommand('Page.captureScreenshot', {
                 format: png ? 'png' : 'jpeg', ...(png ? {} : { quality: 95 }), optimizeForSpeed: true,
-                clip: { x: 0, y: 0, width: FRAME_WIDTH, height: FRAME_HEIGHT, scale: 1 }, captureBeyondViewport: false
+                clip: { x: 0, y: 0, width: frame.width, height: frame.height, scale: 1 }, captureBeyondViewport: false
               }) as { data: string };
               fs.writeFileSync(still.target, Buffer.from(shot.data, 'base64'));
               done += 1;

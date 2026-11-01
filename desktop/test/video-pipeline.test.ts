@@ -152,6 +152,7 @@ test('render is blocked until voiced, then goes stale when anything on screen or
     { ...rendered, options: { ...rendered.options, template: 'night' as const } },
     { ...rendered, options: { ...rendered.options, bgmPath: 'music.mp3', bgmMode: 'custom' as const } },
     { ...rendered, options: { ...rendered.options, bgmMode: 'auto' as const } },
+    { ...rendered, platform: 'bilibili' as const },
     { ...rendered, storyboardJson: serializeVideoShots([{ ...shots[0], caption: '换了要点' }]) }
   ]) assert.equal(isRenderFresh(changed), false);
   const autoOptions = { ...rendered.options, bgmMode: 'auto' as const, bgmVolume: 12 };

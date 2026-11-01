@@ -7,6 +7,7 @@ import { buildExternalBgmArgs } from './video-compose.ts';
 import { captureProductWebsite } from './video-product-capture.ts';
 import { compactProductResearch, normalizeWebsiteUrl } from './video-product-research.ts';
 import { parseVideoShots, serializeVideoShots } from './video-pipeline.ts';
+import { videoFrameSpec } from './video-frame-spec.ts';
 import { ensureAutoBgm } from './video-bgm.ts';
 import { probeVideo, resolveFfmpeg, runFfmpeg } from './video-render.ts';
 import { skillInputFingerprint } from './video-skill-inputs.ts';
@@ -121,12 +122,6 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function workflowAspect(project: VideoProject): { aspect: string; width: number; height: number } {
-  return ['douyin', 'shipinhao', 'xiaohongshu'].includes(project.platform)
-    ? { aspect: '9:16', width: 1080, height: 1920 }
-    : { aspect: '16:9', width: 1920, height: 1080 };
-}
-
 async function fitForPlatform(
   project: VideoProject,
   source: string,
@@ -135,7 +130,7 @@ async function fitForPlatform(
   trimToTarget: boolean
 ): Promise<void> {
   const ffmpegSkill = path.join(skillsRoot(), 'ffmpeg-skill', 'scripts', 'fit.py');
-  const frame = workflowAspect(project);
+  const frame = videoFrameSpec(project.platform);
   const tools = await resolveFfmpeg();
   const probe = await probeVideo(tools, source);
   const args = [

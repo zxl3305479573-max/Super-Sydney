@@ -4,6 +4,7 @@ import {
   ENTER_SECONDS, PUSH_IN, VIDEO_FPS, buildConcatList, buildExternalBgmArgs, buildFfmpegArgs, buildFrameHtml, buildFramePlan, cardFontSize, frameLead, framePlanOptions,
   framePlanStills, karaokeTimes, motionAt, motionStyle, pushOrigin, seededRandom, settledMotion
 } from '../services/video-compose.ts';
+import { LANDSCAPE_FRAME, VERTICAL_FRAME, videoFrameSpec } from '../services/video-frame-spec.ts';
 import { buildTimeline } from '../services/video-pipeline.ts';
 
 const frame = { template: 'warm' as const, title: '控糖早餐', keyText: '先吃蛋', subtitle: '早上先吃一个鸡蛋', imageUrl: '', shotNumber: 2, shotCount: 4, footer: '健康科普 · 不替代医生诊疗', role: '' as const, lead: '', motion: settledMotion('', { karaoke: false, pushIn: false }) };
@@ -33,6 +34,17 @@ test('frame html shows either the AI image with a key-text band or a big text ca
   assert.match(withImage, /class="key">先吃蛋</);
   // 画面大字为空时卡片退回显示标题，不留一块空白。
   assert.match(buildFrameHtml({ ...frame, keyText: '' }), /<p style="font-size:\d+px">控糖早餐<\/p>/);
+});
+
+test('platform frame specs drive portrait and landscape layouts', () => {
+  assert.deepEqual(videoFrameSpec('douyin'), VERTICAL_FRAME);
+  assert.deepEqual(videoFrameSpec('xiaohongshu'), VERTICAL_FRAME);
+  assert.deepEqual(videoFrameSpec('bilibili'), LANDSCAPE_FRAME);
+  assert.deepEqual(videoFrameSpec('general'), LANDSCAPE_FRAME);
+  const html = buildFrameHtml({ ...frame, frame: LANDSCAPE_FRAME });
+  assert.match(html, /html,body\{width:1920px;height:1080px/);
+  assert.match(html, /\.visual\{position:absolute;left:80px;top:250px;width:1120px;height:680px/);
+  assert.match(html, /\.subtitle\{position:absolute;left:1250px;right:80px/);
 });
 
 test('product frames show the captured website in contain mode with the brand logo and accent', () => {
@@ -183,6 +195,7 @@ test('ffmpeg args pad shots, fade music, and duck it against narration without l
     output: 'out.mp4'
   }, 'frames.ffconcat');
   const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.match(graph, /scale=1080:1920:flags=lanczos/);
   assert.deepEqual(args.filter((_, index) => args[index - 1] === '-i'), ['frames.ffconcat', 'a.wav', 'c.mp3', 'music.mp3']);
   assert.equal(args[args.indexOf('music.mp3') - 3], '-stream_loop');
   assert.match(graph, /\[1:a\][^;]*apad=whole_dur=2\.350,atrim=end=2\.350[^;]*\[n0\]/);
@@ -195,6 +208,19 @@ test('ffmpeg args pad shots, fade music, and duck it against narration without l
   assert.match(graph, /\[narmix\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
   assert.equal(args[args.indexOf('-t') + 1], '7.450');
   assert.equal(args[args.length - 1], 'out.mp4');
+});
+
+test('ffmpeg args honor the supplied landscape canvas', () => {
+  const args = buildFfmpegArgs({
+    frame: LANDSCAPE_FRAME,
+    narration: [{ path: '', seconds: 3 }],
+    bgm: null,
+    total: 3,
+    output: 'landscape.mp4'
+  }, 'list');
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.match(graph, /scale=1920:1080:flags=lanczos/);
+  assert.doesNotMatch(graph, /scale=1080:1920/);
 });
 
 test('music can bypass sidechain ducking while keeping the same mix level', () => {

@@ -2,6 +2,7 @@ import type { VideoRenderOptions, VideoShot, VideoShotRole, VideoTemplate } from
 import { SHOT_GAP_SECONDS, displayWidth, type VideoTimeline } from './video-pipeline.ts';
 import { contentHash } from './video-production.ts';
 import { chooseProductAccent } from './video-product-research.ts';
+import { VERTICAL_FRAME, type VideoFrameSpec } from './video-frame-spec.ts';
 
 /**
  * 成片合成的纯函数：画面帧的 HTML 模板、镜头内动效、帧计划与 ffmpeg 参数。
@@ -12,8 +13,9 @@ import { chooseProductAccent } from './video-product-research.ts';
  * 抖音 / 视频号底部信息栏（约 1540px 以下）之上。
  */
 
-export const FRAME_WIDTH = 1080;
-export const FRAME_HEIGHT = 1920;
+/** 兼容旧调用；新代码应显式传入平台对应的 VideoFrameSpec。 */
+export const FRAME_WIDTH = VERTICAL_FRAME.width;
+export const FRAME_HEIGHT = VERTICAL_FRAME.height;
 export const VIDEO_FPS = 30;
 
 type Palette = { bg: string; ink: string; accent: string; panel: string; track: string; muted: string };
@@ -159,6 +161,8 @@ export function settledMotion(subtitle: string, options: FramePlanOptions): Fram
 }
 
 export type FrameInput = {
+  /** 平台画布；缺省为抖音等平台使用的 1080×1920 竖屏。 */
+  frame?: VideoFrameSpec;
   template: VideoTemplate;
   title: string;
   /** 画面大字；空串时纯文字卡片退回显示标题。 */
@@ -224,9 +228,9 @@ const CARD_TEXT_WIDTH = 756;
  * 画面大字的字号：优先找一行放得下的最大字号（不小于 92px）；放不下就用多行大字，
  * 由 text-wrap: balance 均分各行，不会出现「记住三个半分 / 钟」这种单字孤行。
  */
-export function cardFontSize(text: string): number {
+export function cardFontSize(text: string, textWidth = CARD_TEXT_WIDTH): number {
   const width = Math.max(1, displayWidth(text));
-  const lines = (size: number) => Math.ceil(width / Math.floor(CARD_TEXT_WIDTH / size));
+  const lines = (size: number) => Math.ceil(width / Math.floor(textWidth / size));
   for (const size of [120, 104, 92]) if (lines(size) === 1) return size;
   for (const size of [120, 104, 92, 84, 72]) if (lines(size) <= (size >= 104 ? 2 : 3)) return size;
   return 64;
@@ -237,11 +241,9 @@ function karaokeMarkup(subtitle: string): string {
   return Array.from(subtitle).map((char, index) => `<span style="--i:${index}">${escapeHtml(char)}</span>`).join('');
 }
 
-/** 只在带 IP 角色时输出这段样式：不带 IP 的帧和以前逐字节相同。 */
-const IP_HERO_CSS = `.ip-hero{position:absolute;right:60px;top:84px;width:220px;height:236px;object-fit:contain;object-position:right bottom}
-.title{right:300px}`;
-
 export function buildFrameHtml(input: FrameInput): string {
+  const frame = input.frame ?? VERTICAL_FRAME;
+  const landscape = frame.width > frame.height;
   const color = PALETTES[input.template] ?? PALETTES.warm;
   const accent = chooseProductAccent(input.brandColors ?? [], color.accent);
   const hero = input.ip?.heroUrl ?? '';
@@ -255,18 +257,34 @@ export function buildFrameHtml(input: FrameInput): string {
     const state = index < input.shotNumber - 1 ? 'on' : index === input.shotNumber - 1 ? 'now' : '';
     return `<i${state ? ` class="${state}"` : ''}></i>`;
   }).join('');
+  const cardTextWidth = landscape ? 992 : CARD_TEXT_WIDTH;
   const visual = input.imageUrl
     ? `<div class="visual${input.productMode ? ' product' : ''}"><img src="${escapeHtml(input.imageUrl)}" alt=""></div>${key ? `<div class="key">${escapeHtml(key)}</div>` : ''}`
-    : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(key || input.title)}px">${escapeHtml(key || input.title.trim())}</p></div>`;
-  return `<!doctype html>
-<html lang="zh-CN" style="${motionStyle(input.motion)}"><head><meta charset="utf-8"><style>
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:${FRAME_WIDTH}px;height:${FRAME_HEIGHT}px;overflow:hidden;background:${color.bg};color:${color.ink};font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC","Source Han Sans SC",sans-serif}
+    : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(key || input.title, cardTextWidth)}px">${escapeHtml(key || input.title.trim())}</p></div>`;
+  const layout = landscape
+    ? `
+.title{position:absolute;left:80px;right:300px;top:70px;height:110px;display:flex;align-items:flex-end;font-size:58px;line-height:1.25;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance}
+.progress{position:absolute;left:80px;right:80px;top:200px;height:10px;display:flex;gap:10px}
+.visual{position:absolute;left:80px;top:250px;width:1120px;height:680px;border-radius:28px;overflow:hidden;background:${color.panel}}
+.visual img{display:block;width:100%;height:100%;object-fit:cover;opacity:var(--enter);transform:scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
+.visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
+.visual.product img{object-fit:contain;background:#fff}
+.key{position:absolute;left:80px;right:780px;top:940px;height:68px;font-size:50px;line-height:68px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:scale(calc(.92 + .08 * var(--key)))}
+.card{position:absolute;left:80px;top:250px;width:1120px;height:680px;padding:64px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
+.card span{font-size:38px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:min(1,calc(var(--enter) * 1.6))}
+.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:min(1,calc(var(--enter) * 1.6));transform:scale(calc(.92 + .08 * var(--enter)))}
+.card.solid{background:${accent}}
+.card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
+.card.solid p{color:${color.panel}}
+.subtitle{position:absolute;left:1250px;right:80px;top:250px;height:610px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:56px;line-height:1.38;font-weight:800}
+.subtitle p{text-wrap:balance}
+.subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
+.footer{position:absolute;left:1250px;right:80px;top:900px;font-size:28px;letter-spacing:2px;text-align:center;color:${color.muted}}
+${hero ? `.ip-hero{position:absolute;right:60px;top:54px;width:170px;height:180px;object-fit:contain;object-position:right bottom}.title{right:250px}` : ''}
+${logo ? `.brand-logo{position:absolute;right:80px;top:62px;width:160px;height:90px;object-fit:contain;object-position:right center}.title{right:270px}` : ''}`
+    : `
 .title{position:absolute;left:90px;right:90px;top:120px;height:180px;display:flex;align-items:flex-end;font-size:64px;line-height:1.35;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance}
 .progress{position:absolute;left:90px;right:90px;top:328px;height:10px;display:flex;gap:10px}
-.progress i{position:relative;flex:1;border-radius:5px;overflow:hidden;background:${color.track}}
-.progress i.on{background:${accent}}
-.progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${accent}}
 .visual{position:absolute;left:90px;top:380px;width:900px;height:700px;border-radius:28px;overflow:hidden;background:${color.panel}}
 .visual img{display:block;width:100%;height:100%;object-fit:cover;opacity:var(--enter);transform:scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
 .visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
@@ -282,8 +300,16 @@ html,body{width:${FRAME_WIDTH}px;height:${FRAME_HEIGHT}px;overflow:hidden;backgr
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
 .footer{position:absolute;left:90px;right:90px;top:1470px;font-size:32px;letter-spacing:2px;text-align:center;color:${color.muted}}
-${hero ? IP_HERO_CSS : ''}
-${logo ? `.brand-logo{position:absolute;right:90px;top:104px;width:180px;height:110px;object-fit:contain;object-position:right center}.title{right:310px}` : ''}
+${hero ? `.ip-hero{position:absolute;right:60px;top:84px;width:220px;height:236px;object-fit:contain;object-position:right bottom}.title{right:300px}` : ''}
+${logo ? `.brand-logo{position:absolute;right:90px;top:104px;width:180px;height:110px;object-fit:contain;object-position:right center}.title{right:310px}` : ''}`;
+  return `<!doctype html>
+<html lang="zh-CN" style="${motionStyle(input.motion)}"><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:${frame.width}px;height:${frame.height}px;overflow:hidden;background:${color.bg};color:${color.ink};font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC","Source Han Sans SC",sans-serif}
+.progress i{position:relative;flex:1;border-radius:5px;overflow:hidden;background:${color.track}}
+.progress i.on{background:${accent}}
+.progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${accent}}
+${layout}
 </style></head><body>
 ${hero ? `<img class="ip-hero" src="${escapeHtml(hero)}" alt="">` : ''}
 ${logo ? `<img class="brand-logo" src="${escapeHtml(logo)}" alt="">` : ''}
@@ -373,6 +399,8 @@ export function buildConcatList(stills: Array<{ path: string; frames: number }>)
 }
 
 export type ComposeInput = {
+  /** 输出画布；缺省保持旧调用使用 1080×1920 竖屏。 */
+  frame?: VideoFrameSpec;
   /** 每镜一段口播：path 为空表示这一镜静音（选了不配音或这一镜没有口播）。 */
   narration: Array<{ path: string; seconds: number }>;
   bgm: {
@@ -396,9 +424,10 @@ const AUDIO_FORMAT = 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layout
  */
 export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[] {
   if (!input.narration.length) throw new Error('没有可合成的镜头');
+  const frame = input.frame ?? VERTICAL_FRAME;
   const total = input.total.toFixed(3);
   const args = ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listPath];
-  const graph = [`[0:v]fps=${VIDEO_FPS},scale=${FRAME_WIDTH}:${FRAME_HEIGHT}:flags=lanczos,setsar=1,format=yuv420p[vout]`];
+  const graph = [`[0:v]fps=${VIDEO_FPS},scale=${frame.width}:${frame.height}:flags=lanczos,setsar=1,format=yuv420p[vout]`];
   let inputIndex = 1;
   input.narration.forEach((segment, position) => {
     const seconds = segment.seconds.toFixed(3);
