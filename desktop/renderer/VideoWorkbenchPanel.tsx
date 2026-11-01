@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { VideoBgmMode, VideoPlatform, VideoProject, VideoStage, VideoWorkflow } from '../shared';
+import {
+  VIDEO_BGM_STYLES, resolveVideoBgmStyle,
+  type VideoBgmMode, type VideoBgmStyle, type VideoPlatform, type VideoProject, type VideoStage, type VideoWorkflow
+} from '../shared';
 import { parseVideoShots } from '../services/video-pipeline';
 import { readableError } from './ui';
 
@@ -43,10 +46,19 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   const [logoPath, setLogoPath] = useState('');
   const [bgmMode, setBgmMode] = useState<VideoBgmMode>('none');
   const [bgmVolume, setBgmVolume] = useState(12);
+  const [bgmStyle, setBgmStyle] = useState<VideoBgmStyle>('auto');
+  const [bgmDucking, setBgmDucking] = useState(true);
+  const [bgmFadeIn, setBgmFadeIn] = useState(0.6);
+  const [bgmFadeOut, setBgmFadeOut] = useState(2);
 
   const selected = projects.find(project => project.id === selectedId) ?? null;
   const shots = useMemo(() => parseVideoShots(selected?.storyboardJson ?? ''), [selected?.storyboardJson]);
   const profile = WORKFLOWS.find(item => item.value === workflow) ?? WORKFLOWS[0];
+  const resolvedBgmStyle = resolveVideoBgmStyle(
+    { workflow, bgmStyle },
+    `${String(draft.title ?? selected?.title ?? '')} ${String(draft.topic ?? selected?.topic ?? '')} ${String(draft.audience ?? selected?.audience ?? '')} ${String(draft.script ?? selected?.script ?? '')} ${selected?.options.productResearch ?? ''}`
+  );
+  const resolvedBgmStyleLabel = VIDEO_BGM_STYLES.find(item => item.value === resolvedBgmStyle)?.label ?? '明亮成长';
 
   const refresh = useCallback(async () => {
     const next = await window.sydney.listVideoProjects();
@@ -67,7 +79,14 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     if (!selected) return;
     setBgmMode(selected.options.bgmMode ?? 'none');
     setBgmVolume(selected.options.bgmVolume);
-  }, [selectedId, selected?.options.bgmMode, selected?.options.bgmVolume]);
+    setBgmStyle(selected.options.bgmStyle ?? 'auto');
+    setBgmDucking(selected.options.bgmDucking ?? true);
+    setBgmFadeIn(selected.options.bgmFadeIn ?? 0.6);
+    setBgmFadeOut(selected.options.bgmFadeOut ?? 2);
+  }, [
+    selectedId, selected?.options.bgmMode, selected?.options.bgmVolume, selected?.options.bgmStyle,
+    selected?.options.bgmDucking, selected?.options.bgmFadeIn, selected?.options.bgmFadeOut
+  ]);
 
   const replace = (next: VideoProject) => setProjects(items => items.map(item => item.id === next.id ? next : item));
   const run = async (name: string, action: () => Promise<VideoProject | void>) => {
@@ -75,7 +94,8 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     try { const result = await action(); if (result) replace(result); } catch (error) { notify(readableError(error)); } finally { setBusy(''); }
   };
   const videoOptions = (project: VideoProject) => ({
-    ...project.options, workflow, sourcePath, websiteUrl, logoPath, bgmMode, bgmVolume
+    ...project.options, workflow, sourcePath, websiteUrl, logoPath,
+    bgmMode, bgmVolume, bgmStyle, bgmDucking, bgmFadeIn, bgmFadeOut
   });
   const create = () => void run('create', async () => {
     const project = await window.sydney.createVideoProject(platform, topicSeed);
@@ -222,11 +242,15 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
         </section>}
         {step === 'script' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>脚本工作区</h3><p>可以让模型写，也可以直接粘贴已有脚本；保存后再生成分镜。</p></div></header><textarea className="flow-draft" value={String(draft.script ?? selected.script)} onChange={event => patchDraft({ script: event.target.value })} placeholder="在这里写口播、旁白或视频脚本…" /><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => generate('script')}>{busy === 'script' ? '生成中…' : 'AI 生成脚本'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>保存脚本</button></div></section>}
         {step === 'storyboard' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>分镜工作区</h3><p>每个镜头包含画面、旁白、字幕和配图提示词。</p></div></header>{shots.length ? <div className="flow-table-wrap"><table className="flow-table"><thead><tr><th>镜头</th><th>作用</th><th>画面大字</th><th>旁白</th><th>画面</th></tr></thead><tbody>{shots.map(shot => <tr key={shot.index}><td>{shot.index}</td><td>{shot.role || '—'}</td><td>{shot.caption || '—'}</td><td>{shot.narration || '—'}</td><td>{shot.visual || '—'}</td></tr>)}</tbody></table></div> : <p className="flow-empty">还没有分镜。</p>}<div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => generate('storyboard')}>{busy === 'storyboard' ? '生成中…' : '生成 / 重做分镜'}</button></div></section>}
-        {step === 'voice' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>声音与字幕</h3><p>配音后以真实音频时长生成字幕时间轴；背景音乐会自动循环、压低并做片尾淡出。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.audio.length}</strong><span>已有配音片段</span></div><div><strong>{shots.length}</strong><span>镜头</span></div><div><strong>{bgmMode === 'auto' ? '自动原创' : bgmMode === 'custom' ? '本地音乐' : '关闭'}</strong><span>背景音乐</span></div></div>
+        {step === 'voice' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>声音与字幕</h3><p>配音后以真实音频时长生成字幕时间轴；BGM 会循环、按口播自动闪避，并做片头片尾淡变。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.audio.length}</strong><span>已有配音片段</span></div><div><strong>{shots.length}</strong><span>镜头</span></div><div><strong>{bgmMode === 'auto' ? resolvedBgmStyleLabel : bgmMode === 'custom' ? '本地音乐' : '关闭'}</strong><span>{bgmMode === 'auto' ? `自动原创 · ${bgmStyle === 'auto' ? '跟随内容' : '指定风格'}` : '背景音乐'}</span></div></div>
           <div className="video-audio-options">
-            <label><span>BGM 来源</span><select value={bgmMode} onChange={event => setBgmMode(event.target.value as VideoBgmMode)} disabled={Boolean(busy)}><option value="auto">自动原创（本地轻快科技感）</option><option value="custom">本地音乐</option><option value="none">关闭 BGM</option></select></label>
+            <label><span>BGM 来源</span><select value={bgmMode} onChange={event => setBgmMode(event.target.value as VideoBgmMode)} disabled={Boolean(busy)}><option value="auto">自动原创（本地生成）</option><option value="custom">本地音乐</option><option value="none">关闭 BGM</option></select></label>
+            <label><span>BGM 风格</span><select value={bgmStyle} onChange={event => setBgmStyle(event.target.value as VideoBgmStyle)} disabled={Boolean(busy) || bgmMode !== 'auto'}>{VIDEO_BGM_STYLES.map(item => <option key={item.value} value={item.value}>{item.label} · {item.hint}</option>)}</select></label>
             <label><span>BGM 音量（%）</span><input type="number" min={0} max={100} value={bgmVolume} onChange={event => setBgmVolume(Math.min(100, Math.max(0, Number(event.target.value) || 0)))} disabled={Boolean(busy) || bgmMode === 'none'} /></label>
-            <div className="video-bgm-picker"><button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void run('bgm', async () => { const next = await window.sydney.chooseVideoBgm(selected.id); if (!next) return; replace(next); setBgmMode('custom'); setBgmVolume(next.options.bgmVolume); notify('已选择本地背景音乐'); return next; })}>{busy === 'bgm' ? '选择中…' : '选择本地音乐'}</button><span>{bgmMode === 'auto' ? '首次渲染时离线生成 16 秒原创循环音乐' : bgmMode === 'custom' ? selected.options.bgmPath || '尚未选择音乐文件' : '成片只保留配音和环境声'}</span></div>
+            <label><span>淡入（秒）</span><input type="number" min={0} max={10} step={0.1} value={bgmFadeIn} onChange={event => setBgmFadeIn(Math.min(10, Math.max(0, Number(event.target.value) || 0)))} disabled={Boolean(busy) || bgmMode === 'none'} /></label>
+            <label><span>淡出（秒）</span><input type="number" min={0} max={10} step={0.1} value={bgmFadeOut} onChange={event => setBgmFadeOut(Math.min(10, Math.max(0, Number(event.target.value) || 0)))} disabled={Boolean(busy) || bgmMode === 'none'} /></label>
+            <label className="video-checkbox-field"><input type="checkbox" checked={bgmDucking} onChange={event => setBgmDucking(event.target.checked)} disabled={Boolean(busy) || bgmMode === 'none'} /><span>旁白出现时自动压低 BGM</span></label>
+            <div className="video-bgm-picker"><button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={() => void run('bgm', async () => { const next = await window.sydney.chooseVideoBgm(selected.id); if (!next) return; replace(next); setBgmMode('custom'); setBgmVolume(next.options.bgmVolume); notify('已选择本地背景音乐'); return next; })}>{busy === 'bgm' ? '选择中…' : '选择本地音乐'}</button><span>{bgmMode === 'auto' ? `首次渲染时离线生成 16 秒原创循环音乐；当前匹配「${resolvedBgmStyleLabel}」` : bgmMode === 'custom' ? selected.options.bgmPath || '尚未选择音乐文件' : '成片只保留配音和环境声'}</span></div>
           </div>
           <div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => production('voice', () => window.sydney.generateVideoVoice(selected.id, false))}>{busy === 'voice' ? '处理中…' : '生成 / 补齐配音'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>{busy === 'save' ? '保存中…' : '保存声音设置'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => setStep('visuals')}>进入画面 →</button></div>
         </section>}

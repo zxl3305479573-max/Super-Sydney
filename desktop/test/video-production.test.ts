@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { VideoProject } from '../shared.ts';
+import { resolveVideoBgmStyle, type VideoProject } from '../shared.ts';
 import { serializeVideoShots } from '../services/video-pipeline.ts';
 import {
   VIDEO_RENDER_DEFAULTS, audioKey, contentHash, describeVoiceProfile, emptyRenderAssets, imageCoverage, imageKey, isImageReady, isVoiceReady,
@@ -25,10 +25,19 @@ const shots = [
 test('render options merge patches and reject values the renderer cannot honour', () => {
   assert.equal(VIDEO_RENDER_DEFAULTS.bgmMode, 'none');
   assert.equal(VIDEO_RENDER_DEFAULTS.bgmVolume, 12);
-  const next = normalizeRenderOptions({ template: 'night', bgmMode: 'auto', bgmVolume: 250, footer: '  @账号   名  ' });
+  assert.equal(VIDEO_RENDER_DEFAULTS.bgmStyle, 'auto');
+  assert.equal(VIDEO_RENDER_DEFAULTS.bgmDucking, true);
+  assert.deepEqual([VIDEO_RENDER_DEFAULTS.bgmFadeIn, VIDEO_RENDER_DEFAULTS.bgmFadeOut], [0.6, 2]);
+  const next = normalizeRenderOptions({
+    template: 'night', bgmMode: 'auto', bgmVolume: 250, bgmStyle: 'calm', bgmDucking: false, bgmFadeIn: 20, bgmFadeOut: -2,
+    footer: '  @账号   名  '
+  });
   assert.equal(next.template, 'night');
   assert.equal(next.bgmMode, 'auto');
   assert.equal(next.bgmVolume, 100);
+  assert.equal(next.bgmStyle, 'calm');
+  assert.equal(next.bgmDucking, false);
+  assert.deepEqual([next.bgmFadeIn, next.bgmFadeOut], [10, 0]);
   assert.equal(next.footer, '@账号 名');
   assert.equal(next.voiceMode, 'tts');
   assert.throws(() => normalizeRenderOptions({ voiceMode: 'robot' }), /配音方式/);
@@ -36,6 +45,10 @@ test('render options merge patches and reject values the renderer cannot honour'
   assert.throws(() => normalizeRenderOptions({ bgmPath: 3 }), /文本/);
   assert.throws(() => normalizeRenderOptions({ bgmMode: 'library' }), /背景音乐来源/);
   assert.throws(() => normalizeRenderOptions({ bgmVolume: 'loud' }), /音量/);
+  assert.throws(() => normalizeRenderOptions({ bgmStyle: 'edm' }), /音乐风格/);
+  assert.throws(() => normalizeRenderOptions({ bgmDucking: 'yes' }), /闪避/);
+  assert.throws(() => normalizeRenderOptions({ bgmFadeIn: 'slow' }), /淡入/);
+  assert.throws(() => normalizeRenderOptions({ bgmFadeOut: 'slow' }), /淡出/);
   assert.throws(() => normalizeRenderOptions({ shotImagePromptTemplate: 3 }), /逐镜配图/);
   assert.equal(normalizeRenderOptions({ shotImagePromptTemplate: '' }).shotImagePromptTemplate, VIDEO_RENDER_DEFAULTS.shotImagePromptTemplate);
   assert.equal(normalizeRenderOptions({ coverImagePromptTemplate: '封面 {title}' }).coverImagePromptTemplate, '封面 {title}');
@@ -59,6 +72,17 @@ test('render options merge patches and reject values the renderer cannot honour'
   // 旧任务没有这一列、或者库里存坏了，都按默认值读出来。
   assert.deepEqual(parseRenderOptions(''), VIDEO_RENDER_DEFAULTS);
   assert.deepEqual(parseRenderOptions('{broken'), VIDEO_RENDER_DEFAULTS);
+});
+
+test('automatic BGM style follows explicit choices, content keywords and workflow', () => {
+  assert.equal(resolveVideoBgmStyle({ workflow: 'product-demo', bgmStyle: 'calm' }, 'AI 协作平台'), 'calm');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'product-demo', bgmStyle: 'auto' }, 'AI 协作与自动化平台'), 'tech');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'script-to-video', bgmStyle: 'auto' }, '中老年健康早餐科普'), 'uplifting');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'script-to-video', bgmStyle: 'auto' }, '睡前冥想与呼吸练习'), 'calm');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'script-to-video', bgmStyle: 'auto' }, '品牌故事纪录片'), 'cinematic');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'footage-edit', bgmStyle: 'auto' }, '旅行片段'), 'cinematic');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'localize', bgmStyle: 'auto' }, '英语字幕'), 'calm');
+  assert.equal(resolveVideoBgmStyle({ workflow: 'browser-demo', bgmStyle: 'auto' }, ''), 'tech');
 });
 
 test('asset ledger parsing drops malformed entries instead of trusting the database', () => {

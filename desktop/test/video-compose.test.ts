@@ -175,10 +175,10 @@ test('concat list quotes paths, escapes quotes, keeps durations on the frame gri
   assert.throws(() => buildConcatList([]), /没有可合成/);
 });
 
-test('ffmpeg args pad each shot to its duration, use silence where there is no voice, and keep narration level when mixing music', () => {
+test('ffmpeg args pad shots, fade music, and duck it against narration without lowering the voice', () => {
   const args = buildFfmpegArgs({
     narration: [{ path: 'a.wav', seconds: 2.35 }, { path: '', seconds: 2 }, { path: 'c.mp3', seconds: 3.1 }],
-    bgm: { path: 'music.mp3', volume: 0.12 },
+    bgm: { path: 'music.mp3', volume: 0.12, ducking: true, fadeIn: 0.6, fadeOut: 2 },
     total: 7.45,
     output: 'out.mp4'
   }, 'frames.ffconcat');
@@ -189,10 +189,24 @@ test('ffmpeg args pad each shot to its duration, use silence where there is no v
   assert.match(graph, /anullsrc=[^;]*atrim=end=2\.000[^;]*\[n1\]/);
   assert.match(graph, /\[2:a\][^;]*apad=whole_dur=3\.100[^;]*\[n2\]/);
   assert.match(graph, /\[n0\]\[n1\]\[n2\]concat=n=3:v=0:a=1\[nar\]/);
-  assert.match(graph, /\[3:a\][^;]*volume=0\.120[^;]*afade=t=out:st=5\.450:d=2\.000\[bg\]/);
-  assert.match(graph, /amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
+  assert.match(graph, /\[3:a\][^;]*volume=0\.120[^;]*afade=t=in:st=0:d=0\.600,afade=t=out:st=5\.450:d=2\.000\[bg\]/);
+  assert.match(graph, /\[nar\]asplit=2\[narmix\]\[narside\]/);
+  assert.match(graph, /\[bg\]\[narside\]sidechaincompress=threshold=0\.025:ratio=8:attack=20:release=320:makeup=1\[bgducked\]/);
+  assert.match(graph, /\[narmix\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
   assert.equal(args[args.indexOf('-t') + 1], '7.450');
   assert.equal(args[args.length - 1], 'out.mp4');
+});
+
+test('music can bypass sidechain ducking while keeping the same mix level', () => {
+  const args = buildFfmpegArgs({
+    narration: [{ path: 'voice.wav', seconds: 3 }],
+    bgm: { path: 'music.mp3', volume: 0.12, ducking: false, fadeIn: 0, fadeOut: 0 },
+    total: 3,
+    output: 'out.mp4'
+  }, 'list');
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.doesNotMatch(graph, /sidechaincompress|asplit/);
+  assert.match(graph, /\[nar\]\[bg\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
 });
 
 test('without music the narration track goes straight to the output', () => {

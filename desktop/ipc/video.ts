@@ -3,9 +3,11 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { app, dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
-import type {
-  VideoAssetBundle, VideoPlatform, VideoProgress, VideoProject, VideoRenderAssets, VideoStage, VideoTtsSettings, VideoTtsStatus,
-  VideoTopicSearchQuery, VideoTopicSearchResult, VideoSkillRunResult
+import {
+  resolveVideoBgmStyle,
+  type VideoAssetBundle, type VideoPlatform, type VideoProgress, type VideoProject, type VideoRenderAssets,
+  type VideoStage, type VideoTtsSettings, type VideoTtsStatus, type VideoTopicSearchQuery, type VideoTopicSearchResult,
+  type VideoSkillRunResult
 } from '../shared';
 import { videoCoverPrompt } from '../services/video-image-prompts';
 import { imageThumbnail } from '../services/native-image';
@@ -342,7 +344,9 @@ export function registerVideoIpc(ctx: AppContext): void {
     const blockers = renderBlockers(project);
     if (blockers.length) throw new Error(`还不能渲染成片：${blockers.join('；')}`);
     const shots = parseVideoShots(project.storyboardJson);
-    const { voiceMode, imageMode, bgmPath, bgmMode, bgmVolume } = project.options;
+    const {
+      voiceMode, imageMode, bgmPath, bgmMode, bgmVolume, bgmDucking, bgmFadeIn, bgmFadeOut
+    } = project.options;
     // 账本对得上但文件被删了也算没准备好：宁可报错，也不渲染出缺声音、缺画面的视频。
     if (voiceMode === 'tts' && shots.some(shot => shot.narration.trim() && !fs.existsSync(shotAudio(project, shot)?.path ?? ''))) {
       throw new Error('有镜头的配音文件找不到了，请在「配音与字幕」里重新生成');
@@ -351,8 +355,12 @@ export function registerVideoIpc(ctx: AppContext): void {
       throw new Error('有镜头的配图文件找不到了，请在「画面」里重新生成');
     }
     if (bgmMode === 'custom' && bgmPath && !fs.existsSync(bgmPath)) throw new Error('背景音乐文件不存在，请重新选择或清除');
+    const resolvedBgmStyle = resolveVideoBgmStyle(
+      project.options,
+      `${project.title} ${project.topic} ${project.audience} ${project.script} ${project.options.productResearch}`
+    );
     const resolvedBgmPath = bgmMode === 'auto'
-      ? ensureAutoBgm(ctx.dataDir)
+      ? ensureAutoBgm(ctx.dataDir, resolvedBgmStyle)
       : bgmMode === 'custom' ? bgmPath : '';
     const tools = await resolveFfmpeg();
     const { seconds } = shotDurations(project, shots);
@@ -377,7 +385,13 @@ export function registerVideoIpc(ctx: AppContext): void {
       const temp = path.join(work, 'video.tmp.mp4');
       await runFfmpeg(tools, buildFfmpegArgs({
         narration: shots.map((shot, index) => ({ path: voiceMode === 'tts' ? shotAudio(project, shot)?.path ?? '' : '', seconds: seconds[index] })),
-        bgm: resolvedBgmPath ? { path: resolvedBgmPath, volume: bgmVolume / 100 } : null,
+        bgm: resolvedBgmPath ? {
+          path: resolvedBgmPath,
+          volume: bgmVolume / 100,
+          ducking: bgmDucking,
+          fadeIn: bgmFadeIn,
+          fadeOut: bgmFadeOut
+        } : null,
         total: timeline.total,
         output: temp
       }, listPath));

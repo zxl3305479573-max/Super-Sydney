@@ -162,6 +162,10 @@ test('render is blocked until voiced, then goes stale when anything on screen or
   };
   assert.ok(isRenderFresh(autoRendered));
   assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmVolume: 20 } }), false);
+  assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmStyle: 'tech' as const } }), false);
+  assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmDucking: false } }), false);
+  assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmFadeIn: 1.2 } }), false);
+  assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmFadeOut: 1 } }), false);
   const productOptions = { ...rendered.options, workflow: 'product-demo' as const, productScreenshots: ['site.png'], productAssetSignature: 'capture-a' };
   const productRendered = {
     ...rendered,

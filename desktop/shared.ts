@@ -321,10 +321,19 @@ export type VideoShot = {
 export type VideoVoiceMode = 'tts' | 'silent';
 export type VideoTemplate = 'warm' | 'clean' | 'night';
 export type VideoImageMode = 'none' | 'ai';
-export type VideoBgmMode = 'none' | 'auto' | 'custom';
-export const AUTO_BGM_TEMPLATE_VERSION = 'v1';
 /** 视频工作台的生产路径。旧项目没有该字段时自动使用 script-to-video。 */
 export type VideoWorkflow = 'script-to-video' | 'footage-edit' | 'product-demo' | 'browser-demo' | 'localize';
+export type VideoBgmMode = 'none' | 'auto' | 'custom';
+export type VideoBgmStyle = 'auto' | 'tech' | 'uplifting' | 'calm' | 'cinematic';
+export type ResolvedVideoBgmStyle = Exclude<VideoBgmStyle, 'auto'>;
+export const AUTO_BGM_TEMPLATE_VERSION = 'v2';
+export const VIDEO_BGM_STYLES: Array<{ value: VideoBgmStyle; label: string; hint: string }> = [
+  { value: 'auto', label: '跟随内容', hint: '按工作流和脚本关键词自动选择' },
+  { value: 'tech', label: '科技律动', hint: '清晰节拍，适合产品、工具和网页演示' },
+  { value: 'uplifting', label: '明亮成长', hint: '轻快上扬，适合科普、教育和生活内容' },
+  { value: 'calm', label: '舒缓留白', hint: '低密度氛围，适合口播、阅读和多语言' },
+  { value: 'cinematic', label: '电影氛围', hint: '叙事感与低频铺底，适合品牌和影像剪辑' }
+];
 /** 用户可改的成片选项，走 video:update 保存。 */
 export type VideoRenderOptions = {
   workflow: VideoWorkflow;
@@ -351,6 +360,14 @@ export type VideoRenderOptions = {
   bgmMode: VideoBgmMode;
   /** 背景音乐音量，百分比 0–100。 */
   bgmVolume: number;
+  /** 自动原创 BGM 的曲风；auto 会按工作流与内容关键词推荐。 */
+  bgmStyle: VideoBgmStyle;
+  /** 口播出现时自动压低 BGM，避免字幕与旁白被音乐遮住。 */
+  bgmDucking: boolean;
+  /** BGM 淡入秒数。 */
+  bgmFadeIn: number;
+  /** BGM 结尾淡出秒数。 */
+  bgmFadeOut: number;
   /** 画面底部固定的一行：账号名或合规提示。 */
   footer: string;
   /** 画面里带哪个 IP 的品牌角标和角色（IP 库里的 id）；空串表示不带。 */
@@ -362,6 +379,23 @@ export type VideoRenderOptions = {
   /** AI 竖版封面的提示词模板，支持 {title}、{context}。 */
   coverImagePromptTemplate: string;
 };
+
+/** 自动 BGM 的内容路由：显式曲风优先，auto 再按工作流和可读文案推断。 */
+export function resolveVideoBgmStyle(
+  options: Pick<VideoRenderOptions, 'workflow' | 'bgmStyle'>,
+  context = ''
+): ResolvedVideoBgmStyle {
+  if (options.bgmStyle !== 'auto') return options.bgmStyle;
+  const text = context.toLowerCase();
+  if (/(冥想|睡眠|疗愈|阅读|音乐|专注|极简|呼吸|舒缓)/i.test(text)) return 'calm';
+  if (/(电影|影像|摄影|旅行|品牌故事|纪录片|叙事|发布会|质感)/i.test(text)) return 'cinematic';
+  if (/(健康|养生|科普|教育|家庭|社区|成长|运动|饮食|医生)/i.test(text)) return 'uplifting';
+  if (/(ai|人工智能|软件|工具|平台|数据|自动化|开发|效率|协作|浏览器|saas|产品)/i.test(text)) return 'tech';
+  if (options.workflow === 'footage-edit') return 'cinematic';
+  if (options.workflow === 'localize') return 'calm';
+  if (options.workflow === 'browser-demo' || options.workflow === 'product-demo') return 'tech';
+  return 'uplifting';
+}
 export type VideoAudioAsset = { key: string; path: string; seconds: number };
 export type VideoImageAsset = { key: string; path: string };
 export type VideoRenderedFile = { path: string; signature: string; seconds: number; renderedAt: string };

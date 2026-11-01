@@ -1,4 +1,7 @@
-import { AUTO_BGM_TEMPLATE_VERSION, type VideoProject, type VideoShot, type VideoShotRole, type VideoStage } from '../shared.ts';
+import {
+  AUTO_BGM_TEMPLATE_VERSION, resolveVideoBgmStyle,
+  type VideoProject, type VideoShot, type VideoShotRole, type VideoStage
+} from '../shared.ts';
 import {
   VIDEO_SHOT_ROLES, contentHash, imageCoverage, isImageReady, isVoiceReady, normalizeRenderOptions, shotAudio, shotImage, voiceCoverage
 } from './video-production.ts';
@@ -256,10 +259,15 @@ export function narrationCoverage(script: string, shots: VideoShot[]): number {
 export function renderSignature(project: VideoProject): string {
   const shots = parseVideoShots(project.storyboardJson);
   const timeline = buildTimeline(shots, shotDurations(project, shots).seconds);
+  const bgmStyle = resolveVideoBgmStyle(
+    project.options,
+    `${project.title} ${project.topic} ${project.audience} ${project.script} ${project.options.productResearch}`
+  );
+  const bgmMix = [project.options.bgmVolume, project.options.bgmDucking, project.options.bgmFadeIn, project.options.bgmFadeOut];
   const bgm = project.options.bgmMode === 'auto'
-    ? ['auto', AUTO_BGM_TEMPLATE_VERSION, project.options.bgmVolume]
+    ? ['auto', AUTO_BGM_TEMPLATE_VERSION, bgmStyle, ...bgmMix]
     : project.options.bgmMode === 'custom' && project.options.bgmPath
-      ? ['custom', project.options.bgmPath, project.options.bgmVolume]
+      ? ['custom', project.options.bgmPath, ...bgmMix]
       : null;
   return signatureOf({
     kind: 'render',

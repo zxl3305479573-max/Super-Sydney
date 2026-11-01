@@ -1,4 +1,8 @@
-import type { VideoAudioAsset, VideoImageAsset, VideoProject, VideoRenderAssets, VideoRenderOptions, VideoShot, VideoShotRole, VideoTtsSettings, VideoWorkflow } from '../shared.ts';
+import {
+  VIDEO_BGM_STYLES,
+  type VideoAudioAsset, type VideoImageAsset, type VideoProject, type VideoRenderAssets, type VideoRenderOptions,
+  type VideoShot, type VideoShotRole, type VideoTtsSettings, type VideoWorkflow
+} from '../shared.ts';
 import { buildVideoShotImagePrompt, VIDEO_IMAGE_PROMPT_DEFAULTS, VIDEO_SHOT_IMAGE_SIZE } from './video-image-prompts.ts';
 import { normalizeBrandColors, normalizeWebsiteUrl } from './video-product-research.ts';
 
@@ -47,6 +51,10 @@ export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   bgmPath: '',
   bgmMode: 'none',
   bgmVolume: 12,
+  bgmStyle: 'auto',
+  bgmDucking: true,
+  bgmFadeIn: 0.6,
+  bgmFadeOut: 2,
   footer: DEFAULT_VIDEO_FOOTER,
   ipId: '',
   ...VIDEO_IMAGE_PROMPT_DEFAULTS
@@ -116,6 +124,24 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
     const volume = Math.round(Number(value.bgmVolume));
     if (!Number.isFinite(volume)) throw new Error('背景音乐音量必须是数字');
     next.bgmVolume = Math.min(100, Math.max(0, volume));
+  }
+  if (value.bgmStyle !== undefined) {
+    if (!VIDEO_BGM_STYLES.some(item => item.value === value.bgmStyle)) throw new Error('未知的背景音乐风格');
+    next.bgmStyle = value.bgmStyle as VideoRenderOptions['bgmStyle'];
+  }
+  if (value.bgmDucking !== undefined) {
+    if (typeof value.bgmDucking !== 'boolean') throw new Error('旁白闪避开关必须是布尔值');
+    next.bgmDucking = value.bgmDucking;
+  }
+  if (value.bgmFadeIn !== undefined) {
+    const seconds = Number(value.bgmFadeIn);
+    if (!Number.isFinite(seconds)) throw new Error('背景音乐淡入时长必须是数字');
+    next.bgmFadeIn = Math.round(Math.min(10, Math.max(0, seconds)) * 10) / 10;
+  }
+  if (value.bgmFadeOut !== undefined) {
+    const seconds = Number(value.bgmFadeOut);
+    if (!Number.isFinite(seconds)) throw new Error('背景音乐淡出时长必须是数字');
+    next.bgmFadeOut = Math.round(Math.min(10, Math.max(0, seconds)) * 10) / 10;
   }
   if (value.footer !== undefined) {
     if (typeof value.footer !== 'string') throw new Error('页脚必须是文本');

@@ -375,7 +375,13 @@ export function buildConcatList(stills: Array<{ path: string; frames: number }>)
 export type ComposeInput = {
   /** 每镜一段口播：path 为空表示这一镜静音（选了不配音或这一镜没有口播）。 */
   narration: Array<{ path: string; seconds: number }>;
-  bgm: { path: string; volume: number } | null;
+  bgm: {
+    path: string;
+    volume: number;
+    ducking: boolean;
+    fadeIn: number;
+    fadeOut: number;
+  } | null;
   total: number;
   output: string;
 };
@@ -385,7 +391,8 @@ const AUDIO_FORMAT = 'aformat=sample_fmts=fltp:sample_rates=44100:channel_layout
 /**
  * ffmpeg 参数：输入 0 是静帧清单，之后是各镜口播，最后是可选的背景音乐（循环到够长）。
  * 每镜口播补静音到镜头时长再首尾相接，保证声音和画面逐镜对齐；
- * 背景音乐按音量压低、结尾 2 秒淡出，用 normalize=0 混音，口播音量不被摊薄。
+ * 背景音乐按音量压低并做片头 / 片尾淡变；开启闪避时用旁白作为 sidechain，
+ * 只在口播出现时自动降低 BGM。最终用 normalize=0 混音，口播音量不被摊薄。
  */
 export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[] {
   if (!input.narration.length) throw new Error('没有可合成的镜头');
@@ -406,9 +413,20 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
   graph.push(`${input.narration.map((_, position) => `[n${position}]`).join('')}concat=n=${input.narration.length}:v=0:a=1[nar]`);
   if (input.bgm) {
     args.push('-stream_loop', '-1', '-i', input.bgm.path);
-    const fade = Math.min(2, input.total);
-    graph.push(`[${inputIndex}:a]aresample=44100,${AUDIO_FORMAT},volume=${input.bgm.volume.toFixed(3)},atrim=end=${total},afade=t=out:st=${Math.max(0, input.total - fade).toFixed(3)}:d=${fade.toFixed(3)}[bg]`);
-    graph.push('[nar][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+    const fadeIn = Math.min(Math.max(0, input.bgm.fadeIn), input.total);
+    const fadeOut = Math.min(Math.max(0, input.bgm.fadeOut), input.total);
+    const fades = [
+      fadeIn > 0 ? `afade=t=in:st=0:d=${fadeIn.toFixed(3)}` : '',
+      fadeOut > 0 ? `afade=t=out:st=${Math.max(0, input.total - fadeOut).toFixed(3)}:d=${fadeOut.toFixed(3)}` : ''
+    ].filter(Boolean).join(',');
+    graph.push(`[${inputIndex}:a]aresample=44100,${AUDIO_FORMAT},volume=${input.bgm.volume.toFixed(3)},atrim=end=${total}${fades ? `,${fades}` : ''}[bg]`);
+    if (input.bgm.ducking) {
+      graph.push('[nar]asplit=2[narmix][narside]');
+      graph.push('[bg][narside]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=320:makeup=1[bgducked]');
+      graph.push('[narmix][bgducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+    } else {
+      graph.push('[nar][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+    }
   } else {
     graph.push('[nar]anull[aout]');
   }
