@@ -88,6 +88,17 @@ function run(file: string, args: string[], timeoutMs: number): Promise<string> {
   });
 }
 
+function runWithStderr(file: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { windowsHide: true, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (error) {
+        const detail = String(stderr || error.message).replace(/\s+/g, ' ').trim().slice(-300);
+        reject(Object.assign(new Error(detail || error.message), { code: (error as NodeJS.ErrnoException).code }));
+      } else resolve({ stdout: String(stdout), stderr: String(stderr) });
+    });
+  });
+}
+
 export type FfmpegTools = { ffmpeg: string; ffprobe: string };
 
 let cachedTools: FfmpegTools | null = null;
@@ -137,29 +148,111 @@ export type VideoProbe = {
   fps: string;
   videoCodec: string;
   hasAudio: boolean;
+  videoStartTime?: number | null;
+  videoDuration?: number | null;
+  audioStartTime?: number | null;
+  audioDuration?: number | null;
 };
 
 export async function probeVideo(tools: FfmpegTools, file: string): Promise<VideoProbe> {
   const output = await run(tools.ffprobe, [
-    '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate',
+    '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate,start_time,duration',
     '-of', 'json', file
   ], 30_000);
   const parsed = JSON.parse(output) as {
     format?: { duration?: string };
-    streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string }>;
+    streams?: Array<{
+      codec_type?: string; codec_name?: string; width?: number; height?: number;
+      avg_frame_rate?: string; start_time?: string; duration?: string;
+    }>;
   };
   const streams = parsed.streams ?? [];
   const video = streams.find(stream => stream.codec_type === 'video');
+  const audio = streams.find(stream => stream.codec_type === 'audio');
   const seconds = Number(parsed.format?.duration);
   if (!video || !Number.isFinite(seconds) || seconds <= 0) throw new Error(`读不出视频规格：${path.basename(file)}`);
+  const finite = (value: string | undefined): number | null => {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
   return {
     seconds,
     width: Number(video.width) || 0,
     height: Number(video.height) || 0,
     fps: String(video.avg_frame_rate ?? ''),
     videoCodec: String(video.codec_name ?? ''),
-    hasAudio: streams.some(stream => stream.codec_type === 'audio')
+    hasAudio: Boolean(audio),
+    videoStartTime: finite(video.start_time),
+    videoDuration: finite(video.duration) ?? seconds,
+    audioStartTime: finite(audio?.start_time),
+    audioDuration: finite(audio?.duration)
   };
+}
+
+/** 读取封面等静态图片的像素尺寸；读取失败返回 null，由质量报告给出明确错误。 */
+export async function probeImageSize(tools: FfmpegTools, file: string): Promise<{ width: number; height: number } | null> {
+  try {
+    const output = await run(tools.ffprobe, [
+      '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'json', file
+    ], 30_000);
+    const parsed = JSON.parse(output) as { streams?: Array<{ width?: number; height?: number }> };
+    const stream = parsed.streams?.[0];
+    const width = Number(stream?.width);
+    const height = Number(stream?.height);
+    return width > 0 && height > 0 ? { width, height } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 一次解码同时扫描黑帧和静音。黑帧阈值沿用 ffmpeg-skill 的 10% 像素亮度与 0.25 秒，
+ * 静音使用 -50 dB、持续 0.5 秒；扫描失败返回 null，而不是让已经渲染好的成片丢失。
+ */
+export async function scanVideoContent(
+  tools: FfmpegTools,
+  file: string,
+  seconds: number,
+  hasAudio: boolean
+): Promise<{
+  blackSeconds: number;
+  blackSegments: number;
+  silenceSeconds: number;
+  silenceSegments: number;
+} | null> {
+  const args = [
+    '-hide_banner', '-nostats', '-i', file,
+    '-vf', 'blackdetect=d=0.25:pix_th=0.10',
+    ...(hasAudio ? ['-af', 'silencedetect=noise=-50dB:d=0.5'] : []),
+    '-f', 'null', '-'
+  ];
+  try {
+    const { stderr } = await runWithStderr(tools.ffmpeg, args, Math.min(10 * 60_000, Math.max(60_000, seconds * 2_000)));
+    const interval = (prefix: 'black' | 'silence') => {
+      const starts = [...stderr.matchAll(new RegExp(`${prefix}_start:\\s*(-?[\\d.]+)`, 'g'))].map(match => Number(match[1]));
+      const ends = [...stderr.matchAll(new RegExp(`${prefix}_end:\\s*(\\d+(?:\\.\\d+)?)`, 'g'))].map(match => Number(match[1]));
+      const values = starts.flatMap((start, index) => {
+        const end = Number.isFinite(ends[index]) ? ends[index] : seconds;
+        const from = Math.max(0, Math.min(seconds, start));
+        const to = Math.max(from, Math.min(seconds, end));
+        return to > from ? [to - from] : [];
+      });
+      return {
+        seconds: Math.round(values.reduce((sum, value) => sum + value, 0) * 1000) / 1000,
+        segments: values.length
+      };
+    };
+    const black = interval('black');
+    const silence = hasAudio ? interval('silence') : { seconds: 0, segments: 0 };
+    return {
+      blackSeconds: black.seconds,
+      blackSegments: black.segments,
+      silenceSeconds: silence.seconds,
+      silenceSegments: silence.segments
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**

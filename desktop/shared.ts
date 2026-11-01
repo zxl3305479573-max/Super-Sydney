@@ -428,6 +428,8 @@ export type VideoRenderAssets = {
   video: VideoRenderedFile | null;
   /** 最近一次外部 Skill 工作流产物；应用内脚本成片为空。 */
   skill: VideoSkillAsset | null;
+  /** 最近一次成片验收；签名与当前成片和封面不一致时视为过期。 */
+  quality: VideoQualityReport | null;
 };
 export type VideoProject = {
   id: number;
@@ -467,12 +469,15 @@ export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; sy
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
 export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
 export type VideoQualityCheck = {
-  key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio';
+  key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio' | 'timeline' | 'black' | 'silence' | 'safe-area' | 'cover';
   label: string;
   status: 'ok' | 'warn' | 'error';
   detail: string;
 };
 export type VideoQualityReport = {
+  /** 成片、平台与封面共同决定的验收签名。 */
+  signature: string;
+  inspectedAt: string;
   path: string;
   width: number;
   height: number;

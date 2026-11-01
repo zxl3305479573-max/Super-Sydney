@@ -1570,6 +1570,7 @@ textarea.flow-table-control { min-height: 72px; }
 .video-quality-report { display: grid; gap: 10px; margin: 12px 0; }
 .video-quality-summary { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
 .video-quality-summary.is-ok { border-color: var(--success); }
+.video-quality-summary.is-warn { border-color: var(--warning); }
 .video-quality-summary.is-error { border-color: var(--danger); }
 .video-quality-summary span { color: var(--muted); font-size: 12px; }
 .video-quality-report ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }

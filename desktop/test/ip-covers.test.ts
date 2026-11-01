@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { IpRenderKit } from '../shared.ts';
 import { WECHAT_COVER_SIZE, WECHAT_SHARE_SIZE, emptyWechatIpCoverInput, normalizeWechatIpCoverInput, renderWechatIpCover, wechatCoverPose } from '../services/wechat-ip-cover.ts';
-import { VIDEO_COVER_SIZE, emptyVideoIpCoverInput, normalizeVideoIpCoverInput, renderVideoIpCover } from '../services/video-ip-cover.ts';
+import { VIDEO_COVER_SIZE, VIDEO_LANDSCAPE_COVER_SIZE, emptyVideoIpCoverInput, normalizeVideoIpCoverInput, renderVideoIpCover, videoCoverSize } from '../services/video-ip-cover.ts';
 import { buildFrameHtml, settledMotion } from '../services/video-compose.ts';
 import { FRAME_TEMPLATE_VERSION } from '../services/video-pipeline.ts';
 import { VIDEO_RENDER_DEFAULTS, imageKey, normalizeRenderOptions, parseRenderOptions } from '../services/video-production.ts';
@@ -42,6 +42,16 @@ test('视频：竖版封面 1080×1920，不放头像和品牌名', () => {
   assert.equal(normalizeVideoIpCoverInput({ style: '?' }).style, 'dark');
 });
 
+test('视频：横屏平台生成 1920×1080 的左右布局封面', () => {
+  const size = videoCoverSize('bilibili');
+  assert.deepEqual(size, VIDEO_LANDSCAPE_COVER_SIZE);
+  const html = renderVideoIpCover(emptyVideoIpCoverInput('横屏封面标题'), KIT, size);
+  assert.ok(html.includes('width:1920px;height:1080px'));
+  assert.ok(html.includes('.wrap{position:absolute;left:120px;top:150px;width:820px'));
+  assert.ok(html.includes('.hero{position:absolute;right:100px'));
+  assert.deepEqual(videoCoverSize('douyin'), VIDEO_COVER_SIZE);
+});
+
 test('视频帧：带 IP 时只有标题右侧的角色、标题让出位置；不带时和以前一样', () => {
   const base = {
     template: 'warm' as const, title: '血压怎么量才准', keyText: '先坐五分钟', subtitle: '量之前先静坐', imageUrl: '',
@@ -51,7 +61,7 @@ test('视频帧：带 IP 时只有标题右侧的角色、标题让出位置；�
   assert.ok(!plain.includes('ip-badge') && !plain.includes('class="ip-hero"'));
   const withIp = buildFrameHtml({ ...base, ip: { heroUrl: 'file:///h.png' } });
   assert.ok(withIp.includes('<img class="ip-hero" src="file:///h.png" alt="">'));
-  assert.ok(withIp.includes('.title{right:300px}'));
+  assert.ok(withIp.includes('.title{right:411px}'));
   assert.ok(!withIp.includes('ip-badge'), '不放头像和品牌名');
   assert.equal(buildFrameHtml({ ...base, ip: { heroUrl: '' } }), plain);
   assert.ok(FRAME_TEMPLATE_VERSION >= 5, '改了帧模板排版，版本号要加一');

@@ -303,7 +303,7 @@ export function previewSignature(project: VideoProject): string {
 }
 
 /** 画面模板的版本：改了模板排版就加一，旧成片和预览随之标成过期。 */
-export const FRAME_TEMPLATE_VERSION = 7;
+export const FRAME_TEMPLATE_VERSION = 8;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
   const { workflow, template, imageMode, footer, ipId, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;
@@ -326,6 +326,31 @@ function signatureOf(value: unknown): string {
 
 export function isRenderFresh(project: VideoProject): boolean {
   return Boolean(project.assets.video) && project.assets.video!.signature === renderSignature(project);
+}
+
+/** 质量检测规则变化时递增，旧报告会自然失效。 */
+export const VIDEO_QUALITY_VERSION = 1;
+
+/** 质量报告绑定当前成片、平台和封面；换片、换平台或换封面后必须重检。 */
+export function qualitySignature(project: VideoProject): string {
+  return contentHash(JSON.stringify({
+    version: VIDEO_QUALITY_VERSION,
+    video: project.assets.video?.signature ?? '',
+    platform: project.platform,
+    coverPath: project.coverPath
+  }));
+}
+
+export function isQualityFresh(project: VideoProject): boolean {
+  return Boolean(project.assets.video && project.assets.quality)
+    && isRenderFresh(project)
+    && project.assets.quality!.signature === qualitySignature(project);
+}
+
+/** 导出时只拦硬错误；警告保留给用户判断。 */
+export function qualityBlockingIssues(project: VideoProject): string[] {
+  if (!isQualityFresh(project)) return ['成片还没完成当前版本的质量检查'];
+  return project.assets.quality!.checks.filter(check => check.status === 'error').map(check => `${check.label}：${check.detail}`);
 }
 
 export function isPreviewFresh(project: VideoProject): boolean {

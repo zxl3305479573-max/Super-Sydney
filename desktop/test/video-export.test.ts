@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { VideoProject } from '../shared.ts';
 import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export.ts';
-import { renderSignature, serializeVideoShots } from '../services/video-pipeline.ts';
+import { qualitySignature, renderSignature, serializeVideoShots } from '../services/video-pipeline.ts';
 import { VIDEO_RENDER_DEFAULTS, audioKey, emptyRenderAssets } from '../services/video-production.ts';
 import { skillInputFingerprint } from '../services/video-skill-inputs.ts';
 
@@ -62,10 +62,25 @@ test('export copies the rendered video only while it still matches the storyboar
     const video = path.join(root, 'video-1.mp4');
     fs.writeFileSync(video, 'simulated mp4');
     const silent = project({ options: { ...VIDEO_RENDER_DEFAULTS, voiceMode: 'silent' } });
-    const rendered = { ...silent, assets: { ...silent.assets, video: { path: video, signature: renderSignature(silent), seconds: 10, renderedAt: '' } } };
+    const renderedAssets = { ...silent.assets, video: { path: video, signature: renderSignature(silent), seconds: 10, renderedAt: '' } };
+    const rendered = {
+      ...silent,
+      assets: {
+        ...renderedAssets,
+        quality: {
+          signature: qualitySignature({ ...silent, assets: renderedAssets }),
+          inspectedAt: '2026-11-01T00:00:00.000Z',
+          path: video, width: 1080, height: 1920, aspect: '9:16', fps: '30/1', seconds: 10, hasAudio: false,
+          checks: [{ key: 'dimensions' as const, label: '画布尺寸', status: 'ok' as const, detail: '1080×1920' }],
+          ok: true
+        }
+      }
+    };
     const fresh = exportVideoPackage(vault, rendered);
     assert.equal(fs.readFileSync(path.join(fresh, 'video.mp4'), 'utf8'), 'simulated mp4');
     assert.match(fs.readFileSync(path.join(fresh, '制作包.md'), 'utf8'), /成片：video\.mp4/);
+    assert.match(fs.readFileSync(path.join(fresh, '制作包.md'), 'utf8'), /质量验收：全部通过/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(fresh, 'quality-report.json'), 'utf8')).ok, true);
     // 分镜改过之后旧成片对不上了，导出时不再带上。
     const edited = { ...rendered, storyboardJson: serializeVideoShots([{ index: 1, seconds: 4, visual: 'v', narration: '改过的口播。', caption: '' }]) };
     assert.ok(!fs.existsSync(path.join(exportVideoPackage(vault, edited), 'video.mp4')));

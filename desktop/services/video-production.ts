@@ -1,7 +1,7 @@
 import {
   VIDEO_BGM_STYLES,
   type VideoAudioAsset, type VideoImageAsset, type VideoProject, type VideoRenderAssets, type VideoRenderOptions,
-  type VideoShot, type VideoShotRole, type VideoTtsSettings, type VideoWorkflow
+  type VideoQualityCheck, type VideoQualityReport, type VideoShot, type VideoShotRole, type VideoTtsSettings, type VideoWorkflow
 } from '../shared.ts';
 import { buildVideoShotImagePrompt, VIDEO_IMAGE_PROMPT_DEFAULTS, VIDEO_SHOT_IMAGE_SIZE } from './video-image-prompts.ts';
 import { normalizeBrandColors, normalizeWebsiteUrl } from './video-product-research.ts';
@@ -196,7 +196,7 @@ export function parseRenderOptions(json: string): VideoRenderOptions {
 }
 
 export function emptyRenderAssets(): VideoRenderAssets {
-  return { voiceProfile: '', audio: [], images: [], preview: null, video: null, skill: null };
+  return { voiceProfile: '', audio: [], images: [], preview: null, video: null, skill: null, quality: null };
 }
 
 /** 账本由主进程写，但库文件可能被手改或来自旧版本：逐项校验，坏的条目直接丢掉。 */
@@ -218,7 +218,44 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
   const preview = raw.preview && typeof raw.preview === 'object' ? raw.preview as Record<string, unknown> : null;
   const video = raw.video && typeof raw.video === 'object' ? raw.video as Record<string, unknown> : null;
   const skill = raw.skill && typeof raw.skill === 'object' ? raw.skill as Record<string, unknown> : null;
+  const quality = raw.quality && typeof raw.quality === 'object' ? raw.quality as Record<string, unknown> : null;
   const videoSeconds = Number(video?.seconds);
+  const qualityKeys = new Set<VideoQualityCheck['key']>(['dimensions', 'aspect', 'fps', 'duration', 'audio', 'timeline', 'black', 'silence', 'safe-area', 'cover']);
+  const qualityChecks: VideoQualityCheck[] = list(quality?.checks).flatMap(item => {
+    const key = text(item.key) as VideoQualityCheck['key'];
+    const status = text(item.status) as VideoQualityCheck['status'];
+    return qualityKeys.has(key) && ['ok', 'warn', 'error'].includes(status) && text(item.label) && text(item.detail)
+      ? [{ key, label: text(item.label), status, detail: text(item.detail) }]
+      : [];
+  });
+  const qualityWidth = Number(quality?.width);
+  const qualityHeight = Number(quality?.height);
+  const qualitySeconds = Number(quality?.seconds);
+  const parsedQuality: VideoQualityReport | null = quality
+    && text(quality.signature)
+    && text(quality.inspectedAt)
+    && text(quality.path)
+    && text(quality.aspect)
+    && typeof quality.fps === 'string'
+    && typeof quality.hasAudio === 'boolean'
+    && Number.isFinite(qualityWidth) && qualityWidth > 0
+    && Number.isFinite(qualityHeight) && qualityHeight > 0
+    && Number.isFinite(qualitySeconds) && qualitySeconds > 0
+    && qualityChecks.length > 0
+    ? {
+        signature: text(quality.signature),
+        inspectedAt: text(quality.inspectedAt),
+        path: text(quality.path),
+        width: qualityWidth,
+        height: qualityHeight,
+        aspect: text(quality.aspect),
+        fps: quality.fps,
+        seconds: qualitySeconds,
+        hasAudio: quality.hasAudio,
+        checks: qualityChecks,
+        ok: qualityChecks.every(check => check.status !== 'error')
+      }
+    : null;
   return {
     voiceProfile: text(raw.voiceProfile),
     audio,
@@ -240,7 +277,8 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
           sourceSignature: text(skill.sourceSignature),
           completedAt: text(skill.completedAt)
         }
-      : null
+      : null,
+    quality: parsedQuality
   };
 }
 

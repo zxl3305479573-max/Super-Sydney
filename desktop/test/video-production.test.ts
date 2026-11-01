@@ -91,12 +91,22 @@ test('asset ledger parsing drops malformed entries instead of trusting the datab
     audio: [{ key: 'a', path: 'a.wav', seconds: 2 }, { key: 'b', path: 'b.wav', seconds: 0 }, { path: 'c.wav', seconds: 1 }, 'junk'],
     images: [{ key: 'i', path: 'i.png' }, { key: '', path: 'x.png' }],
     preview: { signature: 's', paths: ['p1.png'] },
-    video: { path: 'v.mp4', signature: 'sig', seconds: 'NaN' }
+    video: { path: 'v.mp4', signature: 'sig', seconds: 'NaN' },
+    quality: {
+      signature: 'q', inspectedAt: 'now', path: 'v.mp4', width: 1080, height: 1920, aspect: '9:16', fps: '30/1', seconds: 10, hasAudio: true,
+      checks: [
+        { key: 'audio', label: '音频轨道', status: 'error', detail: '缺少音频' },
+        { key: 'unknown', label: '坏项', status: 'ok', detail: '忽略' }
+      ],
+      ok: true
+    }
   }));
   assert.deepEqual(assets.audio, [{ key: 'a', path: 'a.wav', seconds: 2 }]);
   assert.deepEqual(assets.images, [{ key: 'i', path: 'i.png' }]);
   assert.deepEqual(assets.preview, { signature: 's', paths: ['p1.png'] });
   assert.equal(assets.video, null);
+  assert.equal(assets.quality?.checks.length, 1);
+  assert.equal(assets.quality?.ok, false);
   assert.deepEqual(parseRenderAssets('not json'), emptyRenderAssets());
 });
 

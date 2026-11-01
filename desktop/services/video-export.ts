@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { VideoProject, VideoShot } from '../shared.ts';
-import { buildSrt, buildTimeline, formatDuration, isRenderFresh, parseVideoShots, shotDurations, videoPlatformLabel } from './video-pipeline.ts';
+import { buildSrt, buildTimeline, formatDuration, isQualityFresh, isRenderFresh, parseVideoShots, shotDurations, videoPlatformLabel } from './video-pipeline.ts';
 import { shotRoleLabel } from './video-production.ts';
 import { DEFAULT_AIGC_FOOTER } from './article-html.ts';
 import { assertStableSkillInput } from './video-skill-inputs.ts';
@@ -43,6 +43,9 @@ export function buildProductionMarkdown(project: VideoProject, shots: VideoShot[
   const title = project.title.trim() || project.topic.trim() || '未命名视频';
   const { seconds, voiced } = shotDurations(project, shots);
   const total = seconds.reduce((sum, value) => sum + value, 0);
+  const quality = isQualityFresh(project) ? project.assets.quality : null;
+  const qualityWarnings = quality?.checks.filter(check => check.status === 'warn').length ?? 0;
+  const qualityErrors = quality?.checks.filter(check => check.status === 'error').length ?? 0;
   const rows = shots.map((shot, position) =>
     `| ${shot.index} | ${shotRoleLabel(shot.role) || '—'} | ${formatSeconds(seconds[position])} | ${oneLine(shot.visual)} | ${oneLine(shot.caption)} | ${oneLine(shot.narration)} |`
   ).join('\n');
@@ -66,6 +69,7 @@ exported_at: ${JSON.stringify(new Date().toISOString())}
 - 分镜时长：${formatDuration(total)}（${shots.length} 个镜头，${voiced ? '按真实配音' : '估算'}）
 - 成片：${withVideo ? 'video.mp4' : '未包含（没有渲染或已过期）'}
 - 封面：${project.coverPath ? path.basename(project.coverPath) : '未设置'}
+- 质量验收：${quality ? qualityErrors ? `未通过（${qualityErrors} 项错误，${qualityWarnings} 项警告）` : qualityWarnings ? `通过（${qualityWarnings} 项警告）` : '全部通过' : '未完成'}
 - Skill 工作流：${project.assets.skill?.workflow || '应用内脚本成片'}
 - 源转录：${project.assets.skill?.transcriptPath ? path.basename(project.assets.skill.transcriptPath) : '无'}
 - 本地化字幕：${project.assets.skill?.subtitlePath ? path.basename(project.assets.skill.subtitlePath) : '无'}
@@ -145,6 +149,9 @@ export function exportVideoPackage(vault: string, project: VideoProject): string
     const video = project.assets.video;
     const withVideo = Boolean(video && isRenderFresh(project) && fs.existsSync(video.path));
     if (withVideo) fs.copyFileSync(video!.path, path.join(directory, 'video.mp4'), fs.constants.COPYFILE_EXCL);
+    if (withVideo && isQualityFresh(project)) {
+      fs.writeFileSync(path.join(directory, 'quality-report.json'), JSON.stringify(project.assets.quality, null, 2), { encoding: 'utf8', flag: 'wx' });
+    }
     const skill = project.assets.skill;
     if (skill?.transcriptPath) {
       if (!fs.existsSync(skill.transcriptPath)) throw new Error('Skill 转录文件不存在，请重新运行当前工作流');

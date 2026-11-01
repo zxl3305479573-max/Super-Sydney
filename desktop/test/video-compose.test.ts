@@ -41,10 +41,10 @@ test('platform frame specs drive portrait and landscape layouts', () => {
   assert.deepEqual(videoFrameSpec('xiaohongshu'), VERTICAL_FRAME);
   assert.deepEqual(videoFrameSpec('bilibili'), LANDSCAPE_FRAME);
   assert.deepEqual(videoFrameSpec('general'), LANDSCAPE_FRAME);
-  const html = buildFrameHtml({ ...frame, frame: LANDSCAPE_FRAME });
+  const html = buildFrameHtml({ ...frame, frame: LANDSCAPE_FRAME, platform: 'bilibili' });
   assert.match(html, /html,body\{width:1920px;height:1080px/);
-  assert.match(html, /\.visual\{position:absolute;left:80px;top:250px;width:1120px;height:680px/);
-  assert.match(html, /\.subtitle\{position:absolute;left:1250px;right:80px/);
+  assert.match(html, /\.visual\{position:absolute;left:104px;top:250px;width:1112px;height:680px/);
+  assert.match(html, /\.subtitle\{position:absolute;left:1210px;right:104px/);
 });
 
 test('product frames show the captured website in contain mode with the brand logo and accent', () => {

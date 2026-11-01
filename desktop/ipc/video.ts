@@ -13,19 +13,19 @@ import { videoCoverPrompt } from '../services/video-image-prompts';
 import { imageThumbnail } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import {
-  assertVideoExportable, assertVideoStage, buildTimeline, parseVideoShots, prepareVideoEdit, previewSignature,
-  renderBlockers, renderSignature, shotDurations, splitCaptionLines
+  assertVideoExportable, assertVideoStage, buildTimeline, isQualityFresh, isRenderFresh, parseVideoShots, prepareVideoEdit, previewSignature,
+  qualityBlockingIssues, renderBlockers, renderSignature, shotDurations, splitCaptionLines
 } from '../services/video-pipeline';
 import { SHOT_IMAGE_SIZE, audioKey, imageKey, parseVoiceProfile, shotAudio, shotImage, shotImagePrompt, voiceProfileOf } from '../services/video-production';
 import {
   buildConcatList, buildFfmpegArgs, buildFramePlan, buildFrameHtml, frameLead, framePlanOptions, framePlanStills, motionStyle, settledMotion,
   type FrameMotion
 } from '../services/video-compose';
-import { probeDuration, probeVideo, renderFrameFiles, resolveFfmpeg, runFfmpeg, speechSpan } from '../services/video-render';
+import { probeDuration, probeImageSize, probeVideo, renderFrameFiles, resolveFfmpeg, runFfmpeg, scanVideoContent, speechSpan } from '../services/video-render';
 import { listSystemVoices, readVideoTtsSettings, requestSpeech, synthesizeSystemSpeech, writeVideoTtsSettings } from '../services/video-tts';
 import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
 import { pickPose } from '../services/ip-theme';
-import { normalizeVideoIpCoverInput, renderVideoIpCover, VIDEO_COVER_SIZE } from '../services/video-ip-cover';
+import { normalizeVideoIpCoverInput, renderVideoIpCover, videoCoverSize } from '../services/video-ip-cover';
 import { renderHtmlPages } from '../services/xhs-render';
 import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
@@ -65,6 +65,31 @@ export function registerVideoIpc(ctx: AppContext): void {
   };
   const progress = (payload: VideoProgress) => ctx.window()?.webContents.send('video:progress', payload);
 
+  /** 读取实际成片并写回质量报告；基础 ffprobe 失败会抛错，内容扫描失败则降级为警告。 */
+  const inspectVideoQuality = async (project: VideoProject) => {
+    const video = project.assets.video;
+    if (!video || !fs.existsSync(video.path)) throw new Error('当前项目还没有可检查的成片');
+    if (!isRenderFresh(project)) throw new Error('当前成片已过期，请先重新渲染再做质量检查');
+    const tools = await resolveFfmpeg();
+    const probe = await probeVideo(tools, video.path);
+    const [content, cover] = await Promise.all([
+      scanVideoContent(tools, video.path, probe.seconds, probe.hasAudio),
+      project.coverPath.trim() ? probeImageSize(tools, project.coverPath) : Promise.resolve(undefined)
+    ]);
+    const report = evaluateVideoQuality(project, probe, video.path, { content, cover });
+    return update(project.id, { assets: { ...project.assets, quality: report } });
+  };
+
+  const ensureVideoQuality = async (project: VideoProject): Promise<VideoProject> => {
+    if (!project.assets.video || !isRenderFresh(project) || isQualityFresh(project)) return project;
+    return inspectVideoQuality(project);
+  };
+
+  const assertQualityAllowsExport = (project: VideoProject): void => {
+    const issues = qualityBlockingIssues(project);
+    if (issues.length) throw new Error(`成片质量检查未通过：${issues.join('；')}`);
+  };
+
   ipcMain.handle('video:list', () => listVideoProjects(db));
   ipcMain.handle('video:workflow:run', async (_event, id: number): Promise<VideoSkillRunResult> => {
     assertIdle(id, '运行工作流');
@@ -98,10 +123,27 @@ export function registerVideoIpc(ctx: AppContext): void {
             subtitlePath: result.subtitlePath ?? '',
             sourceSignature: current.options.skillInputSignature,
             completedAt: new Date().toISOString()
-          }
+          },
+          quality: null
         }
       });
-      return { ...result, outputPath: next.assets.video?.path ?? result.outputPath };
+      let checked = next;
+      const diagnostics = [...(result.diagnostics ?? [])];
+      try {
+        progress({ id, task: 'render', done: 1, total: 1, message: '正在检查成片画面与声音…' });
+        checked = await inspectVideoQuality(next);
+        const quality = checked.assets.quality;
+        if (quality) {
+          const warnings = quality.checks.filter(check => check.status === 'warn').length;
+          const errors = quality.checks.filter(check => check.status === 'error').length;
+          diagnostics.push(errors
+            ? `质量检查：${errors} 项必须处理，${warnings} 项警告`
+            : warnings ? `质量检查：通过，有 ${warnings} 项警告` : '质量检查：全部通过');
+        }
+      } catch (error) {
+        diagnostics.push(`质量检查未完成：${error instanceof Error ? error.message : String(error)}`);
+      }
+      return { ...result, diagnostics, outputPath: checked.assets.video?.path ?? result.outputPath };
     });
   });
   /** 按发布平台路由选题数据源：对应红狐接口优先，没有 key 或失败时改用平台化联网搜索。 */
@@ -167,7 +209,8 @@ export function registerVideoIpc(ctx: AppContext): void {
     const input = normalizeVideoIpCoverInput(raw);
     if (!input.title) throw new Error('封面标题不能为空');
     const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-ip-${Date.now()}.png`);
-    await renderHtmlPages([renderVideoIpCover(input, ipRenderKit(ctx.ipLibrary, project.options.ipId))], VIDEO_COVER_SIZE.width, VIDEO_COVER_SIZE.height, [target]);
+    const size = videoCoverSize(project.platform);
+    await renderHtmlPages([renderVideoIpCover(input, ipRenderKit(ctx.ipLibrary, project.options.ipId), size)], size.width, size.height, [target]);
     return update(id, { coverPath: target });
   }));
   ipcMain.handle('video:cover:generate', async (_event, id: number) => requests.run(id, async () => {
@@ -178,7 +221,7 @@ export function registerVideoIpc(ctx: AppContext): void {
       coverPath: await generateImageFile(
         target,
         videoCoverPrompt(project, project.options.coverImagePromptTemplate),
-        '1024x1792',
+        project.platform === 'bilibili' || project.platform === 'general' ? '1792x1024' : '1024x1792',
         undefined,
         ipReferenceImage(ctx.ipLibrary, project.options.ipId)
       )
@@ -323,11 +366,11 @@ export function registerVideoIpc(ctx: AppContext): void {
         : project.options.imageMode === 'ai' ? shotImage(project, shot)?.path ?? '' : '';
       const html = path.join(directory, `frame-${pad(position + 1)}.html`);
       fs.writeFileSync(html, buildFrameHtml({
-        template: project.options.template, title, keyText: shot.caption, subtitle: segment.subtitle,
+        frame, platform: project.platform, template: project.options.template, title, keyText: shot.caption, subtitle: segment.subtitle,
         imageUrl: imageFile && fs.existsSync(imageFile) ? pathToFileURL(imageFile).href : '',
         shotNumber: segment.shot + 1, shotCount: shots.length, footer: project.options.footer,
         role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip,
-        productMode, logoUrl, brandColors: project.options.brandColors, frame
+        productMode, logoUrl, brandColors: project.options.brandColors
       }), 'utf8');
       const stills = segment.stills.map((still, index) => ({ style: motionStyle(still.motion), target: path.join(directory, `frame-${pad(position + 1)}-${pad(index + 1)}.${extension}`) }));
       return { html, stills };
@@ -431,9 +474,22 @@ export function registerVideoIpc(ctx: AppContext): void {
       const output = path.join(root, `video-${stamp}.mp4`);
       fs.renameSync(temp, output);
       const previous = project.assets.video?.path;
-      const next = update(id, { assets: { ...project.assets, skill: null, video: { path: output, signature: renderSignature(project), seconds: timeline.total, renderedAt: new Date().toISOString() } } });
+      const next = update(id, {
+        assets: {
+          ...project.assets,
+          skill: null,
+          video: { path: output, signature: renderSignature(project), seconds: timeline.total, renderedAt: new Date().toISOString() },
+          quality: null
+        }
+      });
       if (previous && previous !== output) removeInside(root, previous);
-      return next;
+      progress({ id, task: 'render', done: stills, total: stills, message: '正在检查成片画面与声音…' });
+      try {
+        return await inspectVideoQuality(next);
+      } catch {
+        // 成片已经写入且项目已保存；自动验收失败不应把一次成功渲染报成失败，界面仍可手动重试。
+        return next;
+      }
     } finally {
       fs.rmSync(work, { recursive: true, force: true });
     }
@@ -449,11 +505,8 @@ export function registerVideoIpc(ctx: AppContext): void {
   ipcMain.handle('video:quality', async (_event, id: number) => {
     assertIdle(id, '检查成片');
     return requests.run(id, async () => {
-      const project = getVideoProject(db, id);
-      const video = project.assets.video;
-      if (!video || !fs.existsSync(video.path)) throw new Error('当前项目还没有可检查的成片');
-      const tools = await resolveFfmpeg();
-      return evaluateVideoQuality(project, await probeVideo(tools, video.path), video.path);
+      const checked = await inspectVideoQuality(getVideoProject(db, id));
+      return checked.assets.quality!;
     });
   });
   ipcMain.handle('video:open-video', async (_event, id: number) => {
@@ -464,25 +517,35 @@ export function registerVideoIpc(ctx: AppContext): void {
   /** 直接把当前有效成片另存为 .mp4；保存位置由用户确认。 */
   ipcMain.handle('video:save-mp4', async (_event, id: number) => {
     assertIdle(id, '导出 MP4');
-    const project = getVideoProject(db, id);
-    if (!project.assets.video || !fs.existsSync(project.assets.video.path)) throw new Error('还没有可导出的成片，请先渲染');
-    const result = await dialog.showSaveDialog(ctx.window()!, {
-      title: '导出 MP4 视频',
-      defaultPath: path.join(app.getPath('videos'), suggestedMp4Name(project)),
-      filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
-      properties: ['showOverwriteConfirmation', 'createDirectory']
+    return requests.run(id, async () => {
+      let project = getVideoProject(db, id);
+      if (!project.assets.video || !fs.existsSync(project.assets.video.path)) throw new Error('还没有可导出的成片，请先渲染');
+      project = await ensureVideoQuality(project);
+      assertQualityAllowsExport(project);
+      const result = await dialog.showSaveDialog(ctx.window()!, {
+        title: '导出 MP4 视频',
+        defaultPath: path.join(app.getPath('videos'), suggestedMp4Name(project)),
+        filters: [{ name: 'MP4 视频', extensions: ['mp4'] }],
+        properties: ['showOverwriteConfirmation', 'createDirectory']
+      });
+      if (result.canceled || !result.filePath) return null;
+      return copyRenderedVideoTo(project, result.filePath);
     });
-    if (result.canceled || !result.filePath) return null;
-    return copyRenderedVideoTo(project, result.filePath);
   });
 
   /** 导出制作包：写知识库属于本地动作，但会生成一堆文件，所以先过门槛再落盘。 */
-  ipcMain.handle('video:export', (_event, id: number) => {
+  ipcMain.handle('video:export', async (_event, id: number) => {
     assertIdle(id, '导出');
-    const project = getVideoProject(db, id);
-    assertVideoExportable(project);
-    const target = exportVideoPackage(ctx.settings.read().vaultPath, project);
-    return update(id, { exportPath: target, status: 'exported' });
+    return requests.run(id, async () => {
+      let project = getVideoProject(db, id);
+      assertVideoExportable(project);
+      if (project.assets.video && isRenderFresh(project)) {
+        project = await ensureVideoQuality(project);
+        assertQualityAllowsExport(project);
+      }
+      const target = exportVideoPackage(ctx.settings.read().vaultPath, project);
+      return update(id, { exportPath: target, status: 'exported' });
+    });
   });
   ipcMain.handle('video:open-package', async (_event, id: number) => {
     const project = getVideoProject(db, id);
