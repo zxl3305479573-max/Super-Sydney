@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AppState, WorkEvent } from '../shared';
 import WeWritePanel from './WeWritePanel';
-import VideoPanel from './VideoPanel';
+import VideoWorkbenchPanel from './VideoWorkbenchPanel';
 import EmbeddedSitePanel from './EmbeddedSitePanel';
 import HeroSmsPanel from './HeroSmsPanel';
 import XiaohongshuPanel from './XiaohongshuPanel';
@@ -26,7 +26,7 @@ const empty: AppState = {
 const NAV: Array<{ group: string; items: Array<{ view: View; label: string; icon: IconName }> }> = [
   { group: '工作记录', items: [{ view: 'today', label: '今日工作', icon: 'today' }, { view: 'review', label: '待确认', icon: 'inbox' }] },
   { group: '成长', items: [{ view: 'evolve', label: '自我进化', icon: 'spark' }, { view: 'links', label: '链接收藏', icon: 'link' }] },
-  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }] },
+  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频工作台', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }] },
   { group: '变现', items: [{ view: 'xianyu', label: '闲鱼', icon: 'tag' }, { view: 'site16688', label: '16688', icon: 'chart' }, { view: 'heroSms', label: '接码', icon: 'phone' }, { view: 'site', label: 'AI 代充', icon: 'card' }] }
 ];
 
@@ -145,7 +145,7 @@ export default function App() {
       case 'evolve': return <EvolutionPanel notify={notifyAny} />;
       case 'links': return <LinksPanel notify={notifyAny} />;
       case 'wewrite': return <WeWritePanel notify={notifyAny} overlay={hideWeb} />;
-      case 'video': return <VideoPanel notify={notifyAny} />;
+      case 'video': return <VideoWorkbenchPanel notify={notifyAny} />;
       case 'xiaohongshu': return <XiaohongshuPanel notify={notifyAny} overlay={hideWeb} />;
       case 'xianyu': return <EmbeddedSitePanel siteKey="xianyu" label="闲鱼" overlay={hideWeb} covered={covered}
         privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />;

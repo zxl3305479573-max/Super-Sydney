@@ -1,6 +1,7 @@
 import type { VideoRenderOptions, VideoShot, VideoShotRole, VideoTemplate } from '../shared.ts';
 import { SHOT_GAP_SECONDS, displayWidth, type VideoTimeline } from './video-pipeline.ts';
 import { contentHash } from './video-production.ts';
+import { chooseProductAccent } from './video-product-research.ts';
 
 /**
  * 成片合成的纯函数：画面帧的 HTML 模板、镜头内动效、帧计划与 ffmpeg 参数。
@@ -65,8 +66,11 @@ export type FramePlanOptions = {
   speech?: Array<{ start: number; end: number } | null>;
 };
 
-export function framePlanOptions(options: Pick<VideoRenderOptions, 'voiceMode' | 'imageMode'>): FramePlanOptions {
-  return { karaoke: options.voiceMode === 'tts', pushIn: options.imageMode === 'ai' };
+export function framePlanOptions(
+  options: Pick<VideoRenderOptions, 'voiceMode' | 'imageMode'> & Partial<Pick<VideoRenderOptions, 'workflow' | 'productScreenshots'>>
+): FramePlanOptions {
+  const hasProductScreenshots = options.workflow === 'product-demo' && Boolean(options.productScreenshots?.length);
+  return { karaoke: options.voiceMode === 'tts', pushIn: options.imageMode === 'ai' || hasProductScreenshots };
 }
 
 /** 动效参数 → <html> 的 style 属性；截图时逐帧改写它。 */
@@ -172,6 +176,12 @@ export type FrameInput = {
   lead: string;
   /** 页面载入时的动效参数；之后逐帧改写 <html> 的 style。 */
   motion: FrameMotion;
+  /** 产品片模式：官网截图完整展示，并允许叠加 Logo 和品牌强调色。 */
+  productMode?: boolean;
+  /** 品牌 Logo 的 file:// 地址。 */
+  logoUrl?: string;
+  /** 官网提取到的品牌色候选；不合法或对比度不合适时退回模板色。 */
+  brandColors?: string[];
   /**
    * IP 角色（在标题右侧，不压画面主体和字幕）；null 表示不带。不放头像和品牌名。
    * 图片是 file:// 地址，和配图一样由 loadFile 读取。
@@ -233,7 +243,9 @@ const IP_HERO_CSS = `.ip-hero{position:absolute;right:60px;top:84px;width:220px;
 
 export function buildFrameHtml(input: FrameInput): string {
   const color = PALETTES[input.template] ?? PALETTES.warm;
+  const accent = chooseProductAccent(input.brandColors ?? [], color.accent);
   const hero = input.ip?.heroUrl ?? '';
+  const logo = input.productMode ? input.logoUrl ?? '' : '';
   const title = escapeHtml(input.title.trim());
   const key = input.keyText.trim();
   const solid = SOLID_ROLES.has(input.role);
@@ -244,7 +256,7 @@ export function buildFrameHtml(input: FrameInput): string {
     return `<i${state ? ` class="${state}"` : ''}></i>`;
   }).join('');
   const visual = input.imageUrl
-    ? `<div class="visual"><img src="${escapeHtml(input.imageUrl)}" alt=""></div>${key ? `<div class="key">${escapeHtml(key)}</div>` : ''}`
+    ? `<div class="visual${input.productMode ? ' product' : ''}"><img src="${escapeHtml(input.imageUrl)}" alt=""></div>${key ? `<div class="key">${escapeHtml(key)}</div>` : ''}`
     : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(key || input.title)}px">${escapeHtml(key || input.title.trim())}</p></div>`;
   return `<!doctype html>
 <html lang="zh-CN" style="${motionStyle(input.motion)}"><head><meta charset="utf-8"><style>
@@ -253,24 +265,28 @@ html,body{width:${FRAME_WIDTH}px;height:${FRAME_HEIGHT}px;overflow:hidden;backgr
 .title{position:absolute;left:90px;right:90px;top:120px;height:180px;display:flex;align-items:flex-end;font-size:64px;line-height:1.35;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance}
 .progress{position:absolute;left:90px;right:90px;top:328px;height:10px;display:flex;gap:10px}
 .progress i{position:relative;flex:1;border-radius:5px;overflow:hidden;background:${color.track}}
-.progress i.on{background:${color.accent}}
-.progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${color.accent}}
+.progress i.on{background:${accent}}
+.progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${accent}}
 .visual{position:absolute;left:90px;top:380px;width:900px;height:700px;border-radius:28px;overflow:hidden;background:${color.panel}}
 .visual img{display:block;width:100%;height:100%;object-fit:cover;opacity:var(--enter);transform:scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
-.key{position:absolute;left:90px;right:90px;top:1100px;height:84px;font-size:64px;line-height:84px;font-weight:800;color:${color.accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:scale(calc(.92 + .08 * var(--key)))}
+.visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
+.visual.product img{object-fit:contain;background:#fff}
+.key{position:absolute;left:90px;right:90px;top:1100px;height:84px;font-size:64px;line-height:84px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:scale(calc(.92 + .08 * var(--key)))}
 .card{position:absolute;left:90px;top:380px;width:900px;height:800px;padding:72px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:36px}
 .card span{font-size:44px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:min(1,calc(var(--enter) * 1.6))}
-.card p{line-height:1.3;font-weight:800;text-align:center;color:${color.accent};overflow-wrap:anywhere;text-wrap:balance;opacity:min(1,calc(var(--enter) * 1.6));transform:scale(calc(.92 + .08 * var(--enter)))}
-.card.solid{background:${color.accent}}
+.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:min(1,calc(var(--enter) * 1.6));transform:scale(calc(.92 + .08 * var(--enter)))}
+.card.solid{background:${accent}}
 .card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
 .card.solid p{color:${color.panel}}
 .subtitle{position:absolute;left:70px;right:70px;top:1220px;height:200px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:66px;line-height:1.35;font-weight:800}
 .subtitle p{text-wrap:balance}
-.subtitle span{color:color-mix(in srgb,${color.accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
+.subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
 .footer{position:absolute;left:90px;right:90px;top:1470px;font-size:32px;letter-spacing:2px;text-align:center;color:${color.muted}}
 ${hero ? IP_HERO_CSS : ''}
+${logo ? `.brand-logo{position:absolute;right:90px;top:104px;width:180px;height:110px;object-fit:contain;object-position:right center}.title{right:310px}` : ''}
 </style></head><body>
 ${hero ? `<img class="ip-hero" src="${escapeHtml(hero)}" alt="">` : ''}
+${logo ? `<img class="brand-logo" src="${escapeHtml(logo)}" alt="">` : ''}
 <div class="title">${title}</div>
 <div class="progress">${progress}</div>
 ${visual}

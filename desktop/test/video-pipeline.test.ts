@@ -150,9 +150,26 @@ test('render is blocked until voiced, then goes stale when anything on screen or
   assert.ok(videoExportChecklist(rendered).find(item => item.label === '成片')?.ok);
   for (const changed of [
     { ...rendered, options: { ...rendered.options, template: 'night' as const } },
-    { ...rendered, options: { ...rendered.options, bgmPath: 'music.mp3' } },
+    { ...rendered, options: { ...rendered.options, bgmPath: 'music.mp3', bgmMode: 'custom' as const } },
+    { ...rendered, options: { ...rendered.options, bgmMode: 'auto' as const } },
     { ...rendered, storyboardJson: serializeVideoShots([{ ...shots[0], caption: '换了要点' }]) }
   ]) assert.equal(isRenderFresh(changed), false);
+  const autoOptions = { ...rendered.options, bgmMode: 'auto' as const, bgmVolume: 12 };
+  const autoRendered = {
+    ...rendered,
+    options: autoOptions,
+    assets: { ...rendered.assets, video: { ...rendered.assets.video!, signature: renderSignature({ ...rendered, options: autoOptions }) } }
+  };
+  assert.ok(isRenderFresh(autoRendered));
+  assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmVolume: 20 } }), false);
+  const productOptions = { ...rendered.options, workflow: 'product-demo' as const, productScreenshots: ['site.png'], productAssetSignature: 'capture-a' };
+  const productRendered = {
+    ...rendered,
+    options: productOptions,
+    assets: { ...rendered.assets, video: { ...rendered.assets.video!, signature: renderSignature({ ...rendered, options: productOptions }) } }
+  };
+  assert.ok(isRenderFresh(productRendered));
+  assert.equal(isRenderFresh({ ...productRendered, options: { ...productOptions, productAssetSignature: 'capture-b' } }), false);
   // 不影响画面和声音的字段（比如受众）改了，成片仍然有效。
   assert.ok(isRenderFresh({ ...rendered, audience: '换个受众' }));
   const stale = { ...rendered, options: { ...rendered.options, template: 'clean' as const } };

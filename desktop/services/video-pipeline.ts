@@ -1,4 +1,4 @@
-import type { VideoProject, VideoShot, VideoShotRole, VideoStage } from '../shared.ts';
+import { AUTO_BGM_TEMPLATE_VERSION, type VideoProject, type VideoShot, type VideoShotRole, type VideoStage } from '../shared.ts';
 import {
   VIDEO_SHOT_ROLES, contentHash, imageCoverage, isImageReady, isVoiceReady, normalizeRenderOptions, shotAudio, shotImage, voiceCoverage
 } from './video-production.ts';
@@ -256,12 +256,17 @@ export function narrationCoverage(script: string, shots: VideoShot[]): number {
 export function renderSignature(project: VideoProject): string {
   const shots = parseVideoShots(project.storyboardJson);
   const timeline = buildTimeline(shots, shotDurations(project, shots).seconds);
+  const bgm = project.options.bgmMode === 'auto'
+    ? ['auto', AUTO_BGM_TEMPLATE_VERSION, project.options.bgmVolume]
+    : project.options.bgmMode === 'custom' && project.options.bgmPath
+      ? ['custom', project.options.bgmPath, project.options.bgmVolume]
+      : null;
   return signatureOf({
     kind: 'render',
     frame: frameSignatureInput(project, shots),
     lines: timeline.lines,
     audio: project.options.voiceMode === 'tts' ? shots.map(shot => shotAudio(project, shot)?.key ?? '') : [],
-    bgm: project.options.bgmPath ? [project.options.bgmPath, project.options.bgmVolume] : null
+    bgm
   });
 }
 
@@ -272,14 +277,18 @@ export function previewSignature(project: VideoProject): string {
 }
 
 /** 画面模板的版本：改了模板排版就加一，旧成片和预览随之标成过期。 */
-export const FRAME_TEMPLATE_VERSION = 5;
+export const FRAME_TEMPLATE_VERSION = 6;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
-  const { template, imageMode, footer, ipId } = project.options;
+  const { workflow, template, imageMode, footer, ipId, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;
   return {
     version: FRAME_TEMPLATE_VERSION,
     title: project.title.trim() || project.topic.trim(),
-    template, imageMode, footer, ipId,
+    workflow, template, imageMode, footer, ipId,
+    logoPath: workflow === 'product-demo' ? logoPath : '',
+    productScreenshots: workflow === 'product-demo' ? productScreenshots : [],
+    brandColors: workflow === 'product-demo' ? brandColors : [],
+    productAssetSignature: workflow === 'product-demo' ? productAssetSignature : '',
     shots: shots.map(shot => [shot.caption, shot.role ?? '']),
     images: imageMode === 'ai' ? shots.map(shot => shotImage(project, shot)?.key ?? '') : []
   };

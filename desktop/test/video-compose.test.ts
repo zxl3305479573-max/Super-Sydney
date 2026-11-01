@@ -35,6 +35,21 @@ test('frame html shows either the AI image with a key-text band or a big text ca
   assert.match(buildFrameHtml({ ...frame, keyText: '' }), /<p style="font-size:\d+px">控糖早餐<\/p>/);
 });
 
+test('product frames show the captured website in contain mode with the brand logo and accent', () => {
+  const html = buildFrameHtml({
+    ...frame,
+    imageUrl: 'file:///C:/site.png',
+    productMode: true,
+    logoUrl: 'file:///C:/logo.png',
+    brandColors: ['#1463D8']
+  });
+  assert.match(html, /class="visual product"/);
+  assert.match(html, /object-fit:contain/);
+  assert.match(html, /class="brand-logo" src="file:\/\/\/C:\/logo.png"/);
+  assert.match(html, /#1463d8/);
+  assert.equal(framePlanOptions({ voiceMode: 'tts', imageMode: 'none', workflow: 'product-demo', productScreenshots: ['site.png'] }).pushIn, true);
+});
+
 test('big card text picks the largest size that avoids a one-character orphan line', () => {
   // 7 个字在 120px 下一行放不下，退到 104px 一行放完，而不是 6 + 1 折成两行。
   assert.equal(cardFontSize('记住三个半分钟'), 104);

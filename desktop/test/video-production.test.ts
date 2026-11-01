@@ -23,17 +23,39 @@ const shots = [
 ];
 
 test('render options merge patches and reject values the renderer cannot honour', () => {
-  const next = normalizeRenderOptions({ template: 'night', bgmVolume: 250, footer: '  @账号   名  ' });
+  assert.equal(VIDEO_RENDER_DEFAULTS.bgmMode, 'none');
+  assert.equal(VIDEO_RENDER_DEFAULTS.bgmVolume, 12);
+  const next = normalizeRenderOptions({ template: 'night', bgmMode: 'auto', bgmVolume: 250, footer: '  @账号   名  ' });
   assert.equal(next.template, 'night');
+  assert.equal(next.bgmMode, 'auto');
   assert.equal(next.bgmVolume, 100);
   assert.equal(next.footer, '@账号 名');
   assert.equal(next.voiceMode, 'tts');
   assert.throws(() => normalizeRenderOptions({ voiceMode: 'robot' }), /配音方式/);
   assert.throws(() => normalizeRenderOptions({ imageMode: 'video' }), /配图方式/);
   assert.throws(() => normalizeRenderOptions({ bgmPath: 3 }), /文本/);
+  assert.throws(() => normalizeRenderOptions({ bgmMode: 'library' }), /背景音乐来源/);
+  assert.throws(() => normalizeRenderOptions({ bgmVolume: 'loud' }), /音量/);
   assert.throws(() => normalizeRenderOptions({ shotImagePromptTemplate: 3 }), /逐镜配图/);
   assert.equal(normalizeRenderOptions({ shotImagePromptTemplate: '' }).shotImagePromptTemplate, VIDEO_RENDER_DEFAULTS.shotImagePromptTemplate);
   assert.equal(normalizeRenderOptions({ coverImagePromptTemplate: '封面 {title}' }).coverImagePromptTemplate, '封面 {title}');
+  const product = normalizeRenderOptions({
+    workflow: 'product-demo',
+    websiteUrl: 'example.com',
+    logoPath: ' C:\\Brand\\logo.png ',
+    productScreenshots: ['C:\\a.png', '', 7, 'C:\\b.png'],
+    productResearch: ' 官网事实 ',
+    brandColors: ['#1463D8', 'bad', '#ffffff'],
+    productAssetSignature: ' 2026-11-01T10:00:00Z:1200:123 '
+  });
+  assert.equal(product.websiteUrl, 'https://example.com/');
+  assert.equal(product.logoPath, 'C:\\Brand\\logo.png');
+  assert.deepEqual(product.productScreenshots, ['C:\\a.png', 'C:\\b.png']);
+  assert.equal(product.productResearch, '官网事实');
+  assert.deepEqual(product.brandColors, ['#1463d8', '#ffffff']);
+  assert.equal(product.productAssetSignature, '2026-11-01T10:00:00Z:1200:123');
+  assert.throws(() => normalizeRenderOptions({ websiteUrl: 'file:///secret' }), /HTTP/);
+  assert.throws(() => normalizeRenderOptions({ productScreenshots: 'one.png' }), /截图列表/);
   // 旧任务没有这一列、或者库里存坏了，都按默认值读出来。
   assert.deepEqual(parseRenderOptions(''), VIDEO_RENDER_DEFAULTS);
   assert.deepEqual(parseRenderOptions('{broken'), VIDEO_RENDER_DEFAULTS);

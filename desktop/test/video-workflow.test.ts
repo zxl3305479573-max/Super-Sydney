@@ -80,6 +80,29 @@ test('storyboard stage uses the per-video custom image prompt rule', async () =>
   assert.doesNotMatch(body, /主体 \+ 一个明确动作 \+ 环境 \+ 构图 \+ 光线 \+ 情绪/);
 });
 
+test('product workflow uses captured website facts and does not inherit health rules', async () => {
+  let body = '';
+  const product = project({
+    title: 'Acme 协作工具',
+    topic: '',
+    options: {
+      ...VIDEO_RENDER_DEFAULTS,
+      workflow: 'product-demo',
+      websiteUrl: 'https://acme.example/',
+      productResearch: '页面正文：团队可以在一个共享空间里整理项目、评论和进度。'
+    }
+  });
+  const result = await requestVideoStage(product, 'script', config, async (_url, init) => {
+    body = String(init?.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"script":"团队信息分散时，可以在一个共享空间里整理项目。"}' } }] }), { status: 200 });
+  });
+  assert.match(String(result.script), /共享空间/);
+  assert.match(body, /产品宣传片/);
+  assert.match(body, /页面正文/);
+  assert.match(body, /不编造客户案例/);
+  assert.doesNotMatch(body, /不诊断、不开药方/);
+});
+
 test('rejects before fetch when the API key is missing and surfaces HTTP errors', async () => {
   let called = false;
   await assert.rejects(() => requestVideoStage(project(), 'topics', { ...config, apiKey: '' }, async () => {

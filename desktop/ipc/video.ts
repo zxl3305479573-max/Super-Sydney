@@ -5,7 +5,7 @@ import { app, dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
 import type {
   VideoAssetBundle, VideoPlatform, VideoProgress, VideoProject, VideoRenderAssets, VideoStage, VideoTtsSettings, VideoTtsStatus,
-  VideoTopicSearchQuery, VideoTopicSearchResult
+  VideoTopicSearchQuery, VideoTopicSearchResult, VideoSkillRunResult
 } from '../shared';
 import { videoCoverPrompt } from '../services/video-image-prompts';
 import { imageThumbnail } from '../services/native-image';
@@ -29,6 +29,8 @@ import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
 import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export';
 import { searchVideoTopicHotspots } from '../services/video-topic-search';
+import { runVideoSkill } from '../services/video-skill-adapters';
+import { ensureAutoBgm } from '../services/video-bgm';
 import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
@@ -60,6 +62,18 @@ export function registerVideoIpc(ctx: AppContext): void {
   const progress = (payload: VideoProgress) => ctx.window()?.webContents.send('video:progress', payload);
 
   ipcMain.handle('video:list', () => listVideoProjects(db));
+  ipcMain.handle('video:workflow:run', async (_event, id: number): Promise<VideoSkillRunResult> => {
+    assertIdle(id, '运行工作流');
+    return requests.run(id, async () => {
+      const project = getVideoProject(db, id);
+      return runVideoSkill(
+        project,
+        ctx.dataDir,
+        message => progress({ id, task: 'render', done: 0, total: 1, message }),
+        patch => update(id, patch)
+      );
+    });
+  });
   /** 按发布平台路由选题数据源：对应红狐接口优先，没有 key 或失败时改用平台化联网搜索。 */
   ipcMain.handle('video:topics:search', async (_event, query: VideoTopicSearchQuery): Promise<VideoTopicSearchResult> =>
     searchVideoTopicHotspots(db, query, ctx.redfoxApiKey()));
@@ -225,6 +239,14 @@ export function registerVideoIpc(ctx: AppContext): void {
     }
     return project;
   }));
+  ipcMain.handle('video:logo:choose', async () => {
+    const result = await dialog.showOpenDialog(ctx.window()!, {
+      title: '选择产品 Logo',
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
 
   /**
    * 帧里的 IP 角色：用 IP 库里文件的 file:// 地址（帧页面走 loadFile，读得到本地文件）。不放头像和品牌名。
@@ -254,15 +276,25 @@ export function registerVideoIpc(ctx: AppContext): void {
     const title = project.title.trim() || project.topic.trim() || '健康科普';
     const pad = (value: number) => String(value).padStart(4, '0');
     const ip = frameIp(project.options.ipId);
+    const productMode = project.options.workflow === 'product-demo';
+    const productScreenshots = productMode ? project.options.productScreenshots.filter(file => fs.existsSync(file)) : [];
+    if (productMode && !productScreenshots.length) throw new Error('官网截图不存在，请先重新抓取官网素材');
+    if (productMode && (!project.options.logoPath || !fs.existsSync(project.options.logoPath))) throw new Error('Logo 文件不存在，请重新选择 Logo');
+    const logoUrl = productMode && project.options.logoPath && fs.existsSync(project.options.logoPath)
+      ? pathToFileURL(project.options.logoPath).href
+      : '';
     const jobs = segments.map((segment, position) => {
       const shot = shots[segment.shot];
-      const image = project.options.imageMode === 'ai' ? shotImage(project, shot) : null;
+      const imageFile = productScreenshots.length
+        ? productScreenshots[segment.shot % productScreenshots.length]
+        : project.options.imageMode === 'ai' ? shotImage(project, shot)?.path ?? '' : '';
       const html = path.join(directory, `frame-${pad(position + 1)}.html`);
       fs.writeFileSync(html, buildFrameHtml({
         template: project.options.template, title, keyText: shot.caption, subtitle: segment.subtitle,
-        imageUrl: image && fs.existsSync(image.path) ? pathToFileURL(image.path).href : '',
+        imageUrl: imageFile && fs.existsSync(imageFile) ? pathToFileURL(imageFile).href : '',
         shotNumber: segment.shot + 1, shotCount: shots.length, footer: project.options.footer,
-        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip
+        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip,
+        productMode, logoUrl, brandColors: project.options.brandColors
       }), 'utf8');
       const stills = segment.stills.map((still, index) => ({ style: motionStyle(still.motion), target: path.join(directory, `frame-${pad(position + 1)}-${pad(index + 1)}.${extension}`) }));
       return { html, stills };
@@ -310,7 +342,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const blockers = renderBlockers(project);
     if (blockers.length) throw new Error(`还不能渲染成片：${blockers.join('；')}`);
     const shots = parseVideoShots(project.storyboardJson);
-    const { voiceMode, imageMode, bgmPath, bgmVolume } = project.options;
+    const { voiceMode, imageMode, bgmPath, bgmMode, bgmVolume } = project.options;
     // 账本对得上但文件被删了也算没准备好：宁可报错，也不渲染出缺声音、缺画面的视频。
     if (voiceMode === 'tts' && shots.some(shot => shot.narration.trim() && !fs.existsSync(shotAudio(project, shot)?.path ?? ''))) {
       throw new Error('有镜头的配音文件找不到了，请在「配音与字幕」里重新生成');
@@ -318,7 +350,10 @@ export function registerVideoIpc(ctx: AppContext): void {
     if (imageMode === 'ai' && shots.some(shot => !fs.existsSync(shotImage(project, shot)?.path ?? ''))) {
       throw new Error('有镜头的配图文件找不到了，请在「画面」里重新生成');
     }
-    if (bgmPath && !fs.existsSync(bgmPath)) throw new Error('背景音乐文件不存在，请重新选择或清除');
+    if (bgmMode === 'custom' && bgmPath && !fs.existsSync(bgmPath)) throw new Error('背景音乐文件不存在，请重新选择或清除');
+    const resolvedBgmPath = bgmMode === 'auto'
+      ? ensureAutoBgm(ctx.dataDir)
+      : bgmMode === 'custom' ? bgmPath : '';
     const tools = await resolveFfmpeg();
     const { seconds } = shotDurations(project, shots);
     const timeline = buildTimeline(shots, seconds);
@@ -342,7 +377,7 @@ export function registerVideoIpc(ctx: AppContext): void {
       const temp = path.join(work, 'video.tmp.mp4');
       await runFfmpeg(tools, buildFfmpegArgs({
         narration: shots.map((shot, index) => ({ path: voiceMode === 'tts' ? shotAudio(project, shot)?.path ?? '' : '', seconds: seconds[index] })),
-        bgm: bgmPath ? { path: bgmPath, volume: bgmVolume / 100 } : null,
+        bgm: resolvedBgmPath ? { path: resolvedBgmPath, volume: bgmVolume / 100 } : null,
         total: timeline.total,
         output: temp
       }, listPath));
@@ -362,7 +397,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const result = await dialog.showOpenDialog(ctx.window()!, { properties: ['openFile'], filters: [{ name: '音频', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     const project = getVideoProject(db, id);
-    return update(id, { options: { ...project.options, bgmPath: result.filePaths[0] } });
+    return update(id, { options: { ...project.options, bgmPath: result.filePaths[0], bgmMode: 'custom' } });
   });
   ipcMain.handle('video:open-video', async (_event, id: number) => {
     const video = getVideoProject(db, id).assets.video;

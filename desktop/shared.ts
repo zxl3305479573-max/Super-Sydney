@@ -321,13 +321,34 @@ export type VideoShot = {
 export type VideoVoiceMode = 'tts' | 'silent';
 export type VideoTemplate = 'warm' | 'clean' | 'night';
 export type VideoImageMode = 'none' | 'ai';
+export type VideoBgmMode = 'none' | 'auto' | 'custom';
+export const AUTO_BGM_TEMPLATE_VERSION = 'v1';
+/** 视频工作台的生产路径。旧项目没有该字段时自动使用 script-to-video。 */
+export type VideoWorkflow = 'script-to-video' | 'footage-edit' | 'product-demo' | 'browser-demo' | 'localize';
 /** 用户可改的成片选项，走 video:update 保存。 */
 export type VideoRenderOptions = {
+  workflow: VideoWorkflow;
+  /** 外部 skill 的输入视频或配置文件路径。 */
+  sourcePath: string;
+  /** 产品宣传片的公开官网地址。 */
+  websiteUrl: string;
+  /** 用户提供的品牌 Logo 文件。 */
+  logoPath: string;
+  /** 官网抓取得到并复制到项目素材目录的页面截图。 */
+  productScreenshots: string[];
+  /** 从官网公开页面整理的脚本证据，限制长度后随项目保存。 */
+  productResearch: string;
+  /** 官网计算样式里提取到的品牌色候选。 */
+  brandColors: string[];
+  /** 官网截图与 Logo 的快照标识；重新抓取或换 Logo 后让旧成片过期。 */
+  productAssetSignature: string;
   voiceMode: VideoVoiceMode;
   template: VideoTemplate;
   imageMode: VideoImageMode;
   /** 背景音乐（本地文件）；空串表示不加。 */
   bgmPath: string;
+  /** 背景音乐来源：关闭、自动生成或用户选择的本地文件。 */
+  bgmMode: VideoBgmMode;
   /** 背景音乐音量，百分比 0–100。 */
   bgmVolume: number;
   /** 画面底部固定的一行：账号名或合规提示。 */
@@ -391,6 +412,7 @@ export type VideoTtsSettings = {
 export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
 export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
+export type VideoSkillRunResult = { workflow: VideoWorkflow; status: 'completed' | 'blocked'; message: string; outputPath?: string };
 
 /* ── 小红书模块 ──────────────────────────────────────────────────
  * 按「定位、选题、写作、视觉、复盘」五环节 + 总控拆分（见 docs/superpowers/specs/2026-10-13-xiaohongshu-module-design.md）。
@@ -911,6 +933,8 @@ export interface SydneyApi {
   generateVideoVoice(id: number, force?: boolean): Promise<VideoProject>;
   /** 逐镜 AI 配图：只补缺失或提示词改过的镜头。 */
   generateVideoImages(id: number, force?: boolean): Promise<VideoProject>;
+  /** 选择产品 Logo；用户取消时返回 null。 */
+  chooseProductLogo(): Promise<string | null>;
   /** 每镜渲染一帧预览，渲染成片前自查。 */
   renderVideoPreview(id: number): Promise<VideoProject>;
   renderVideo(id: number): Promise<VideoProject>;
@@ -925,6 +949,7 @@ export interface SydneyApi {
   deleteVideoTtsKey(): Promise<VideoTtsStatus>;
   /** 订阅配音 / 配图 / 渲染的进度；返回取消订阅函数。 */
   onVideoProgress(callback: (progress: VideoProgress) => void): () => void;
+  runVideoWorkflow(id: number): Promise<VideoSkillRunResult>;
   listXhsAccounts(): Promise<XhsAccount[]>;
   updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson' | 'ipId'>>): Promise<XhsAccount>;
   /** 新建一个小红书账号（名字不能重复）。 */

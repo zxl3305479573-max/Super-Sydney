@@ -1,5 +1,6 @@
-import type { VideoAudioAsset, VideoImageAsset, VideoProject, VideoRenderAssets, VideoRenderOptions, VideoShot, VideoShotRole, VideoTtsSettings } from '../shared.ts';
+import type { VideoAudioAsset, VideoImageAsset, VideoProject, VideoRenderAssets, VideoRenderOptions, VideoShot, VideoShotRole, VideoTtsSettings, VideoWorkflow } from '../shared.ts';
 import { buildVideoShotImagePrompt, VIDEO_IMAGE_PROMPT_DEFAULTS, VIDEO_SHOT_IMAGE_SIZE } from './video-image-prompts.ts';
+import { normalizeBrandColors, normalizeWebsiteUrl } from './video-product-research.ts';
 
 /**
  * 成片相关的纯函数：渲染选项、素材账本、内容哈希与新鲜度。
@@ -32,10 +33,19 @@ export function shotRoleLabel(role: string | undefined): string {
 export const DEFAULT_VIDEO_FOOTER = '健康科普 · 不替代医生诊疗';
 
 export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
+  workflow: 'script-to-video',
+  sourcePath: '',
+  websiteUrl: '',
+  logoPath: '',
+  productScreenshots: [],
+  productResearch: '',
+  brandColors: [],
+  productAssetSignature: '',
   voiceMode: 'tts',
   template: 'warm',
   imageMode: 'none',
   bgmPath: '',
+  bgmMode: 'none',
   bgmVolume: 12,
   footer: DEFAULT_VIDEO_FOOTER,
   ipId: '',
@@ -47,6 +57,41 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (!input || typeof input !== 'object') return { ...base };
   const value = input as Partial<Record<keyof VideoRenderOptions, unknown>>;
   const next = { ...base };
+  if (value.workflow !== undefined) {
+    const workflows: VideoWorkflow[] = ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize'];
+    if (!workflows.includes(value.workflow as VideoWorkflow)) throw new Error('未知的视频工作流');
+    next.workflow = value.workflow as VideoWorkflow;
+  }
+  if (value.sourcePath !== undefined) {
+    if (typeof value.sourcePath !== 'string') throw new Error('素材路径必须是文本');
+    next.sourcePath = value.sourcePath.trim().slice(0, 2000);
+  }
+  if (value.websiteUrl !== undefined) {
+    if (typeof value.websiteUrl !== 'string') throw new Error('官网地址必须是文本');
+    const websiteUrl = value.websiteUrl.trim();
+    next.websiteUrl = websiteUrl ? normalizeWebsiteUrl(websiteUrl) : '';
+  }
+  if (value.logoPath !== undefined) {
+    if (typeof value.logoPath !== 'string') throw new Error('Logo 路径必须是文本');
+    next.logoPath = value.logoPath.trim().slice(0, 2000);
+  }
+  if (value.productScreenshots !== undefined) {
+    if (!Array.isArray(value.productScreenshots)) throw new Error('官网截图列表格式不正确');
+    next.productScreenshots = value.productScreenshots
+      .filter((item): item is string => typeof item === 'string')
+      .map(item => item.trim().slice(0, 2000))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+  if (value.productResearch !== undefined) {
+    if (typeof value.productResearch !== 'string') throw new Error('官网研究资料必须是文本');
+    next.productResearch = value.productResearch.trim().slice(0, 12_000);
+  }
+  if (value.brandColors !== undefined) next.brandColors = normalizeBrandColors(value.brandColors);
+  if (value.productAssetSignature !== undefined) {
+    if (typeof value.productAssetSignature !== 'string') throw new Error('产品素材快照标识必须是文本');
+    next.productAssetSignature = value.productAssetSignature.trim().slice(0, 200);
+  }
   if (value.voiceMode !== undefined) {
     if (value.voiceMode !== 'tts' && value.voiceMode !== 'silent') throw new Error('未知的配音方式');
     next.voiceMode = value.voiceMode;
@@ -62,6 +107,10 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (value.bgmPath !== undefined) {
     if (typeof value.bgmPath !== 'string') throw new Error('背景音乐路径必须是文本');
     next.bgmPath = value.bgmPath.trim();
+  }
+  if (value.bgmMode !== undefined) {
+    if (value.bgmMode !== 'none' && value.bgmMode !== 'auto' && value.bgmMode !== 'custom') throw new Error('未知的背景音乐来源');
+    next.bgmMode = value.bgmMode;
   }
   if (value.bgmVolume !== undefined) {
     const volume = Math.round(Number(value.bgmVolume));
