@@ -131,7 +131,9 @@ export function registerVideoIpc(ctx: AppContext): void {
     const thumb = (file: string | undefined) => (file && fs.existsSync(file) ? imageThumbnail(file, 240) : '');
     const video = project.assets.video;
     return {
-      cover: project.coverPath ? { path: project.coverPath, caption: '封面', thumbnail: imageThumbnail(project.coverPath) } : null,
+      cover: project.coverPath && fs.existsSync(project.coverPath)
+        ? { path: project.coverPath, caption: '封面', thumbnail: imageThumbnail(project.coverPath) }
+        : null,
       shotImages: shots.map(shot => thumb(shotImage(project, shot)?.path)),
       preview: (project.assets.preview?.paths ?? []).map(thumb),
       videoPath: video && fs.existsSync(video.path) ? video.path : ''

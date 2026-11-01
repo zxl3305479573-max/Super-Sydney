@@ -1558,5 +1558,14 @@ select:disabled { cursor: not-allowed; }
 .flow-table-control:focus { border-color: var(--primary-line); box-shadow: 0 0 0 2px var(--primary-soft); }
 textarea.flow-table-control { min-height: 72px; }
 .video-shot-seconds { min-width: 68px; font-variant-numeric: tabular-nums; }
+.video-workbench-preview-grid { margin-top: 14px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.video-workbench-preview-grid figure { padding: 6px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.video-workbench-preview-grid img { aspect-ratio: auto; background: var(--surface-soft); }
+.video-cover-preview { display: grid; width: min(260px, 100%); gap: 7px; margin: 14px 0; }
+.video-cover-preview img { width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-soft); }
+.video-cover-preview figcaption { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.video-render-output { display: grid; gap: 5px; margin: 12px 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.video-render-output span { color: var(--muted); font-size: 11px; }
+.video-render-output code { overflow-wrap: anywhere; color: var(--ink); font: 12px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }
 @media (max-width: 1100px) { .video-workflow-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .video-workbench-stepper { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 720px) { .video-workflow-grid { grid-template-columns: 1fr 1fr; } .video-workbench-create-row { flex-wrap: wrap; } .video-workbench-create-row label { flex: 1 1 45%; } .video-workbench-stepper { grid-template-columns: repeat(2, minmax(0, 1fr)); } .video-audio-options { grid-template-columns: 1fr; } }
