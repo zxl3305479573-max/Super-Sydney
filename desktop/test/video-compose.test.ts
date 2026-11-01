@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ENTER_SECONDS, PUSH_IN, VIDEO_FPS, buildConcatList, buildFfmpegArgs, buildFrameHtml, buildFramePlan, cardFontSize, frameLead, framePlanOptions,
+  ENTER_SECONDS, PUSH_IN, VIDEO_FPS, buildConcatList, buildExternalBgmArgs, buildFfmpegArgs, buildFrameHtml, buildFramePlan, cardFontSize, frameLead, framePlanOptions,
   framePlanStills, karaokeTimes, motionAt, motionStyle, pushOrigin, seededRandom, settledMotion
 } from '../services/video-compose.ts';
 import { buildTimeline } from '../services/video-pipeline.ts';
@@ -215,4 +215,41 @@ test('without music the narration track goes straight to the output', () => {
   assert.match(graph, /\[nar\]anull\[aout\]/);
   assert.ok(!args.includes('-stream_loop'));
   assert.throws(() => buildFfmpegArgs({ narration: [], bgm: null, total: 0, output: 'o' }, 'l'), /没有可合成/);
+});
+
+test('external skill video keeps its picture stream while music is mixed and ducked', () => {
+  const args = buildExternalBgmArgs({
+    video: 'skill.mp4',
+    music: 'music.wav',
+    volumePercent: 12,
+    ducking: true,
+    fadeIn: 0.6,
+    fadeOut: 2,
+    total: 8,
+    output: 'final.mp4',
+    hasSourceAudio: true
+  });
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.equal(args[args.indexOf('-c:v') + 1], 'copy');
+  assert.match(graph, /\[0:a\][^;]*\[voice\]/);
+  assert.match(graph, /volume=0\.120[^;]*afade=t=in:st=0:d=0\.600,afade=t=out:st=6\.000:d=2\.000\[bg\]/);
+  assert.match(graph, /\[bg\]\[voiceside\]sidechaincompress=/);
+  assert.equal(args[args.indexOf('-t') + 1], '8.000');
+});
+
+test('external silent video receives music without requiring a source audio stream', () => {
+  const args = buildExternalBgmArgs({
+    video: 'screen.mp4',
+    music: 'music.wav',
+    volumePercent: 20,
+    ducking: true,
+    fadeIn: 0,
+    fadeOut: 0,
+    total: 3,
+    output: 'final.mp4',
+    hasSourceAudio: false
+  });
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.doesNotMatch(graph, /\[0:a\]|sidechain/);
+  assert.match(graph, /\[bg\]anull\[aout\]/);
 });

@@ -123,6 +123,45 @@ export async function probeDuration(tools: FfmpegTools, file: string): Promise<n
   return seconds;
 }
 
+export async function probeHasAudio(tools: FfmpegTools, file: string): Promise<boolean> {
+  const output = await run(tools.ffprobe, [
+    '-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', file
+  ], 30_000);
+  return output.trim().length > 0;
+}
+
+export type VideoProbe = {
+  seconds: number;
+  width: number;
+  height: number;
+  fps: string;
+  videoCodec: string;
+  hasAudio: boolean;
+};
+
+export async function probeVideo(tools: FfmpegTools, file: string): Promise<VideoProbe> {
+  const output = await run(tools.ffprobe, [
+    '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height,avg_frame_rate',
+    '-of', 'json', file
+  ], 30_000);
+  const parsed = JSON.parse(output) as {
+    format?: { duration?: string };
+    streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number; avg_frame_rate?: string }>;
+  };
+  const streams = parsed.streams ?? [];
+  const video = streams.find(stream => stream.codec_type === 'video');
+  const seconds = Number(parsed.format?.duration);
+  if (!video || !Number.isFinite(seconds) || seconds <= 0) throw new Error(`读不出视频规格：${path.basename(file)}`);
+  return {
+    seconds,
+    width: Number(video.width) || 0,
+    height: Number(video.height) || 0,
+    fps: String(video.avg_frame_rate ?? ''),
+    videoCodec: String(video.codec_name ?? ''),
+    hasAudio: streams.some(stream => stream.codec_type === 'audio')
+  };
+}
+
 /**
  * 配音里真正出声的区间（秒）：用 silencedetect 找开头和结尾的静音。系统语音句首、句尾各带一段静音，
  * 字幕逐字高亮按出声区间分配才跟得上声音。检测不出来（整段静音、ffmpeg 出错）时返回 null，交给上层按时长估计。

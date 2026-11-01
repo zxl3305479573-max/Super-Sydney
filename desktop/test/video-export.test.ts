@@ -7,6 +7,7 @@ import type { VideoProject } from '../shared.ts';
 import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export.ts';
 import { renderSignature, serializeVideoShots } from '../services/video-pipeline.ts';
 import { VIDEO_RENDER_DEFAULTS, audioKey, emptyRenderAssets } from '../services/video-production.ts';
+import { skillInputFingerprint } from '../services/video-skill-inputs.ts';
 
 function project(patch: Partial<VideoProject> = {}): VideoProject {
   return {
@@ -89,6 +90,58 @@ test('direct MP4 export copies only a fresh render and suggests a safe filename'
 
     const edited = { ...rendered, storyboardJson: serializeVideoShots([{ index: 1, seconds: 4, visual: 'v', narration: '改过。', caption: '' }]) };
     assert.throws(() => copyRenderedVideoTo(edited, path.join(root, 'stale.mp4')), /成片已过期/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('external skill exports include the final video, transcript and localized subtitles', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sydney-skill-export-'));
+  try {
+    const source = path.join(root, 'source.mp4');
+    const video = path.join(root, 'final.mp4');
+    const transcript = path.join(root, 'transcript.json');
+    const subtitle = path.join(root, 'translation.en.srt');
+    fs.writeFileSync(source, 'source-a');
+    fs.writeFileSync(video, 'final bytes');
+    fs.writeFileSync(transcript, '{"words":[]}');
+    fs.writeFileSync(subtitle, '1\n00:00:00,000 --> 00:00:01,000\nHello\n');
+    const signature = skillInputFingerprint(source);
+    const external = project({
+      options: {
+        ...VIDEO_RENDER_DEFAULTS,
+        workflow: 'localize',
+        sourcePath: source,
+        skillInputSignature: signature,
+        targetLanguage: 'English',
+        targetCode: 'en'
+      },
+      assets: {
+        ...emptyRenderAssets(),
+        video: { path: video, signature: '', seconds: 1, renderedAt: '' },
+        skill: {
+          workflow: 'localize',
+          outputPath: video,
+          rawOutputPath: '',
+          transcriptPath: transcript,
+          subtitlePath: subtitle,
+          sourceSignature: signature,
+          completedAt: ''
+        }
+      }
+    });
+    external.assets.video!.signature = renderSignature(external);
+    const target = exportVideoPackage(path.join(root, 'vault'), external);
+    assert.equal(fs.readFileSync(path.join(target, 'video.mp4'), 'utf8'), 'final bytes');
+    assert.equal(fs.readFileSync(path.join(target, 'transcript.json'), 'utf8'), '{"words":[]}');
+    assert.match(fs.readFileSync(path.join(target, 'captions.en.srt'), 'utf8'), /Hello/);
+    const markdown = fs.readFileSync(path.join(target, '制作包.md'), 'utf8');
+    assert.match(markdown, /localize/);
+    assert.match(markdown, /translation\.en\.srt/);
+
+    fs.writeFileSync(source, 'source-b');
+    assert.throws(() => exportVideoPackage(path.join(root, 'vault'), external), /已变化/);
+    assert.throws(() => copyRenderedVideoTo(external, path.join(root, 'copy.mp4')), /已变化/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

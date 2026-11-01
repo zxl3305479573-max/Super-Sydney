@@ -439,3 +439,56 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
   );
   return args;
 }
+
+export type ExternalBgmInput = {
+  video: string;
+  music: string;
+  volumePercent: number;
+  ducking: boolean;
+  fadeIn: number;
+  fadeOut: number;
+  total: number;
+  output: string;
+  hasSourceAudio: boolean;
+};
+
+/**
+ * 外部 Skill 已经完成画面和字幕后的 BGM 混音。
+ *
+ * 视频流直接 copy，只有音频重新编码；有原声时以它作为 sidechain 自动闪避，没有原声时直接铺 BGM。
+ */
+export function buildExternalBgmArgs(input: ExternalBgmInput): string[] {
+  const total = Math.max(0.01, input.total);
+  const duration = total.toFixed(3);
+  const volume = Math.max(0, Math.min(1, input.volumePercent / 100)).toFixed(3);
+  const fadeIn = Math.min(Math.max(0, input.fadeIn), total);
+  const fadeOut = Math.min(Math.max(0, input.fadeOut), total);
+  const fades = [
+    fadeIn > 0 ? `afade=t=in:st=0:d=${fadeIn.toFixed(3)}` : '',
+    fadeOut > 0 ? `afade=t=out:st=${Math.max(0, total - fadeOut).toFixed(3)}:d=${fadeOut.toFixed(3)}` : ''
+  ].filter(Boolean).join(',');
+  const graph = [
+    `[1:a]aresample=44100,${AUDIO_FORMAT},volume=${volume},atrim=end=${duration}${fades ? `,${fades}` : ''}[bg]`
+  ];
+  if (input.hasSourceAudio) {
+    graph.unshift(`[0:a]aresample=44100,${AUDIO_FORMAT}[voice]`);
+    if (input.ducking) {
+      graph.push('[voice]asplit=2[voicemix][voiceside]');
+      graph.push('[bg][voiceside]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=320:makeup=1[bgducked]');
+      graph.push('[voicemix][bgducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+    } else {
+      graph.push('[voice][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+    }
+  } else {
+    graph.push('[bg]anull[aout]');
+  }
+  return [
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', input.video,
+    '-stream_loop', '-1', '-i', input.music,
+    '-filter_complex', graph.join(';'),
+    '-map', '0:v:0', '-map', '[aout]',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-ar', '44100',
+    '-movflags', '+faststart', '-t', duration, input.output
+  ];
+}

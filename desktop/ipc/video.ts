@@ -68,12 +68,38 @@ export function registerVideoIpc(ctx: AppContext): void {
     assertIdle(id, '运行工作流');
     return requests.run(id, async () => {
       const project = getVideoProject(db, id);
-      return runVideoSkill(
+      const result = await runVideoSkill(
         project,
         ctx.dataDir,
         message => progress({ id, task: 'render', done: 0, total: 1, message }),
         patch => update(id, patch)
       );
+      if (result.status !== 'completed' || !result.videoPath || !fs.existsSync(result.videoPath)) return result;
+      const current = getVideoProject(db, id);
+      const seconds = Math.max(0.01, Number(result.seconds) || 0.01);
+      const next = update(id, {
+        status: 'storyboard',
+        exportPath: '',
+        assets: {
+          ...current.assets,
+          video: {
+            path: result.videoPath,
+            signature: renderSignature(current),
+            seconds,
+            renderedAt: new Date().toISOString()
+          },
+          skill: {
+            workflow: result.workflow,
+            outputPath: result.videoPath,
+            rawOutputPath: result.rawOutputPath ?? '',
+            transcriptPath: result.transcriptPath ?? '',
+            subtitlePath: result.subtitlePath ?? '',
+            sourceSignature: current.options.skillInputSignature,
+            completedAt: new Date().toISOString()
+          }
+        }
+      });
+      return { ...result, outputPath: next.assets.video?.path ?? result.outputPath };
     });
   });
   /** 按发布平台路由选题数据源：对应红狐接口优先，没有 key 或失败时改用平台化联网搜索。 */
@@ -398,7 +424,7 @@ export function registerVideoIpc(ctx: AppContext): void {
       const output = path.join(root, `video-${stamp}.mp4`);
       fs.renameSync(temp, output);
       const previous = project.assets.video?.path;
-      const next = update(id, { assets: { ...project.assets, video: { path: output, signature: renderSignature(project), seconds: timeline.total, renderedAt: new Date().toISOString() } } });
+      const next = update(id, { assets: { ...project.assets, skill: null, video: { path: output, signature: renderSignature(project), seconds: timeline.total, renderedAt: new Date().toISOString() } } });
       if (previous && previous !== output) removeInside(root, previous);
       return next;
     } finally {

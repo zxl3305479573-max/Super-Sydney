@@ -39,6 +39,10 @@ export const DEFAULT_VIDEO_FOOTER = '健康科普 · 不替代医生诊疗';
 export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   workflow: 'script-to-video',
   sourcePath: '',
+  skillInputSignature: '',
+  sourceLanguage: 'auto',
+  targetLanguage: '简体中文',
+  targetCode: 'zh',
   websiteUrl: '',
   logoPath: '',
   productScreenshots: [],
@@ -73,6 +77,22 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (value.sourcePath !== undefined) {
     if (typeof value.sourcePath !== 'string') throw new Error('素材路径必须是文本');
     next.sourcePath = value.sourcePath.trim().slice(0, 2000);
+  }
+  if (value.skillInputSignature !== undefined) {
+    if (typeof value.skillInputSignature !== 'string') throw new Error('Skill 输入快照标识必须是文本');
+    next.skillInputSignature = value.skillInputSignature.trim().slice(0, 200);
+  }
+  if (value.sourceLanguage !== undefined) {
+    if (typeof value.sourceLanguage !== 'string') throw new Error('源语言必须是文本');
+    next.sourceLanguage = value.sourceLanguage.trim().slice(0, 40) || 'auto';
+  }
+  if (value.targetLanguage !== undefined) {
+    if (typeof value.targetLanguage !== 'string') throw new Error('目标语言必须是文本');
+    next.targetLanguage = value.targetLanguage.trim().slice(0, 80) || '简体中文';
+  }
+  if (value.targetCode !== undefined) {
+    if (typeof value.targetCode !== 'string') throw new Error('目标语言代码必须是文本');
+    next.targetCode = value.targetCode.trim().toLowerCase().slice(0, 20) || 'zh';
   }
   if (value.websiteUrl !== undefined) {
     if (typeof value.websiteUrl !== 'string') throw new Error('官网地址必须是文本');
@@ -176,7 +196,7 @@ export function parseRenderOptions(json: string): VideoRenderOptions {
 }
 
 export function emptyRenderAssets(): VideoRenderAssets {
-  return { voiceProfile: '', audio: [], images: [], preview: null, video: null };
+  return { voiceProfile: '', audio: [], images: [], preview: null, video: null, skill: null };
 }
 
 /** 账本由主进程写，但库文件可能被手改或来自旧版本：逐项校验，坏的条目直接丢掉。 */
@@ -197,6 +217,7 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
   const images: VideoImageAsset[] = list(raw.images).flatMap(item => text(item.key) && text(item.path) ? [{ key: text(item.key), path: text(item.path) }] : []);
   const preview = raw.preview && typeof raw.preview === 'object' ? raw.preview as Record<string, unknown> : null;
   const video = raw.video && typeof raw.video === 'object' ? raw.video as Record<string, unknown> : null;
+  const skill = raw.skill && typeof raw.skill === 'object' ? raw.skill as Record<string, unknown> : null;
   const videoSeconds = Number(video?.seconds);
   return {
     voiceProfile: text(raw.voiceProfile),
@@ -207,6 +228,18 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
       : null,
     video: video && text(video.path) && text(video.signature) && Number.isFinite(videoSeconds)
       ? { path: text(video.path), signature: text(video.signature), seconds: videoSeconds, renderedAt: text(video.renderedAt) }
+      : null,
+    skill: skill && ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize'].includes(text(skill.workflow))
+      && text(skill.outputPath)
+      ? {
+          workflow: text(skill.workflow) as VideoWorkflow,
+          outputPath: text(skill.outputPath),
+          rawOutputPath: text(skill.rawOutputPath),
+          transcriptPath: text(skill.transcriptPath),
+          subtitlePath: text(skill.subtitlePath),
+          sourceSignature: text(skill.sourceSignature),
+          completedAt: text(skill.completedAt)
+        }
       : null
   };
 }

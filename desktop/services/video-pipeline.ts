@@ -274,7 +274,16 @@ export function renderSignature(project: VideoProject): string {
     frame: frameSignatureInput(project, shots),
     lines: timeline.lines,
     audio: project.options.voiceMode === 'tts' ? shots.map(shot => shotAudio(project, shot)?.key ?? '') : [],
-    bgm
+    bgm,
+    // 外部 Skill 的成片直接依赖原始视频或浏览器配置；重新运行后会写入新快照。
+    skillInput: project.options.workflow === 'script-to-video' || project.options.workflow === 'product-demo'
+      ? ''
+      : {
+          signature: project.options.skillInputSignature,
+          sourceLanguage: project.options.workflow === 'localize' ? project.options.sourceLanguage : '',
+          targetLanguage: project.options.workflow === 'localize' ? project.options.targetLanguage : '',
+          targetCode: project.options.workflow === 'localize' ? project.options.targetCode : ''
+        }
   });
 }
 

@@ -339,6 +339,14 @@ export type VideoRenderOptions = {
   workflow: VideoWorkflow;
   /** 外部 skill 的输入视频或配置文件路径。 */
   sourcePath: string;
+  /** 外部 skill 输入快照；素材或浏览器配置引用的截图变化后，旧成片会过期。 */
+  skillInputSignature: string;
+  /** 字幕本地化的源语言；auto 表示交给 ASR 自动识别。 */
+  sourceLanguage: string;
+  /** 字幕本地化的目标语言名称。 */
+  targetLanguage: string;
+  /** 目标语言的短代码，用于字幕轨语言标记和输出文件名。 */
+  targetCode: string;
   /** 产品宣传片的公开官网地址。 */
   websiteUrl: string;
   /** 用户提供的品牌 Logo 文件。 */
@@ -399,6 +407,16 @@ export function resolveVideoBgmStyle(
 export type VideoAudioAsset = { key: string; path: string; seconds: number };
 export type VideoImageAsset = { key: string; path: string };
 export type VideoRenderedFile = { path: string; signature: string; seconds: number; renderedAt: string };
+/** 外部 Skill 产物：最终成片之外的转录和字幕文件也要随制作包交付。 */
+export type VideoSkillAsset = {
+  workflow: VideoWorkflow;
+  outputPath: string;
+  rawOutputPath: string;
+  transcriptPath: string;
+  subtitlePath: string;
+  sourceSignature: string;
+  completedAt: string;
+};
 /** 素材账本：只由主进程写。配音、配图按内容哈希登记，改一镜只重做一镜。 */
 export type VideoRenderAssets = {
   /** 上次生成配音时快照的声音参数；配音的键由它和口播文本算出。 */
@@ -408,6 +426,8 @@ export type VideoRenderAssets = {
   /** 每镜一帧的预览图，渲染成片前自查用。 */
   preview: { signature: string; paths: string[] } | null;
   video: VideoRenderedFile | null;
+  /** 最近一次外部 Skill 工作流产物；应用内脚本成片为空。 */
+  skill: VideoSkillAsset | null;
 };
 export type VideoProject = {
   id: number;
@@ -446,7 +466,21 @@ export type VideoTtsSettings = {
 export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
 export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
-export type VideoSkillRunResult = { workflow: VideoWorkflow; status: 'completed' | 'blocked'; message: string; outputPath?: string };
+export type VideoSkillRunResult = {
+  workflow: VideoWorkflow;
+  status: 'completed' | 'blocked';
+  message: string;
+  /** 工作流产物目录；兼容原界面中的“输出路径”。 */
+  outputPath?: string;
+  /** 已经可供统一预览、另存和制作包使用的外部成片。 */
+  videoPath?: string;
+  /** 完成平台适配、字幕处理但尚未混入 BGM 的中间成片。 */
+  rawOutputPath?: string;
+  transcriptPath?: string;
+  subtitlePath?: string;
+  seconds?: number;
+  diagnostics?: string[];
+};
 
 /* ── 小红书模块 ──────────────────────────────────────────────────
  * 按「定位、选题、写作、视觉、复盘」五环节 + 总控拆分（见 docs/superpowers/specs/2026-10-13-xiaohongshu-module-design.md）。

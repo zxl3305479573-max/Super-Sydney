@@ -166,6 +166,23 @@ test('render is blocked until voiced, then goes stale when anything on screen or
   assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmDucking: false } }), false);
   assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmFadeIn: 1.2 } }), false);
   assert.equal(isRenderFresh({ ...autoRendered, options: { ...autoOptions, bgmFadeOut: 1 } }), false);
+  const localizeOptions = {
+    ...rendered.options,
+    workflow: 'localize' as const,
+    sourcePath: 'source.mp4',
+    skillInputSignature: 'source-a',
+    sourceLanguage: 'en',
+    targetLanguage: '简体中文',
+    targetCode: 'zh'
+  };
+  const localized = {
+    ...rendered,
+    options: localizeOptions,
+    assets: { ...rendered.assets, video: { ...rendered.assets.video!, signature: renderSignature({ ...rendered, options: localizeOptions }) } }
+  };
+  assert.ok(isRenderFresh(localized));
+  assert.equal(isRenderFresh({ ...localized, options: { ...localizeOptions, targetLanguage: '日本語', targetCode: 'ja' } }), false);
+  assert.equal(isRenderFresh({ ...localized, options: { ...localizeOptions, skillInputSignature: 'source-b' } }), false);
   const productOptions = { ...rendered.options, workflow: 'product-demo' as const, productScreenshots: ['site.png'], productAssetSignature: 'capture-a' };
   const productRendered = {
     ...rendered,

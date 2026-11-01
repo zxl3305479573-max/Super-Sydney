@@ -3,7 +3,7 @@ import {
   VIDEO_BGM_STYLES, resolveVideoBgmStyle,
   type VideoBgmMode, type VideoBgmStyle, type VideoPlatform, type VideoProject, type VideoStage, type VideoWorkflow
 } from '../shared';
-import { parseVideoShots } from '../services/video-pipeline';
+import { isRenderFresh, parseVideoShots } from '../services/video-pipeline';
 import { readableError } from './ui';
 
 type WorkStep = 'brief' | 'script' | 'storyboard' | 'voice' | 'visuals' | 'render' | 'deliver';
@@ -14,7 +14,7 @@ const WORKFLOWS: WorkflowCard[] = [
   { value: 'footage-edit', label: '已有素材剪辑', description: '把已有视频整理成节奏清晰的短片。', engine: 'video-use + FFmpeg', detail: '适合访谈、课程、Vlog 和 Podcast。' },
   { value: 'product-demo', label: '产品宣传片', description: '只给官网和 Logo，自动抓取公开素材并生成产品视频。', engine: 'Website Capture + TTS + FFmpeg', detail: '适合 SaaS、AI 工具和独立开发者。' },
   { value: 'browser-demo', label: '网页操作演示', description: '录制点击、滚动、缩放和产品流程。', engine: 'Browser Recording + FFmpeg', detail: '适合教程、产品 Walkthrough 和发布页。' },
-  { value: 'localize', label: '字幕与多语言', description: '转录、翻译、配音并导出多语言版本。', engine: 'Subtitle Translator + TTS', detail: '适合出海内容和多语言账号。' }
+  { value: 'localize', label: '字幕与多语言', description: '转录、翻译、压制字幕并导出多语言版本。', engine: 'Fusion ASR + Subtitle Translator', detail: '适合出海内容和多语言账号。' }
 ];
 
 const STEPS: Array<{ value: WorkStep; label: string; hint: string }> = [
@@ -42,6 +42,9 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   const [busy, setBusy] = useState('');
   const [draft, setDraft] = useState<Partial<VideoProject>>({});
   const [sourcePath, setSourcePath] = useState('');
+  const [sourceLanguage, setSourceLanguage] = useState('auto');
+  const [targetLanguage, setTargetLanguage] = useState('简体中文');
+  const [targetCode, setTargetCode] = useState('zh');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [logoPath, setLogoPath] = useState('');
   const [bgmMode, setBgmMode] = useState<VideoBgmMode>('none');
@@ -70,6 +73,9 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     if (!selected) return;
     setWorkflow(selected.options.workflow ?? 'script-to-video');
     setSourcePath(selected.options.sourcePath ?? '');
+    setSourceLanguage(selected.options.sourceLanguage ?? 'auto');
+    setTargetLanguage(selected.options.targetLanguage ?? '简体中文');
+    setTargetCode(selected.options.targetCode ?? 'zh');
     setWebsiteUrl(selected.options.websiteUrl ?? '');
     setLogoPath(selected.options.logoPath ?? '');
     setPlatform(selected.platform);
@@ -95,6 +101,10 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   };
   const videoOptions = (project: VideoProject) => ({
     ...project.options, workflow, sourcePath, websiteUrl, logoPath,
+    sourceLanguage, targetLanguage, targetCode,
+    skillInputSignature: sourcePath === project.options.sourcePath && workflow === project.options.workflow
+      ? project.options.skillInputSignature
+      : '',
     bgmMode, bgmVolume, bgmStyle, bgmDucking, bgmFadeIn, bgmFadeOut
   });
   const create = () => void run('create', async () => {
@@ -168,13 +178,21 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
       replace(current);
       current = await window.sydney.renderVideo(current.id);
       replace(current);
-      setStep('render'); notify('产品宣传片已根据官网和 Logo 自动生成'); return current;
+      current = await window.sydney.exportVideoProject(current.id);
+      replace(current);
+      setStep('deliver'); notify('产品宣传片已生成并导出制作包'); return current;
     }
     if (workflow !== 'script-to-video') {
       const result = await window.sydney.runVideoWorkflow(selected.id);
-      notify(result.message);
       if (result.status === 'blocked') throw new Error(result.message);
-      return selected;
+      const refreshed = (await window.sydney.listVideoProjects()).find(project => project.id === selected.id);
+      if (!refreshed) throw new Error('工作流完成后找不到当前项目');
+      replace(refreshed);
+      const exported = await window.sydney.exportVideoProject(refreshed.id);
+      replace(exported);
+      setStep('deliver');
+      notify([result.message, ...(result.diagnostics ?? []), '制作包已自动导出'].join(' '));
+      return exported;
     }
     let current = await window.sydney.generateVideoStage(selected.id, 'script');
     replace(current);
@@ -188,7 +206,9 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     replace(current);
     current = await window.sydney.renderVideo(current.id);
     replace(current);
-    setStep('render'); notify('脚本成片工作流已完成'); return current;
+    current = await window.sydney.exportVideoProject(current.id);
+    replace(current);
+    setStep('deliver'); notify('脚本成片工作流已完成并导出制作包'); return current;
   });
 
   return <section className="native-content video-panel video-workbench-panel">
@@ -231,7 +251,14 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
               <label className="native-field-wide"><span>产品官网 URL</span><input value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} placeholder="https://example.com" /></label>
               <label className="native-field-wide"><span>品牌 Logo</span><input value={logoPath} onChange={event => setLogoPath(event.target.value)} placeholder="选择 PNG、JPG、WebP 或 SVG" /></label>
               <div className="video-logo-picker"><button type="button" className="button button-secondary" disabled={Boolean(busy)} onClick={chooseLogo}>{busy === 'logo' ? '选择中…' : '选择 Logo 文件'}</button><span>{logoPath ? logoPath : 'Logo 会在每镜右上角展示'}</span></div>
-            </> : <label className="native-field-wide"><span>Skill 输入路径（视频文件、浏览器配置或字幕/音频文件）</span><input value={sourcePath} onChange={event => setSourcePath(event.target.value)} placeholder="例如：D:\\Videos\\raw.mp4 或 browser-demo.json" /></label>}
+            </> : <>
+              <label className="native-field-wide"><span>Skill 输入路径（视频文件、浏览器配置或字幕/音频文件）</span><input value={sourcePath} onChange={event => setSourcePath(event.target.value)} placeholder="例如：D:\\Videos\\raw.mp4 或 browser-demo.json" /></label>
+              {workflow === 'localize' && <>
+                <label><span>源语言</span><input value={sourceLanguage} onChange={event => setSourceLanguage(event.target.value)} placeholder="auto 或 zh、en、ja" /></label>
+                <label><span>目标语言</span><input value={targetLanguage} onChange={event => setTargetLanguage(event.target.value)} placeholder="简体中文" /></label>
+                <label><span>目标语言代码</span><input value={targetCode} onChange={event => setTargetCode(event.target.value)} placeholder="zh" /></label>
+              </>}
+            </>}
           </div>
           {workflow === 'product-demo' && <div className="workbench-status-grid">
             <div><strong>{selected.options.productScreenshots.length}</strong><span>已保存官网截图</span></div>
@@ -255,8 +282,8 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
           <div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => production('voice', () => window.sydney.generateVideoVoice(selected.id, false))}>{busy === 'voice' ? '处理中…' : '生成 / 补齐配音'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>{busy === 'save' ? '保存中…' : '保存声音设置'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => setStep('visuals')}>进入画面 →</button></div>
         </section>}
         {step === 'visuals' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>画面素材</h3><p>{workflow === 'product-demo' ? '官网截图会按镜头循环使用，Logo 和品牌色叠加到统一画面模板。' : '选择模板、生成逐镜配图，并先生成关键帧预览。'}</p></div></header><div className="workbench-status-grid"><div><strong>{workflow === 'product-demo' ? selected.options.productScreenshots.length : `${selected.assets.images.length}/${shots.length}`}</strong><span>{workflow === 'product-demo' ? '官网截图' : '配图覆盖'}</span></div><div><strong>{selected.assets.preview ? '可查看' : '未生成'}</strong><span>关键帧预览</span></div><div><strong>{workflow === 'product-demo' ? selected.options.brandColors.length : selected.options.template}</strong><span>{workflow === 'product-demo' ? '品牌色候选' : '当前模板'}</span></div></div><div className="flow-inline-actions">{workflow === 'product-demo' ? <button className="button button-primary" disabled={Boolean(busy)} onClick={captureProductAssets}>{busy === 'capture' ? '抓取中…' : '重新抓取官网素材'}</button> : <button className="button button-primary" disabled={Boolean(busy)} onClick={() => production('images', () => window.sydney.generateVideoImages(selected.id, false))}>{busy === 'images' ? '生成中…' : '生成缺失配图'}</button>}<button className="button button-secondary" disabled={Boolean(busy) || !shots.length} onClick={() => production('preview', () => window.sydney.renderVideoPreview(selected.id))}>{busy === 'preview' ? '预览中…' : '生成关键帧预览'}</button></div></section>}
-        {step === 'render' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>成片与质量检查</h3><p>渲染前检查音频、字幕、画面和输出规格，生成 MP4 后再交付。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.video ? '已有' : '未生成'}</strong><span>成片</span></div><div><strong>1080×1920</strong><span>默认竖屏</span></div><div><strong>FFmpeg</strong><span>本地渲染</span></div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={renderAction}>{busy === 'render' ? '渲染中…' : '渲染成片'}</button>{selected.assets.video && <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('open-video', () => window.sydney.openVideoFile(selected.id).then(() => selected))}>打开成片</button>}</div></section>}
-        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4 或制作包；工作台不会自动上传到抖音等平台。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? '✓' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button>{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div></section>}
+        {step === 'render' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>成片与质量检查</h3><p>生成 MP4 后校验时长、画面和音频；外部 Skill 路径会保留原始素材快照。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.video ? isRenderFresh(selected) ? '有效' : '已过期' : '未生成'}</strong><span>成片</span></div><div><strong>{selected.assets.video ? `${Math.round(selected.assets.video.seconds)} 秒` : workflow === 'browser-demo' ? '4:3 → 平台规格' : '按平台'}</strong><span>输出规格</span></div><div><strong>FFmpeg</strong><span>本地校验</span></div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={workflow === 'script-to-video' || workflow === 'product-demo' ? renderAction : runSkillWorkflow}>{busy === 'render' || busy === 'workflow' ? '处理中…' : workflow === 'script-to-video' || workflow === 'product-demo' ? '渲染成片' : '运行 Skill 成片'}</button>{selected.assets.video && <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('open-video', () => window.sydney.openVideoFile(selected.id).then(() => selected))}>打开成片</button>}</div></section>}
+        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4 或制作包；工作台不会自动上传到抖音等平台。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video && isRenderFresh(selected) ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? isRenderFresh(selected) ? '✓' : '已过期' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected)} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button>{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div></section>}
       </> : <div className="native-empty native-editor-empty"><strong>创建第一个视频工作台项目</strong><span>选择生产路径，输入主题或素材说明，然后开始。</span></div>}</main>
     </div>
   </section>;

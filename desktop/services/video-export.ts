@@ -5,6 +5,7 @@ import type { VideoProject, VideoShot } from '../shared.ts';
 import { buildSrt, buildTimeline, formatDuration, isRenderFresh, parseVideoShots, shotDurations, videoPlatformLabel } from './video-pipeline.ts';
 import { shotRoleLabel } from './video-production.ts';
 import { DEFAULT_AIGC_FOOTER } from './article-html.ts';
+import { assertStableSkillInput } from './video-skill-inputs.ts';
 
 /**
  * 制作包导出：把一条视频任务落成剪辑和发布时真正要用的文件。
@@ -65,6 +66,9 @@ exported_at: ${JSON.stringify(new Date().toISOString())}
 - 分镜时长：${formatDuration(total)}（${shots.length} 个镜头，${voiced ? '按真实配音' : '估算'}）
 - 成片：${withVideo ? 'video.mp4' : '未包含（没有渲染或已过期）'}
 - 封面：${project.coverPath ? path.basename(project.coverPath) : '未设置'}
+- Skill 工作流：${project.assets.skill?.workflow || '应用内脚本成片'}
+- 源转录：${project.assets.skill?.transcriptPath ? path.basename(project.assets.skill.transcriptPath) : '无'}
+- 本地化字幕：${project.assets.skill?.subtitlePath ? path.basename(project.assets.skill.subtitlePath) : '无'}
 
 ## 口播脚本
 
@@ -109,6 +113,7 @@ export function suggestedMp4Name(project: VideoProject, now: Date = new Date()):
 export function copyRenderedVideoTo(project: VideoProject, destination: string): string {
   const video = project.assets.video;
   if (!video || !isRenderFresh(project)) throw new Error('当前成片已过期或还没有渲染，请先重新渲染成片');
+  assertStableSkillInput(project);
   if (!fs.existsSync(video.path)) throw new Error('成片文件不存在，请重新渲染');
   const target = destination.toLowerCase().endsWith('.mp4') ? destination : `${destination}.mp4`;
   if (path.resolve(target).toLowerCase() !== path.resolve(video.path).toLowerCase()) {
@@ -125,6 +130,7 @@ export function exportVideoPackage(vault: string, project: VideoProject): string
   const shots = parseVideoShots(project.storyboardJson);
   if (!project.script.trim()) throw new Error('请先生成或填写口播脚本，再导出制作包');
   if (!shots.length) throw new Error('请先生成分镜，再导出制作包');
+  assertStableSkillInput(project);
   const title = project.title.trim() || project.topic.trim() || '未命名视频';
   const safeTitle = title.replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50) || '未命名视频';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -139,6 +145,16 @@ export function exportVideoPackage(vault: string, project: VideoProject): string
     const video = project.assets.video;
     const withVideo = Boolean(video && isRenderFresh(project) && fs.existsSync(video.path));
     if (withVideo) fs.copyFileSync(video!.path, path.join(directory, 'video.mp4'), fs.constants.COPYFILE_EXCL);
+    const skill = project.assets.skill;
+    if (skill?.transcriptPath) {
+      if (!fs.existsSync(skill.transcriptPath)) throw new Error('Skill 转录文件不存在，请重新运行当前工作流');
+      fs.copyFileSync(skill.transcriptPath, path.join(directory, 'transcript.json'), fs.constants.COPYFILE_EXCL);
+    }
+    if (skill?.subtitlePath) {
+      if (!fs.existsSync(skill.subtitlePath)) throw new Error('Skill 字幕文件不存在，请重新运行当前工作流');
+      const code = project.options.targetCode || 'translated';
+      fs.copyFileSync(skill.subtitlePath, path.join(directory, `captions.${code}${path.extname(skill.subtitlePath) || '.srt'}`), fs.constants.COPYFILE_EXCL);
+    }
     const { seconds } = shotDurations(project, shots);
     fs.writeFileSync(path.join(directory, '制作包.md'), buildProductionMarkdown(project, shots, withVideo), { encoding: 'utf8', flag: 'wx' });
     fs.writeFileSync(path.join(directory, 'shotlist.csv'), buildShotListCsv(shots, seconds), { encoding: 'utf8', flag: 'wx' });
