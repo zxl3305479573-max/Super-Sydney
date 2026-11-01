@@ -21,7 +21,7 @@ import {
   buildConcatList, buildFfmpegArgs, buildFramePlan, buildFrameHtml, frameLead, framePlanOptions, framePlanStills, motionStyle, settledMotion,
   type FrameMotion
 } from '../services/video-compose';
-import { probeDuration, renderFrameFiles, resolveFfmpeg, runFfmpeg, speechSpan } from '../services/video-render';
+import { probeDuration, probeVideo, renderFrameFiles, resolveFfmpeg, runFfmpeg, speechSpan } from '../services/video-render';
 import { listSystemVoices, readVideoTtsSettings, requestSpeech, synthesizeSystemSpeech, writeVideoTtsSettings } from '../services/video-tts';
 import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
 import { pickPose } from '../services/ip-theme';
@@ -34,6 +34,7 @@ import { searchVideoTopicHotspots } from '../services/video-topic-search';
 import { runVideoSkill } from '../services/video-skill-adapters';
 import { ensureAutoBgm } from '../services/video-bgm';
 import { videoFrameSpec } from '../services/video-frame-spec';
+import { evaluateVideoQuality } from '../services/video-quality';
 import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
@@ -444,6 +445,16 @@ export function registerVideoIpc(ctx: AppContext): void {
     if (result.canceled || !result.filePaths[0]) return null;
     const project = getVideoProject(db, id);
     return update(id, { options: { ...project.options, bgmPath: result.filePaths[0], bgmMode: 'custom' } });
+  });
+  ipcMain.handle('video:quality', async (_event, id: number) => {
+    assertIdle(id, '检查成片');
+    return requests.run(id, async () => {
+      const project = getVideoProject(db, id);
+      const video = project.assets.video;
+      if (!video || !fs.existsSync(video.path)) throw new Error('当前项目还没有可检查的成片');
+      const tools = await resolveFfmpeg();
+      return evaluateVideoQuality(project, await probeVideo(tools, video.path), video.path);
+    });
   });
   ipcMain.handle('video:open-video', async (_event, id: number) => {
     const video = getVideoProject(db, id).assets.video;

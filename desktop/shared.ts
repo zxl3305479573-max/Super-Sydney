@@ -466,6 +466,23 @@ export type VideoTtsSettings = {
 export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
 export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
+export type VideoQualityCheck = {
+  key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio';
+  label: string;
+  status: 'ok' | 'warn' | 'error';
+  detail: string;
+};
+export type VideoQualityReport = {
+  path: string;
+  width: number;
+  height: number;
+  aspect: string;
+  fps: string;
+  seconds: number;
+  hasAudio: boolean;
+  checks: VideoQualityCheck[];
+  ok: boolean;
+};
 export type VideoSkillRunResult = {
   workflow: VideoWorkflow;
   status: 'completed' | 'blocked';
@@ -1010,6 +1027,7 @@ export interface SydneyApi {
   saveVideoMp4(id: number): Promise<string | null>;
   /** 选择背景音乐；用户取消时返回 null。 */
   chooseVideoBgm(id: number): Promise<VideoProject | null>;
+  inspectVideoQuality(id: number): Promise<VideoQualityReport>;
   openVideoFile(id: number): Promise<string>;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
   saveVideoTtsSettings(patch: Partial<VideoTtsSettings>): Promise<VideoTtsStatus>;

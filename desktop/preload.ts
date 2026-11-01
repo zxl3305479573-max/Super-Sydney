@@ -99,6 +99,7 @@ const api: SydneyApi = {
   renderVideo: id => ipcRenderer.invoke('video:render', id),
   saveVideoMp4: id => ipcRenderer.invoke('video:save-mp4', id),
   chooseVideoBgm: id => ipcRenderer.invoke('video:bgm:choose', id),
+  inspectVideoQuality: id => ipcRenderer.invoke('video:quality', id),
   openVideoFile: id => ipcRenderer.invoke('video:open-video', id),
   getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
   saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
