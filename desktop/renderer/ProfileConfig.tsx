@@ -4,7 +4,7 @@ import { DEFAULT_CONTENT_WORD_COUNT } from '../shared';
 import { ARTICLE_THEMES } from '../services/article-html';
 import { DEFAULT_IMAGE_STYLE, IMAGE_STYLE_PRESETS } from '../services/image-style';
 import WeWriteOverviewPanel from './WeWriteOverview';
-import { ConfirmButton, readableError } from './ui';
+import { ConfirmButton, Tabs, readableError } from './ui';
 
 /**
  * 「环境与配置」：按公众号资料隔离的配置编辑器。
@@ -249,9 +249,7 @@ export default function ProfileConfig({ profileId, notify, onSaved }: {
   if (!rows) return <section className="ww-config"><div className="ww-group"><p className="ww-muted">正在读取公众号资料…</p></div></section>;
 
   const header = <div className="pc-head">
-    <div className="ww-tabs pc-modules" role="tablist" aria-label="配置模块">
-      {MODULES.map(item => <button key={item.key} role="tab" aria-selected={module === item.key} className={`ww-tab ${module === item.key ? 'is-active' : ''}`} onClick={() => setModule(item.key)}>{item.label}</button>)}
-    </div>
+    <Tabs label="配置模块" className="pc-modules" value={module} onChange={setModule} items={MODULES.map(item => ({ value: item.key, label: item.label }))} />
     <button className="button button-secondary button-small" disabled={saving} onClick={createProfile}>+ 新建公众号资料</button>
   </div>;
 

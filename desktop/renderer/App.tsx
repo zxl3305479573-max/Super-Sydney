@@ -13,11 +13,11 @@ import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
 import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui';
 import { TitleBar, useWindowChrome } from './TitleBar';
+import { ToastStack, useToasts, type ToastOptions, type ToastTone } from './Toasts';
 import { useTheme } from './theme';
 import brandMark from '../assets/brand-mark.png?asset';
 
 type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
-type Toast = { id: number; message: string; tone: 'info' | 'error' };
 
 const empty: AppState = {
   settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: false, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
@@ -55,6 +55,9 @@ function crumbsOf(view: View): string[] {
 
 const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'heroSms', 'site', 'settings'];
 const VIEW_KEY = 'sydney.view';
+const SIDEBAR_KEY = 'sydney.sidebar';
+/** 窗口比这窄时侧边栏收成抽屉，从标题栏左上角的按钮打开。 */
+const DRAWER_QUERY = '(max-width: 1100px)';
 
 /** 上次退出时停在哪个模块，重新打开应用就回到那里。 */
 function initialView(): View {
@@ -63,6 +66,22 @@ function initialView(): View {
     if (saved && VIEWS.includes(saved)) return saved;
   } catch { /* 读不到就从今日工作开始 */ }
   return 'today';
+}
+
+function initialCollapsed(): boolean {
+  try { return localStorage.getItem(SIDEBAR_KEY) === 'collapsed'; } catch { return false; }
+}
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const onChange = () => setMatches(list.matches);
+    onChange();
+    list.addEventListener('change', onChange);
+    return () => list.removeEventListener('change', onChange);
+  }, [query]);
+  return matches;
 }
 
 function greeting(): string {
@@ -77,10 +96,13 @@ export default function App() {
   // 进过的模块都留着不卸载，只是隐藏：切走时正在跑的生成、表单里没存的内容、子页签都原样保留。
   const mounted = useVisited(view);
   const scrollByView = useRef<Partial<Record<View, number>>>({});
-  const [toasts, setToasts] = useState<Toast[]>([]);
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const [drafting, setDrafting] = useState<number | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(initialCollapsed);
+  const narrow = useMediaQuery(DRAWER_QUERY);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const chrome = useWindowChrome();
   const [theme, toggleTheme] = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -96,24 +118,39 @@ export default function App() {
 
   const refresh = useCallback(async () => setState(await window.sydney.getState()), []);
   useEffect(() => { void refresh(); return window.sydney.onChanged(() => void refresh()); }, [refresh]);
-  const notify = useCallback((message: string, tone: Toast['tone'] = 'info') => {
-    const id = Date.now() + Math.random();
-    setToasts(current => [...current.slice(-2), { id, message, tone }]);
-    window.setTimeout(() => setToasts(current => current.filter(item => item.id !== id)), tone === 'error' ? 5000 : 3200);
-  }, []);
+  const notify = useCallback((message: string, tone: ToastTone = 'info', options?: ToastOptions) => pushToast(message, tone, options), [pushToast]);
   const notifyAny = useCallback((message: string) => notify(message, /失败|错误|无法|请先|不存在|超时|缺少/.test(message) ? 'error' : 'info'), [notify]);
   const guard = useCallback(async (run: () => Promise<unknown>) => { try { await run(); } catch (error) { notify(readableError(error), 'error'); } }, [notify]);
+
+  useEffect(() => { try { localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'expanded'); } catch { /* 下次启动展开 */ } }, [collapsed]);
+  useEffect(() => { if (!narrow) setDrawerOpen(false); }, [narrow]);
+  const navigate = useCallback((next: View) => { setView(next); setDrawerOpen(false); }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') { event.preventDefault(); setManualOpen(true); }
+      else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        event.preventDefault();
+        if (narrow) setDrawerOpen(open => !open); else setCollapsed(value => !value);
+      } else if (event.key === 'Escape' && drawerOpen) setDrawerOpen(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [narrow, drawerOpen]);
 
+  /** 改状态后给一次撤销机会：改回原来的状态，不重复弹提示。 */
+  const undoStatus = (id: number, previous: WorkEvent['status']): ToastOptions => ({
+    action: { label: '撤销', run: () => void guard(async () => { await window.sydney.updateEvent(id, { status: previous }); await refresh(); }) }
+  });
   const actions: EventActions = {
-    update: (id, patch, quiet) => guard(async () => { await window.sydney.updateEvent(id, patch); await refresh(); if (!quiet && patch.status === 'approved') notify('已确认，已写入知识库'); }),
+    update: (id, patch, quiet) => guard(async () => {
+      const previous = state.events.find(event => event.id === id)?.status;
+      await window.sydney.updateEvent(id, patch);
+      await refresh();
+      if (quiet) return;
+      if (patch.status === 'approved') notify('已确认，已写入知识库');
+      else if (patch.status === 'rejected' && previous && previous !== 'rejected') notify('已忽略这条事件', 'info', undoStatus(id, previous));
+    }),
     remove: id => guard(async () => { await window.sydney.deleteEvent(id); await refresh(); notify('事件已删除'); }),
     draft: id => guard(async () => { setDrafting(id); try { await window.sydney.draftEvent(id); notify('AI 草稿已生成，可在详情里查看'); } finally { setDrafting(null); } }),
     openDetails: (event: WorkEvent) => setDetailId(event.id)
@@ -124,13 +161,18 @@ export default function App() {
   const setting = async (patch: Parameters<typeof window.sydney.saveSettings>[0]) => guard(async () => { await window.sydney.saveSettings(patch); await refresh(); });
   const saveManual = async (note: string, category: string) => guard(async () => { await window.sydney.createEvent({ note, category, kind: 'manual', status: 'pending' }); await refresh(); notify('已保存到待确认'); });
 
+  /** 批量忽略可以一键撤销（逐条改回原状态）；批量确认已写入知识库，不提供撤销。 */
+  const bulkDone = (message: string, restore?: Array<{ id: number; status: WorkEvent['status'] }>) => notify(message, 'info', restore?.length ? {
+    action: { label: '撤销', run: () => void guard(async () => { for (const item of restore) await window.sydney.updateEvent(item.id, { status: item.status }); await refresh(); }) }
+  } : undefined);
+
   const live = state.settings.captureEnabled && !state.settings.capturePaused;
   const pendingCount = state.events.filter(event => event.status === 'pending').length;
   const detailEvent = state.events.find(event => event.id === detailId) ?? null;
   const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
   const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
 
-  const covered = manualOpen || detailId !== null;
+  const covered = manualOpen || detailId !== null || (narrow && drawerOpen);
   /**
    * 嵌入网页是主进程浮在界面之上的视图：模块被隐藏或有弹层时把它摘下来（overlay），
    * 页面进程本身留着，切回来登录态、浏览位置、表单内容都还在。
@@ -150,26 +192,34 @@ export default function App() {
         privacy="页面由 16688 提供，登录请在页面里完成；应用不读它的 cookie，也不往页面里注入脚本，订单与账号问题以站点为准。" />;
       case 'heroSms': return <HeroSmsPanel active={name === view} notify={notifyAny} />;
       case 'site': return <SitePanel overlay={hideWeb} notify={notifyAny} />;
-      default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={setView} onSummary={summary} onBulkDone={message => notify(message)} />;
+      default: return <TodayView state={state} mode={name} drafting={drafting} actions={actions} onCapture={capture} onManual={() => setManualOpen(true)} onNavigate={navigate} onSummary={summary} onBulkDone={bulkDone} />;
     }
   };
 
-  return <div className={`app-shell platform-${chrome.platform} ${chrome.focused ? '' : 'is-blurred'}`}>
-    <aside className="sidebar">
-      <div className="brand"><img className="brand-mark" src={brandMark} alt="" /><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
+  const rail = collapsed && !narrow;
+  const shellClass = ['app-shell', `platform-${chrome.platform}`, chrome.focused ? '' : 'is-blurred', rail ? 'is-collapsed' : '', narrow ? 'is-narrow' : '', narrow && drawerOpen ? 'drawer-open' : ''].filter(Boolean).join(' ');
+  return <div className={shellClass}>
+    {narrow && <div className="sidebar-scrim" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
+    <aside className="sidebar" aria-label="侧边栏" inert={narrow && !drawerOpen ? true : undefined}>
+      <div className="brand">
+        <img className="brand-mark" src={brandMark} alt="Sydney" />
+        <button type="button" className="sidebar-toggle" title={narrow ? '关闭菜单（Esc）' : rail ? '展开侧边栏（Ctrl+B）' : '收起侧边栏（Ctrl+B）'} aria-label={narrow ? '关闭菜单' : rail ? '展开侧边栏' : '收起侧边栏'} aria-expanded={narrow ? drawerOpen : !rail}
+          onClick={() => narrow ? setDrawerOpen(false) : setCollapsed(value => !value)}><Icon name={narrow ? 'x' : 'sidebar'} size={16} /></button>
+      </div>
       <nav className="nav" aria-label="主导航">
         {NAV.map(group => <div key={group.group} className="nav-group">
-          <span className="nav-group-label">{group.group}</span>
-          {group.items.map(item => <button key={item.view} className={`nav-item ${view === item.view ? 'active' : ''}`} aria-current={view === item.view ? 'page' : undefined} onClick={() => setView(item.view)}>
-            <Icon name={item.icon} size={17} /><span>{item.label}</span>{item.view === 'review' && pendingCount > 0 && <em className="nav-badge">{pendingCount > 99 ? '99+' : pendingCount}</em>}
+          <span className="nav-group-label" aria-hidden={rail || undefined}>{group.group}</span>
+          {group.items.map(item => <button key={item.view} className={`nav-item ${view === item.view ? 'active' : ''}`} aria-current={view === item.view ? 'page' : undefined} aria-label={rail ? item.label : undefined}
+            title={rail ? item.view === 'review' && pendingCount ? `${item.label}（${pendingCount} 条）` : item.label : undefined} onClick={() => navigate(item.view)}>
+            <Icon name={item.icon} size={17} /><span className="nav-label">{item.label}</span>{item.view === 'review' && pendingCount > 0 && <em className="nav-badge">{pendingCount > 99 ? '99+' : pendingCount}</em>}
           </button>)}
         </div>)}
       </nav>
       <div className="sidebar-bottom">
-        <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} onClick={() => setView('settings')}><Icon name="settings" size={17} /><span>隐私与设置</span></button>
-        <div className={`rec-widget ${live ? 'is-live' : state.settings.captureEnabled ? 'is-paused' : ''}`}>
+        <button className={`nav-item ${view === 'settings' ? 'active' : ''}`} aria-label={rail ? '隐私与设置' : undefined} title={rail ? '隐私与设置' : undefined} onClick={() => navigate('settings')}><Icon name="settings" size={17} /><span className="nav-label">隐私与设置</span></button>
+        <div className={`rec-widget ${live ? 'is-live' : state.settings.captureEnabled ? 'is-paused' : ''}`} title={rail ? live ? `正在记录 · ${state.captureStatus.appName || '等待采样'}` : state.settings.captureEnabled ? '已暂停' : '未在记录' : undefined}>
           <span className="rec-dot" aria-hidden="true" />
-          <div><strong>{live ? '正在记录' : state.settings.captureEnabled ? '已暂停' : '未在记录'}</strong><small>{live ? state.captureStatus.appName || '等待采样' : '本地模式'}</small></div>
+          <div className="rec-text"><strong>{live ? '正在记录' : state.settings.captureEnabled ? '已暂停' : '未在记录'}</strong><small>{live ? state.captureStatus.appName || '等待采样' : '本地模式'}</small></div>
           {state.settings.captureEnabled
             ? <button className="icon-button" title={state.settings.capturePaused ? '继续记录' : '暂停记录'} onClick={() => capture(state.settings.capturePaused ? 'start' : 'pause')}><Icon name={state.settings.capturePaused ? 'play' : 'pause'} /></button>
             : <button className="icon-button" title="开始记录" onClick={() => capture('start')}><Icon name="play" /></button>}
@@ -178,7 +228,7 @@ export default function App() {
     </aside>
 
     <div className="workspace">
-      <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} />
+      <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} onMenu={narrow ? () => setDrawerOpen(true) : undefined} />
       <div className="main-scroll" ref={scrollRef} onScroll={event => { scrollByView.current[view] = event.currentTarget.scrollTop; setScrolled(event.currentTarget.scrollTop > 2); }}>
         <main className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
           {header && <header className="topbar">
@@ -197,6 +247,6 @@ export default function App() {
 
     <EventDetails event={detailEvent} drafting={drafting === detailId} actions={actions} onClose={() => setDetailId(null)} />
     <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />
-    <div className="toasts" role="status" aria-live="polite">{toasts.map(toast => <div key={toast.id} className={`toast toast-${toast.tone}`}><Icon name={toast.tone === 'error' ? 'alert' : 'check'} size={15} /><span>{toast.message}</span></div>)}</div>
+    <ToastStack toasts={toasts} onDismiss={dismissToast} />
   </div>;
 }

@@ -3,10 +3,12 @@ import type { AppState, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPr
 import ModelPresetBar from './ModelPresetBar';
 import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
 import { IpLibraryCard } from './IpLibrary';
+import { SystemStatusCard } from './SystemStatus';
 
 type Patch = Partial<Settings>;
 
 const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
+  { id: 'status', label: '系统状态', icon: 'pulse' },
   { id: 'appearance', label: '外观', icon: 'spark' },
   { id: 'vault', label: '知识库', icon: 'book' },
   { id: 'activity', label: '活动记录', icon: 'window' },
@@ -131,7 +133,7 @@ function NumberInput({ value, min, onCommit, suffix }: { value: number; min: num
 
 export function SettingsView({ state, onSetting, onChooseFiles, notify }: { state: AppState; onSetting: (patch: Patch) => Promise<void>; onChooseFiles: () => Promise<void>; notify: (message: string) => void }) {
   const settings = state.settings;
-  const [active, setActive] = useState('vault');
+  const [active, setActive] = useState('status');
   const [redfoxKey, setRedfoxKey] = useState('');
   const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [redfoxTesting, setRedfoxTesting] = useState(false);
@@ -159,6 +161,8 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
     </nav>
 
     <div className="settings-body">
+      <SystemStatusCard vaultPath={settings.vaultPath} onJump={jump} />
+
       <section id="set-appearance" className="set-card appearance-card">
         <header><Icon name="spark" size={18} /><div><h2>外观与皮肤</h2><p>布局和功能保持一致，只切换界面强调色。浅色 / 深色模式仍可在标题栏切换。</p></div></header>
         <div className="palette-picker" role="radiogroup" aria-label="界面皮肤">

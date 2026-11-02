@@ -4,7 +4,7 @@ import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
   XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
-import { shortTime, useWorkflowStepScroll } from '../ui';
+import { EmptyState, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
 import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, VisualStep, stateNames, useXhsAssets } from './note-steps';
 
@@ -198,7 +198,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           <div className="flow-mini" aria-hidden="true">{steps.map(entry => <i key={entry.key} className={`flow-mini-${entry.state}`} />)}</div>
           <small>{shortTime(item.updatedAt)}</small>
         </button>;
-      }) : <p className="native-empty">还没有笔记。从「热点选题」或「账号定位」转选题，或在上面直接新建。</p>}
+      }) : <EmptyState compact icon="note" title="还没有笔记">从「热点选题」或「账号定位」转选题，或在上面直接新建。</EmptyState>}
     </aside>
 
     <div className="native-editor">
@@ -246,7 +246,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}
 
         </section>
-      </> : <div className="native-empty native-editor-empty"><strong>还没有选中笔记</strong><span>按 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包 推进。标题放在正文之后：要基于写成的正文做搜索词覆盖与收藏动机。</span></div>}
+      </> : <EmptyState icon="note" title="还没有选中笔记">按 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包 推进。标题放在正文之后：要基于写成的正文做搜索词覆盖与收藏动机。</EmptyState>}
     </div>
   </div>;
 }

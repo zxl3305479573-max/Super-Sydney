@@ -5,7 +5,7 @@ import NativeContentPanel from './NativeContentPanel';
 import ProfileConfig from './ProfileConfig';
 import WeWriteStats from './WeWriteStats';
 import { findDirectionById, initialProfileId } from './content-taxonomy';
-import { KeepAlive, readableError, useVisited } from './ui';
+import { KeepAlive, Tabs, readableError, useVisited } from './ui';
 
 /** 上次选中的公众号资料只是界面便利，存在本机；读写失败时退回默认资料。 */
 const PROFILE_KEY = 'sydney.wewrite.profile';
@@ -68,12 +68,12 @@ export default function WeWritePanel({ notify, overlay }: { notify: (message: st
       </label>
     </header>
     <nav className="ww-nav-dock" aria-label="公众号工作区">
-      <div className="ww-tabs">
-        <button type="button" className={`ww-tab ${tab === 'native' ? 'is-active' : ''}`} aria-current={tab === 'native' ? 'page' : undefined} onClick={() => setTab('native')}>创作流水线</button>
-        <button type="button" className={`ww-tab ${tab === 'stats' ? 'is-active' : ''}`} aria-current={tab === 'stats' ? 'page' : undefined} onClick={() => setTab('stats')}>文章数据</button>
-        <button type="button" className={`ww-tab ${tab === 'config' ? 'is-active' : ''}`} aria-current={tab === 'config' ? 'page' : undefined} onClick={() => setTab('config')}>环境与配置</button>
-        <button type="button" className={`ww-tab ${tab === 'mp' ? 'is-active' : ''}`} aria-current={tab === 'mp' ? 'page' : undefined} title="在应用里打开微信公众平台（创作者发布平台）" onClick={() => setTab('mp')}>公众号后台</button>
-      </div>
+      <Tabs label="公众号工作区" value={tab} onChange={setTab} items={[
+        { value: 'native', label: '创作流水线' },
+        { value: 'stats', label: '文章数据' },
+        { value: 'config', label: '环境与配置' },
+        { value: 'mp', label: '公众号后台', title: '在应用里打开微信公众平台（创作者发布平台）' }
+      ]} />
     </nav>
     {/* key 绑定资料：切换资料时子面板整体重建，不会把上一份资料的选中状态带过来。 */}
     {/* 子页签进过就常驻，切走只隐藏：写到一半的稿子、正在跑的步骤都还在。 */}

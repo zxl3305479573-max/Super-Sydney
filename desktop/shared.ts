@@ -467,7 +467,8 @@ export type VideoTtsSettings = {
 };
 export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
-export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string };
+/** labels：逐镜任务（配音、配图）里待处理的每一项叫什么，界面据此列出逐镜清单；渲染等整体任务不带。 */
+export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string; labels?: string[] };
 export type VideoQualityCheck = {
   key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio' | 'timeline' | 'black' | 'silence' | 'safe-area' | 'cover';
   label: string;
@@ -1035,6 +1036,8 @@ export interface SydneyApi {
   inspectVideoQuality(id: number): Promise<VideoQualityReport>;
   openVideoFile(id: number): Promise<string>;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
+  /** ffmpeg / ffprobe 是否可用；不可用时 detail 是能照着做的安装提示。 */
+  getFfmpegStatus(): Promise<{ ok: boolean; detail: string }>;
   saveVideoTtsSettings(patch: Partial<VideoTtsSettings>): Promise<VideoTtsStatus>;
   saveVideoTtsKey(value: string): Promise<VideoTtsStatus>;
   deleteVideoTtsKey(): Promise<VideoTtsStatus>;
@@ -1074,6 +1077,10 @@ export interface SydneyApi {
   deleteIp(id: string): Promise<IpLibraryView>;
   /** 选一张本地图片作为头像 / 新角色动作 / 参考图；取消选择时返回 null。 */
   addIpImage(id: string, kind: 'avatar' | 'pose' | 'reference', label?: string): Promise<IpLibraryView | null>;
+  /** 拖进来的多张图片一次导入为角色动作，动作名取文件名。 */
+  importIpPoses(id: string, paths: string[]): Promise<IpLibraryView>;
+  /** 拖放文件在本机的路径（Electron 不再在 File 上直接给 path）。 */
+  filePath(file: File): string;
   removeIpPose(id: string, poseId: string): Promise<IpLibraryView>;
   /** 模块级的 IP 选择（公众号、视频）；小红书按账号存在账号上。 */
   selectIp(module: IpModule, id: string): Promise<IpLibraryView>;

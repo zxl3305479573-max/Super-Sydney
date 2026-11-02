@@ -186,7 +186,7 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
       <button className="button button-primary" disabled={locked || !plan} onClick={onRenderCards}>{busy === 'render' ? '渲染中…' : '导出为卡片图'}</button>
     </div>
     {plan && <>
-      <iframe className="xhs-cards-frame" title="图文卡片预览" sandbox="" srcDoc={preview} />
+      <iframe className="xhs-cards-frame" title="图文卡片预览" sandbox="allow-same-origin" srcDoc={preview} />
       <details className="native-json"><summary>逐页修改卡片文字</summary>
         <div className="xhs-page-editor">{plan.pages.map((page, index) => <fieldset key={index} disabled={locked}>
           <legend>第 {index + 1} 页</legend>

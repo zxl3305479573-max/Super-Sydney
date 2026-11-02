@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { IpColors, IpLibraryView, IpRenderKit } from '../shared';
-import { ConfirmButton, Icon, readableError } from './ui';
+import { ConfirmButton, Dropzone, EmptyState, Icon, readableError } from './ui';
 
 /**
  * IP 库的界面部分：各模块共用的数据钩子、IP 选择器，以及「设置 → IP 形象」里的管理卡片。
@@ -137,6 +137,11 @@ export function IpLibraryCard({ notify }: { notify: (message: string) => void })
             <button className="button button-secondary button-small" disabled={busy} onClick={() => void run(async () => { const next = await window.sydney.addIpImage(active.id, 'pose', poseLabel); if (next) setPoseLabel(''); return next; }, '已添加角色动作')}><Icon name="plus" />添加动作</button>
           </li>
         </ul>
+        <Dropzone title="把角色图拖到这里批量导入" hint="PNG / JPG / WebP，一次最多 20 张，动作名取文件名；点击则选择单张" extensions={['png', 'jpg', 'jpeg', 'webp']} disabled={busy}
+          onBrowse={() => void run(async () => { const next = await window.sydney.addIpImage(active.id, 'pose', poseLabel); if (next) setPoseLabel(''); return next; }, '已添加角色动作')}
+          onFiles={paths => paths.length
+            ? void run(() => window.sydney.importIpPoses(active.id, paths), `已导入 ${paths.length} 个角色动作`)
+            : notify('无法导入：只支持 PNG、JPG、WebP 图片')} />
 
         <h4 className="ip-sub">参考图<small>可选：整体设定图，以后生成新动作时当参考</small></h4>
         <div className="ip-reference">
@@ -148,7 +153,7 @@ export function IpLibraryCard({ notify }: { notify: (message: string) => void })
           <span className="ww-muted">图片导入时会自动缩到够用的尺寸，存在本机应用数据目录的 ip-library 里。</span>
           <ConfirmButton className="button button-quiet button-small" armedLabel={`确认删除「${active.name}」？`} onConfirm={() => void run(() => window.sydney.deleteIp(active.id), '已删除这个 IP')}>删除这个 IP</ConfirmButton>
         </div>
-      </div> : <p className="flow-empty">还没有 IP。在左边输入名称新建一个。</p>}
+      </div> : <EmptyState icon="user" title="还没有 IP">在左边输入名称新建一个，再上传头像和角色动作。</EmptyState>}
     </div>
   </section>;
 }

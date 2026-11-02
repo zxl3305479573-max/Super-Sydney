@@ -7,7 +7,7 @@ import {
   resolveVideoBgmStyle,
   type VideoAssetBundle, type VideoPlatform, type VideoProgress, type VideoProject, type VideoRenderAssets,
   type VideoStage, type VideoTtsSettings, type VideoTtsStatus, type VideoTopicSearchQuery, type VideoTopicSearchResult,
-  type VideoSkillRunResult
+  type VideoShot, type VideoSkillRunResult
 } from '../shared';
 import { videoCoverPrompt } from '../services/video-image-prompts';
 import { imageThumbnail } from '../services/native-image';
@@ -49,6 +49,12 @@ function removeInside(root: string, target: string): void {
   const relative = path.relative(root, target);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return;
   fs.rmSync(target, { recursive: true, force: true });
+}
+
+/** 逐镜进度清单里的一行：镜号 + 画面大字（没有就取口播开头）。 */
+function shotLabel(shot: VideoShot): string {
+  const text = (shot.caption || shot.narration).trim().replace(/\s+/g, ' ');
+  return `第 ${shot.index} 镜${text ? ` · ${text.length > 16 ? `${text.slice(0, 16)}…` : text}` : ''}`;
 }
 
 export function registerVideoIpc(ctx: AppContext): void {
@@ -245,6 +251,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const directory = path.join(root, 'audio');
     fs.mkdirSync(directory, { recursive: true });
     const wanted = new Map(shots.filter(shot => shot.narration.trim()).map(shot => [audioKey(profileText, shot.narration), shot.narration.trim()]));
+    const labelOf = new Map(shots.filter(shot => shot.narration.trim()).map(shot => [audioKey(profileText, shot.narration), shotLabel(shot)]));
     const kept = force === true ? [] : project.assets.audio.filter(item => wanted.has(item.key) && fs.existsSync(item.path));
     // 用不上的配音文件一并删掉，素材目录不随着改稿无限长。
     for (const item of project.assets.audio) if (!kept.includes(item)) removeInside(root, item.path);
@@ -255,19 +262,20 @@ export function registerVideoIpc(ctx: AppContext): void {
 
     const tools = await resolveFfmpeg();
     const total = pending.length;
+    const labels = pending.map(([key]) => labelOf.get(key) ?? '镜头');
     const record = async (key: string, file: string) => {
       const seconds = await probeDuration(tools, file);
       assets = { ...assets, audio: [...assets.audio, { key, path: file, seconds }] };
       project = update(id, { assets });
     };
-    progress({ id, task: 'voice', done: 0, total, message: '正在配音…' });
+    progress({ id, task: 'voice', done: 0, total, message: '正在配音…', labels });
     if (profile.provider === 'system') {
       const items = pending.map(([key, text]) => ({ key, text, out: path.join(directory, `${key}.wav`) }));
       const finished: number[] = [];
       try {
         await synthesizeSystemSpeech(profile, items.map(({ text, out }) => ({ text, out })), index => {
           finished.push(index);
-          progress({ id, task: 'voice', done: finished.length, total, message: `已配好 ${finished.length}/${total} 个镜头` });
+          progress({ id, task: 'voice', done: finished.length, total, message: `已配好 ${finished.length}/${total} 个镜头`, labels });
         });
       } finally {
         // 只登记确认合成完的镜头：进程中途退出时，最后一个 WAV 可能只写了一半。
@@ -279,7 +287,7 @@ export function registerVideoIpc(ctx: AppContext): void {
         const file = path.join(directory, `${key}.mp3`);
         fs.writeFileSync(file, await requestSpeech(profile, apiKey, text));
         await record(key, file);
-        progress({ id, task: 'voice', done: index + 1, total, message: `已配好 ${index + 1}/${total} 个镜头` });
+        progress({ id, task: 'voice', done: index + 1, total, message: `已配好 ${index + 1}/${total} 个镜头`, labels });
       }
     }
     return project;
@@ -301,17 +309,20 @@ export function registerVideoIpc(ctx: AppContext): void {
       const prompt = shotImagePrompt(shot, title, project.options.shotImagePromptTemplate);
       return [imageKey(prompt, ipId), prompt] as const;
     }));
+    const labelOf = new Map(shots.map(shot => [imageKey(shotImagePrompt(shot, title, project.options.shotImagePromptTemplate), ipId), shotLabel(shot)] as const));
     const kept = force === true ? [] : project.assets.images.filter(item => wanted.has(item.key) && fs.existsSync(item.path));
     for (const item of project.assets.images) if (!kept.includes(item)) removeInside(root, item.path);
     let assets: VideoRenderAssets = { ...project.assets, images: kept };
     project = update(id, { assets });
     const pending = [...wanted].filter(([key]) => !kept.some(item => item.key === key));
+    const labels = pending.map(([key]) => labelOf.get(key) ?? '镜头');
     for (const [index, [key, prompt]] of pending.entries()) {
-      progress({ id, task: 'images', done: index, total: pending.length, message: `正在生成第 ${index + 1}/${pending.length} 张配图…` });
+      progress({ id, task: 'images', done: index, total: pending.length, message: `正在生成第 ${index + 1}/${pending.length} 张配图…`, labels });
       const file = await generateImageFile(path.join(directory, `${key}.png`), prompt, SHOT_IMAGE_SIZE, undefined, ip);
       assets = { ...assets, images: [...assets.images, { key, path: file }] };
       project = update(id, { assets });
     }
+    if (pending.length) progress({ id, task: 'images', done: pending.length, total: pending.length, message: `已生成 ${pending.length} 张配图`, labels });
     return project;
   }));
   ipcMain.handle('video:logo:choose', async () => {
@@ -561,6 +572,10 @@ export function registerVideoIpc(ctx: AppContext): void {
     return { settings: readVideoTtsSettings(ctx.dataDir), key: ctx.videoTtsKeyStore.getStatus(), systemVoices: await voices };
   };
   ipcMain.handle('video:tts:status', () => ttsStatus());
+  ipcMain.handle('video:ffmpeg:status', async () => {
+    try { await resolveFfmpeg(); return { ok: true, detail: 'ffmpeg / ffprobe 可用' }; }
+    catch (error) { return { ok: false, detail: error instanceof Error ? error.message : String(error) }; }
+  });
   ipcMain.handle('video:tts:save', (_event, patch: Partial<VideoTtsSettings>) => {
     if (!patch || typeof patch !== 'object') throw new Error('配音设置格式不正确');
     writeVideoTtsSettings(ctx.dataDir, patch);

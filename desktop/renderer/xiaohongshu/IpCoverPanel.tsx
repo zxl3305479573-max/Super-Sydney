@@ -39,7 +39,7 @@ export function IpCoverPanel({ note, kit, kitError, locked, busy, onRender }: {
 
   return <div className="xhs-ip-cover">
     <div className="xhs-ip-preview" style={{ width: XHS_CARD_WIDTH * PREVIEW_SCALE, height: XHS_CARD_HEIGHT * PREVIEW_SCALE }}>
-      {preview ? <iframe title="IP 封面预览" sandbox="" srcDoc={preview} width={XHS_CARD_WIDTH} height={XHS_CARD_HEIGHT} style={{ transform: `scale(${PREVIEW_SCALE})` }} />
+      {preview ? <iframe title="IP 封面预览" sandbox="allow-same-origin" srcDoc={preview} width={XHS_CARD_WIDTH} height={XHS_CARD_HEIGHT} style={{ transform: `scale(${PREVIEW_SCALE})` }} />
         : <div className="flow-image-missing">{kitError || 'IP 素材加载中…'}</div>}
     </div>
     <div className="xhs-ip-form">

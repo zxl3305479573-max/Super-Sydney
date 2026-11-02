@@ -4,12 +4,46 @@ import { ARTICLE_THEMES, DEFAULT_ARTICLE_THEME } from '../services/article-html'
 import { PIPELINE_STEPS, autoGeneratePlan, buildPipeline, currentStepKey, isReviewPassed, nextStepKey, pipelineProgress, publishChecklist, reviewOutstanding, type PipelineStepKey } from '../services/content-pipeline';
 import ContentSettingsPanel from './ContentSettings';
 import { profileDefaultSubdirection, subdirectionsOf, taskScopeLabel } from './content-taxonomy';
-import { ConfirmButton, readableError, shortTime, useWorkflowStepScroll } from './ui';
+import { ConfirmButton, EmptyState, Timeline, readableError, shortTime, useWorkflowStepScroll, type TimelineEntry } from './ui';
 import { stageLabels, stateNames, statusNames, type Env } from './native-content/format';
 import { Board, CoverStep, DraftStep, EvidenceStep, ImageCandidatePicker, JsonStep, PublishStep, ReviewStep, Stepper, TopicStep, useContentAssets } from './native-content/steps';
 
 /** 同一篇文章的两条通道：正文（以及一切会改正文的操作）与封面，和主进程的两把锁一一对应。 */
 type Lane = 'main' | 'cover';
+
+/** 推送草稿箱的记录：只用推送时记下的时间，按天倒序分组。 */
+function deliveryGroups(tasks: ContentTask[]): Array<{ label: string; items: TimelineEntry[] }> {
+  const records = tasks.flatMap(task => {
+    try {
+      const publish = JSON.parse(task.publishJson || '{}') as { publishedAt?: string; title?: string; author?: string; unreviewed?: boolean };
+      return publish.publishedAt && !Number.isNaN(new Date(publish.publishedAt).getTime()) ? [{ task, at: new Date(publish.publishedAt), publish }] : [];
+    } catch { return []; }
+  }).sort((a, b) => b.at.getTime() - a.at.getTime());
+  const today = new Date().toDateString();
+  const groups: Array<{ label: string; items: TimelineEntry[] }> = [];
+  for (const record of records) {
+    const label = record.at.toDateString() === today ? '今天' : record.at.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+    let group = groups[groups.length - 1];
+    if (group?.label !== label) { group = { label, items: [] }; groups.push(group); }
+    group.items.push({
+      key: `${record.task.id}-${record.at.getTime()}`,
+      time: record.at.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+      title: record.publish.title || record.task.title || '未命名文章',
+      detail: `推送到草稿箱${record.publish.author ? ` · 署名 ${record.publish.author}` : ''}${record.publish.unreviewed ? ' · 未通过审稿' : ''}`,
+      tone: record.publish.unreviewed ? 'warning' : 'success',
+      icon: 'check'
+    });
+  }
+  return groups;
+}
+
+function DeliveryTimeline({ tasks }: { tasks: ContentTask[] }) {
+  const groups = useMemo(() => deliveryGroups(tasks), [tasks]);
+  return <section className="panel delivery-timeline">
+    <header className="panel-head"><div className="panel-title"><h2>发布记录</h2><p>推送到公众号草稿箱的文章，按推送时间倒序；发表与群发仍在公众号后台完成。</p></div></header>
+    {groups.length ? <Timeline groups={groups} /> : <EmptyState compact icon="calendar" title="还没有推送记录">文章推送到草稿箱后会出现在这里。</EmptyState>}
+  </section>;
+}
 const BOTH_LANES: Lane[] = ['main', 'cover'];
 const laneSlot = (id: number, lane: Lane) => lane === 'main' ? String(id) : `${id}:cover`;
 
@@ -59,7 +93,8 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
   const selectedRef = useRef<number | null>(null);
   selectedRef.current = selectedId;
   const busy = selectedId !== null ? jobs[laneSlot(selectedId, 'main')]?.key ?? '' : '';
-  const coverBusy = selectedId !== null ? jobs[laneSlot(selectedId, 'cover')]?.key ?? '' : '';
+  const coverJob = selectedId !== null ? jobs[laneSlot(selectedId, 'cover')]?.key ?? '' : '';
+  const coverBusy = coverJob || (busy === 'publish' ? 'publish' : '');
   const busySeconds = useElapsed(selectedId !== null ? jobs[laneSlot(selectedId, 'main')]?.since ?? 0 : 0);
   const coverSeconds = useElapsed(selectedId !== null ? jobs[laneSlot(selectedId, 'cover')]?.since ?? 0 : 0);
   const candidateSheet = selectedId !== null ? candidateSheets[selectedId] ?? null : null;
@@ -371,7 +406,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
       </div>
     </div>
 
-    {mode === 'board' ? <Board tasks={tasks} env={env} onOpen={openTask} /> : <div className="native-layout">
+    {mode === 'board' ? <><Board tasks={tasks} env={env} onOpen={openTask} /><DeliveryTimeline tasks={tasks} /></> : <div className="native-layout">
       <aside className="native-task-list">
         <div className="native-list-head"><h2>文章任务</h2><span>{tasks.length}</span></div>
         {tasks.length ? tasks.map(task => {
@@ -383,7 +418,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
             <div className="flow-mini" aria-hidden="true">{steps.map(item => <i key={item.key} className={`flow-mini-${item.state}`} />)}</div>
             <small>{jobs[laneSlot(task.id, 'main')] || jobs[laneSlot(task.id, 'cover')] ? '处理中…' : shortTime(task.updatedAt)}</small>
           </button>;
-        }) : <p className="native-empty">还没有文章任务</p>}
+        }) : <EmptyState compact icon="pen" title="还没有文章任务">选好类别后点「新建文章任务」。</EmptyState>}
       </aside>
 
       <div className="native-editor">
@@ -422,7 +457,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
               {step === 'review' && activeStep.state === 'attention' && <button className="button button-secondary" disabled={locked} onClick={() => setStep('draft')}>回到初稿修改</button>}
               {step === 'publish' && <>
                 <button className="button button-secondary" disabled={locked || !(selected.finalArticle.trim() || selected.draft.trim())} title="未通过审稿也能导出，导出前会二次确认" onClick={() => deliver('export')}>{busy === 'export' ? '导出中…' : '导出到 Obsidian'}</button>
-                <button className="button button-primary" disabled={locked || publishChecklist(selected, env).some(item => !item.ok)} title="推送到真实公众号草稿箱；未通过审稿也能推送，推送前会二次确认" onClick={() => deliver('publish')}>{busy === 'publish' ? '推送中…' : '推送草稿箱'}</button>
+                <button className="button button-primary" disabled={locked || coverLocked || publishChecklist(selected, env).some(item => !item.ok)} title="推送到真实公众号草稿箱；未通过审稿也能推送，推送前会二次确认" onClick={() => deliver('publish')}>{busy === 'publish' ? '推送中…' : '推送草稿箱'}</button>
                 <button className="button button-secondary" disabled={locked} title="切到「公众号后台」页签，在应用里打开微信公众平台，到草稿箱检查排版并手动发表" onClick={openBackend}>打开公众号后台</button>
               </>}
               {nextStepKey(step) && <button className="button button-quiet" onClick={() => setStep(nextStepKey(step)!)}>下一步：{PIPELINE_STEPS.find(item => item.key === nextStepKey(step))?.label} →</button>}
@@ -466,7 +501,7 @@ export default function NativeContentPanel({ profile, notify, onOpenConfig, onOp
 
             {candidateSheet && candidateSheet.taskId === selected.id && <ImageCandidatePicker bundle={candidateSheet} busy={busy || coverBusy} onApply={picks => void applyCandidates(picks)} onDiscard={() => void discardCandidates()} />}
           </section>
-        </> : <div className="native-empty native-editor-empty"><strong>先创建一个文章任务</strong><span>选择类别后，按 选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布 逐步推进。</span></div>}
+        </> : <EmptyState icon="pen" title="先创建一个文章任务">选择类别后，按 选题 → 任务书 → 来源与证据 → 初稿 → AI 审稿 → 封面 → 导出与发布 逐步推进。</EmptyState>}
       </div>
     </div>}
   </section>;

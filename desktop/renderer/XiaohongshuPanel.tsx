@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { XhsAccount, XhsHotNote, XhsNote, XhsStepKey, XhsTab } from '../shared';
 import { XHS_TAB_LABELS } from '../services/xhs-catalog';
 import { readPositioning } from '../services/xhs-pipeline';
-import { ConfirmButton, Icon, KeepAlive, readableError, useVisited } from './ui';
+import { ConfirmButton, Icon, KeepAlive, Tabs, readableError, useVisited } from './ui';
 import type { XhsContext } from './xiaohongshu/common';
 import { HomeTab } from './xiaohongshu/HomeTab';
 import { PositioningTab } from './xiaohongshu/PositioningTab';
@@ -164,9 +164,7 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
     </header>
 
     <nav className="ww-nav-dock" aria-label="小红书分区">
-      <div className="ww-tabs xhs-tabs" role="tablist" aria-label="小红书分区">
-        {TABS.map(item => <button key={item} role="tab" aria-selected={tab === item} className={`ww-tab ${tab === item ? 'is-active' : ''}`} onClick={() => setTab(item)}>{XHS_TAB_LABELS[item]}</button>)}
-      </div>
+      <Tabs label="小红书分区" className="xhs-tabs" value={tab} onChange={setTab} items={TABS.map(item => ({ value: item, label: XHS_TAB_LABELS[item] }))} />
     </nav>
 
     <div key={account.id} className="xhs-account-scope">

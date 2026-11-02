@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { AppState, WorkEvent } from '../shared';
 import { EventItem, KIND_META, eventSummary, eventTitle, kindOf, type EventActions, type EventKindView } from './EventItem';
-import { EmptyState, Icon, Segmented, formatDuration, relativeTime } from './ui';
+import { EmptyState, Icon, PartitionBar, Segmented, Sparkline, formatDuration, relativeTime } from './ui';
 
 type StatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 type KindFilter = 'all' | 'ai' | EventKindView;
@@ -46,6 +46,21 @@ const SOURCE_STATE: Record<string, { text: string; tone: string }> = {
   capturing: { text: '采样中', tone: 'on' }, error: { text: '出错', tone: 'error' }
 };
 
+const KIND_COLORS: Record<EventKindView, string> = {
+  app: 'var(--primary)', codex: 'var(--violet)', claude: 'oklch(0.66 0.14 45)', file: 'var(--teal)', manual: 'var(--success)'
+};
+
+/** 最近 7 天（含今天）每天的累计值，用于数据卡片里的小走势图。数据只覆盖已加载的最近 200 条事件。 */
+function lastSevenDays(events: WorkEvent[], value: (event: WorkEvent) => number): number[] {
+  const days = Array.from({ length: 7 }, (_, index) => { const date = new Date(); date.setDate(date.getDate() - (6 - index)); return date.toDateString(); });
+  const totals = new Map(days.map(day => [day, 0]));
+  for (const event of events) {
+    const day = new Date(event.created_at).toDateString();
+    if (totals.has(day)) totals.set(day, totals.get(day)! + value(event));
+  }
+  return days.map(day => totals.get(day)!);
+}
+
 export function CaptureCard({ state, onCapture, onManual, onOpenSettings }: { state: AppState; onCapture: (mode: 'start' | 'pause' | 'stop') => void; onManual: () => void; onOpenSettings: () => void }) {
   const { settings, captureStatus } = state;
   const live = settings.captureEnabled && !settings.capturePaused;
@@ -89,7 +104,8 @@ export function CaptureCard({ state, onCapture, onManual, onOpenSettings }: { st
 export function TodayView({ state, mode, drafting, actions, onCapture, onManual, onNavigate, onSummary, onBulkDone }: {
   state: AppState; mode: 'today' | 'review'; drafting: number | null; actions: EventActions;
   onCapture: (mode: 'start' | 'pause' | 'stop') => void; onManual: () => void;
-  onNavigate: (view: 'review' | 'evolve' | 'settings') => void; onSummary: (kind: 'daily' | 'weekly') => void; onBulkDone: (message: string) => void;
+  onNavigate: (view: 'review' | 'evolve' | 'settings') => void; onSummary: (kind: 'daily' | 'weekly') => void;
+  onBulkDone: (message: string, restore?: Array<{ id: number; status: WorkEvent['status'] }>) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
@@ -109,15 +125,23 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
     (effectiveStatus === 'all' || event.status === effectiveStatus) && matchKind(event, kindFilter) && matchQuery(event, query)), [state.events, effectiveStatus, kindFilter, query]);
   const groups = useMemo(() => groupByDay(visible), [visible]);
   const aiToday = todayEvents.filter(event => event.source === 'codex' || event.source === 'claude').length;
+  const trends = useMemo(() => ({
+    events: lastSevenDays(state.events, () => 1),
+    duration: lastSevenDays(state.events, event => event.duration_seconds || 0),
+    ai: lastSevenDays(state.events, event => event.source === 'codex' || event.source === 'claude' ? 1 : 0)
+  }), [state.events]);
+  const sourceMix = useMemo(() => (Object.keys(KIND_META) as EventKindView[]).map(kind => ({
+    key: kind, label: KIND_META[kind].label, color: KIND_COLORS[kind], value: todayEvents.filter(event => kindOf(event) === kind).length
+  })), [todayEvents]);
   const visibleIds = visible.map(event => event.id);
   const selectedVisible = visibleIds.filter(id => selected.has(id));
   const allSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
 
   const bulk = async (status: 'approved' | 'rejected') => {
-    const ids = [...selectedVisible];
-    for (const id of ids) await actions.update(id, { status }, true);
+    const restore = state.events.filter(event => selectedVisible.includes(event.id)).map(event => ({ id: event.id, status: event.status }));
+    for (const item of restore) await actions.update(item.id, { status }, true);
     setSelected(new Set());
-    onBulkDone(`已${status === 'approved' ? '确认' : '忽略'} ${ids.length} 条事件`);
+    onBulkDone(`已${status === 'approved' ? '确认' : '忽略'} ${restore.length} 条事件`, status === 'rejected' ? restore : undefined);
   };
   const toggle = (id: number, value: boolean) => setSelected(current => { const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; });
 
@@ -125,12 +149,17 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
     {!review && <div className="overview">
       <CaptureCard state={state} onCapture={onCapture} onManual={onManual} onOpenSettings={() => onNavigate('settings')} />
       <div className="metrics">
-        <Metric icon="calendar" label="今日事件" value={String(state.stats.total)} hint="保存在本地" />
+        <Metric icon="calendar" label="今日事件" value={String(state.stats.total)} hint="近 7 天" trend={trends.events} />
         <Metric icon="inbox" label="待确认" value={String(counts.pending)} hint={counts.pending ? '点击去处理' : '都处理完了'} tone={counts.pending ? 'warn' : 'ok'} onClick={() => onNavigate('review')} />
-        <Metric icon="clock" label="记录时长" value={formatDuration(state.stats.duration)} hint="来自应用采样" />
-        <Metric icon="bot" label="AI 对话" value={String(aiToday)} hint="Codex + Claude 今日" />
+        <Metric icon="clock" label="记录时长" value={formatDuration(state.stats.duration)} hint="近 7 天 · 应用采样" trend={trends.duration} />
+        <Metric icon="bot" label="AI 对话" value={String(aiToday)} hint="近 7 天 · Codex + Claude" trend={trends.ai} />
       </div>
     </div>}
+
+    {!review && <section className="source-mix" aria-labelledby="source-mix-title">
+      <header><h2 id="source-mix-title">今日来源</h2><span>{todayEvents.length ? `${todayEvents.length} 条事件，按来源划分` : '今天还没有事件'}</span></header>
+      <PartitionBar label="今日事件来源占比" segments={sourceMix} unit=" 条" />
+    </section>}
 
     {!review && <div className="quickbar">
       <span className="quickbar-label"><Icon name="book" size={15} />沉淀到 Obsidian</span>
@@ -176,8 +205,8 @@ export function TodayView({ state, mode, drafting, actions, onCapture, onManual,
   </div>;
 }
 
-function Metric({ icon, label, value, hint, tone, onClick }: { icon: Parameters<typeof Icon>[0]['name']; label: string; value: string; hint: string; tone?: 'warn' | 'ok'; onClick?: () => void }) {
-  const body = <><span className="metric-label"><Icon name={icon} size={14} />{label}</span><strong>{value}</strong><small>{hint}</small></>;
+function Metric({ icon, label, value, hint, tone, trend, onClick }: { icon: Parameters<typeof Icon>[0]['name']; label: string; value: string; hint: string; tone?: 'warn' | 'ok'; trend?: number[]; onClick?: () => void }) {
+  const body = <><span className="metric-label"><Icon name={icon} size={14} />{label}</span><strong>{value}</strong>{trend && <Sparkline values={trend} label={`${label}近 7 天走势`} />}<small>{hint}</small></>;
   return onClick
     ? <button type="button" className={`metric metric-${tone ?? 'plain'} is-clickable`} onClick={onClick}>{body}</button>
     : <article className={`metric metric-${tone ?? 'plain'}`}>{body}</article>;

@@ -21,7 +21,7 @@ function loadInput(task: ContentTask): WechatIpCoverInput {
 
 function ScaledFrame({ html, width, height, scale, title }: { html: string; width: number; height: number; scale: number; title: string }) {
   return <div className="xhs-ip-preview" style={{ width: width * scale, height: height * scale }}>
-    <iframe title={title} sandbox="" srcDoc={html} width={width} height={height} style={{ transform: `scale(${scale})` }} />
+    <iframe title={title} sandbox="allow-same-origin" srcDoc={html} width={width} height={height} style={{ transform: `scale(${scale})` }} />
   </div>;
 }
 

@@ -295,8 +295,9 @@ export function registerContentIpc(ctx: AppContext): void {
   /**
    * 直连微信公众号草稿箱（不经任何 CLI）。只创建草稿，绝不群发。
    * 三个硬前置：已配置凭证、有正文、有封面图——微信侧缺少封面素材会直接报错。
+   * 推送会读封面，所以两把锁都要拿到：封面生成到一半时推送，草稿会带上旧封面。
    */
-  ipcMain.handle('content:publish', async (_event, id: number, allowUnreviewed = false) => requests.run(id, async () => {
+  ipcMain.handle('content:publish', async (_event, id: number, allowUnreviewed = false) => runBoth(id, async () => {
     const { configText, styleText } = readWeWriteFiles();
     const appid = yamlScalar(configText, 'appid');
     const secret = yamlScalar(configText, 'secret');

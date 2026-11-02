@@ -155,6 +155,20 @@ export function registerIpIpc(ctx: AppContext): void {
     return changed();
   });
   ipcMain.handle('ip:pose:remove', (_event, id: string, poseId: string) => { library.removePose(String(id), String(poseId)); return changed(); });
+  /** 拖放导入：只认本机已存在的图片文件，一次最多 20 张；动作名取文件名（最长 12 字）。 */
+  ipcMain.handle('ip:poses:import', (_event, id: string, paths: unknown) => {
+    library.get(String(id));
+    const allowed = new Set(IMAGE_FILTERS[0].extensions.map(extension => `.${extension}`));
+    const files = (Array.isArray(paths) ? paths : []).map(item => String(item ?? '')).filter(file =>
+      path.isAbsolute(file) && allowed.has(path.extname(file).toLowerCase()) && fs.existsSync(file) && fs.statSync(file).isFile());
+    if (!files.length) throw new Error('没有可导入的图片：只支持 PNG、JPG、WebP');
+    if (files.length > 20) throw new Error('一次最多导入 20 张');
+    for (const file of files) {
+      const { bytes, extension } = prepareImage(file, 'pose');
+      library.addImage(String(id), 'pose', bytes, extension, path.basename(file, path.extname(file)).trim().slice(0, 12) || '动作');
+    }
+    return changed();
+  });
   ipcMain.handle('ip:select', (_event, module: IpModule, id: string) => {
     if (!IP_MODULES.includes(module)) throw new Error('未知的模块');
     library.select(module, String(id ?? ''));

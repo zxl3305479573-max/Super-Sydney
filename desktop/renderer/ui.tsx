@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 
 export function readableError(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
@@ -48,7 +48,12 @@ const paths: Record<string, ReactNode> = {
   tag: <><path d="M4.5 4.5h6.2L20 13.8 13.8 20 4.5 10.7z" /><circle cx="8.6" cy="8.6" r="1.25" /></>,
   note: <><rect x="4.5" y="3.5" width="15" height="17" rx="3" /><path d="M8.5 8.5h7M8.5 12h7M8.5 15.5h4" /></>,
   phone: <><rect x="6.5" y="2.8" width="11" height="18.4" rx="2.4" /><path d="M10.5 17.8h3" /></>,
-  card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>
+  card: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9.8h19" /><path d="M6.2 14.6h4.6" /></>,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  sidebar: <><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M9 4.5v15" /></>,
+  upload: <><path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9" /><path d="M4.5 15v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V15" /></>,
+  image: <><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m20.5 16-4.8-4.8L6 19.5" /></>,
+  pulse: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
 };
 export type IconName = keyof typeof paths;
 
@@ -193,8 +198,162 @@ export function visibleStageBounds(element: HTMLElement | null): { x: number; y:
   return { x: left, y: top, width: Math.max(0, Math.min(rect.right, view.right) - left), height: Math.max(0, Math.min(rect.bottom, view.bottom) - top) };
 }
 
-export function EmptyState({ icon, title, children }: { icon: IconName; title: string; children?: ReactNode }) {
-  return <div className="empty"><span className="empty-icon"><Icon name={icon} size={22} /></span><strong>{title}</strong>{children && <p>{children}</p>}</div>;
+/**
+ * 空状态：虚线框 + 图标 + 一句话说明 + 可选的下一步动作。
+ * compact 用在侧栏列表这类窄区域；默认尺寸用在编辑区、整块面板。
+ */
+export function EmptyState({ icon, title, children, action, compact = false, className = '' }: { icon: IconName; title: string; children?: ReactNode; action?: ReactNode; compact?: boolean; className?: string }) {
+  return <div className={`empty ${compact ? 'empty-compact' : ''} ${className}`}>
+    <span className="empty-icon"><Icon name={icon} size={compact ? 17 : 22} /></span>
+    <strong>{title}</strong>
+    {children && <p>{children}</p>}
+    {action && <div className="empty-actions">{action}</div>}
+  </div>;
+}
+
+/* ── Tabs：悬停高亮跟着鼠标滑动，选中项下方一条指示线 ─────────────── */
+type Rect = { left: number; width: number };
+const rectOf = (element: HTMLElement | null): Rect | null => element ? { left: element.offsetLeft, width: element.offsetWidth } : null;
+
+export function Tabs<T extends string>({ value, items, onChange, label, className = '' }: {
+  value: T; items: Array<{ value: T; label: ReactNode; title?: string; count?: number }>; onChange: (value: T) => void; label: string; className?: string;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState<Rect | null>(null);
+  const [hover, setHover] = useState<Rect | null>(null);
+  const [hovering, setHovering] = useState(false);
+  // 模块被 KeepAlive 隐藏时量到的宽度是 0，重新显示时 ResizeObserver 会再量一次。
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const update = () => setActive(rectOf(list.querySelector<HTMLElement>('[aria-selected="true"]')));
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [value, items.length]);
+  const move = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+    const index = items.findIndex(item => item.value === value);
+    const next = items[(index + (event.key === 'ArrowRight' ? 1 : items.length - 1)) % items.length];
+    event.preventDefault();
+    onChange(next.value);
+    window.requestAnimationFrame(() => listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
+  };
+  return <div ref={listRef} className={`tabs ${className}`} role="tablist" aria-label={label} onMouseLeave={() => setHovering(false)} onKeyDown={move}>
+    <span className="tabs-hover" aria-hidden="true" style={hover ? { width: hover.width, transform: `translateX(${hover.left}px)`, opacity: hovering ? 1 : 0 } : { opacity: 0 }} />
+    <span className="tabs-indicator" aria-hidden="true" style={active ? { width: active.width, transform: `translateX(${active.left}px)` } : { opacity: 0 }} />
+    {items.map(item => {
+      const selected = item.value === value;
+      return <button key={item.value} type="button" role="tab" aria-selected={selected} tabIndex={selected ? 0 : -1} title={item.title}
+        className={`tabs-item ${selected ? 'is-active' : ''}`}
+        onMouseEnter={event => { setHover(rectOf(event.currentTarget)); setHovering(true); }}
+        onClick={() => onChange(item.value)}>
+        {item.label}{item.count !== undefined && <span className="tabs-count">{item.count}</span>}
+      </button>;
+    })}
+  </div>;
+}
+
+/* ── Stepper：编号 + 状态 + 连接线，点击跳到对应步骤 ─────────────── */
+export type StepState = 'done' | 'current' | 'attention' | 'pending';
+
+export function Stepper<T extends string>({ steps, active, onSelect, label }: {
+  steps: Array<{ value: T; label: string; hint?: string; state: StepState }>; active: T; onSelect: (value: T) => void; label: string;
+}) {
+  return <ol className="stepper" aria-label={label}>
+    {steps.map((step, index) => <li key={step.value} className={`stepper-item is-${step.state} ${step.value === active ? 'is-active' : ''}`}>
+      <button type="button" aria-current={step.value === active ? 'step' : undefined} title={step.hint} onClick={() => onSelect(step.value)}>
+        <span className="stepper-dot">{step.state === 'done' ? <Icon name="check" size={13} /> : step.state === 'attention' ? '!' : index + 1}</span>
+        <span className="stepper-text"><strong>{step.label}</strong>{step.hint && <small>{step.hint}</small>}</span>
+      </button>
+    </li>)}
+  </ol>;
+}
+
+/* ── TaskList：逐项任务的 等待 / 进行中 / 完成 / 失败 ─────────────── */
+export type TaskState = 'pending' | 'running' | 'done' | 'failed';
+
+export function TaskList({ title, items, summary }: { title: ReactNode; items: Array<{ key: string; label: ReactNode; detail?: ReactNode; state: TaskState }>; summary?: ReactNode }) {
+  const done = items.filter(item => item.state === 'done').length;
+  return <div className="task-list" role="status" aria-live="polite">
+    <header className="task-list-head">
+      <strong>{title}</strong>
+      <span>{summary ?? `${done} / ${items.length}`}</span>
+    </header>
+    <div className="task-list-track" aria-hidden="true"><i style={{ width: `${items.length ? done / items.length * 100 : 0}%` }} /></div>
+    <ol>{items.map(item => <li key={item.key} className={`task-item is-${item.state}`}>
+      <span className="task-icon" aria-hidden="true">{item.state === 'done' ? <Icon name="check" size={12} /> : item.state === 'failed' ? <Icon name="x" size={12} /> : null}</span>
+      <span className="task-text"><span>{item.label}</span>{item.detail && <small>{item.detail}</small>}</span>
+      <em>{item.state === 'done' ? '完成' : item.state === 'running' ? '进行中' : item.state === 'failed' ? '失败' : '等待'}</em>
+    </li>)}</ol>
+  </div>;
+}
+
+/* ── 小走势图与占比条 ───────────────────────────────────────── */
+export function Sparkline({ values, label }: { values: number[]; label: string }) {
+  if (values.length < 2) return null;
+  const max = Math.max(1, ...values);
+  const step = 100 / (values.length - 1);
+  const points = values.map((value, index) => `${(index * step).toFixed(2)},${(28 - value / max * 24).toFixed(2)}`);
+  return <svg className="sparkline" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label={label}>
+    <path className="sparkline-area" d={`M0,30 L${points.join(' L')} L100,30 Z`} />
+    <polyline className="sparkline-line" points={points.join(' ')} vectorEffect="non-scaling-stroke" />
+  </svg>;
+}
+
+export function PartitionBar({ segments, label, unit = '' }: { segments: Array<{ key: string; label: string; value: number; color: string }>; label: string; unit?: string }) {
+  const total = segments.reduce((sum, item) => sum + item.value, 0);
+  const visible = segments.filter(item => item.value > 0);
+  const percent = (value: number) => total ? Math.round(value / total * 100) : 0;
+  return <div className="partition">
+    <div className="partition-bar" role="img" aria-label={`${label}：${visible.map(item => `${item.label} ${percent(item.value)}%`).join('，') || '暂无数据'}`}>
+      {visible.length ? visible.map(item => <i key={item.key} title={`${item.label}：${item.value}${unit}（${percent(item.value)}%）`} style={{ flexGrow: item.value, background: item.color }} />) : <i className="is-empty" />}
+    </div>
+    <ul className="partition-legend">{segments.map(item => <li key={item.key} className={item.value ? '' : 'is-zero'}>
+      <i style={{ background: item.color }} /><span>{item.label}</span><b>{item.value}{unit}</b><small>{percent(item.value)}%</small>
+    </li>)}</ul>
+  </div>;
+}
+
+/* ── Timeline：按天分组的竖向时间线 ─────────────────────────── */
+export type TimelineEntry = { key: string; time: string; title: ReactNode; detail?: ReactNode; tone?: 'primary' | 'success' | 'warning' | 'muted'; icon?: IconName };
+
+export function Timeline({ groups }: { groups: Array<{ label: string; items: TimelineEntry[] }> }) {
+  return <div className="timeline">{groups.map(group => <section key={group.label} className="timeline-group">
+    <h4>{group.label}</h4>
+    <ol>{group.items.map(item => <li key={item.key} className={`timeline-item tone-${item.tone ?? 'primary'}`}>
+      <span className="timeline-dot" aria-hidden="true">{item.icon && <Icon name={item.icon} size={12} />}</span>
+      <time>{item.time}</time>
+      <div><strong>{item.title}</strong>{item.detail && <p>{item.detail}</p>}</div>
+    </li>)}</ol>
+  </section>)}</div>;
+}
+
+/* ── Dropzone：拖进文件或点击选择 ─────────────────────────────── */
+export function Dropzone({ onFiles, onBrowse, extensions, disabled = false, title, hint }: {
+  onFiles: (paths: string[]) => void; onBrowse: () => void; extensions: string[]; disabled?: boolean; title: string; hint?: string;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+  const accepts = (name: string) => extensions.some(extension => name.toLowerCase().endsWith(`.${extension}`));
+  const reset = () => { depth.current = 0; setDragging(false); };
+  const over = (event: DragEvent<HTMLButtonElement>) => { event.preventDefault(); event.dataTransfer.dropEffect = disabled ? 'none' : 'copy'; };
+  return <button type="button" className={`dropzone ${dragging ? 'is-dragging' : ''}`} disabled={disabled} onClick={onBrowse}
+    onDragEnter={event => { event.preventDefault(); depth.current += 1; if (!disabled) setDragging(true); }}
+    onDragOver={over}
+    onDragLeave={() => { depth.current = Math.max(0, depth.current - 1); if (!depth.current) setDragging(false); }}
+    onDrop={event => {
+      event.preventDefault();
+      reset();
+      if (disabled) return;
+      const paths = [...event.dataTransfer.files].filter(file => accepts(file.name)).map(file => window.sydney.filePath(file)).filter(Boolean);
+      onFiles(paths);
+    }}>
+    <span className="dropzone-icon" aria-hidden="true"><Icon name="upload" size={18} /></span>
+    <strong>{dragging ? '松开即可导入' : title}</strong>
+    <small>{hint ?? `支持 ${extensions.map(item => item.toUpperCase()).join(' / ')}，可一次拖入多张`}</small>
+  </button>;
 }
 
 export function relativeTime(value: string): string {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { LlmKeyStatus, XhsHotNote, XhsHotspotResult, XhsHotspotSource, XhsTopicIdea } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
-import { Icon, readableError, shortTime } from '../ui';
+import { EmptyState, Icon, readableError, shortTime } from '../ui';
 import { HotNoteRow, Section, adoptedIds, openLink, useBusy, type XhsContext } from './common';
 
 /**
@@ -74,7 +74,7 @@ export function HotspotTab({ ctx, viewNotes, onClearViewNotes }: { ctx: XhsConte
         {result.hotTopics.length > 0 && <div className="xhs-chip-row"><span className="xhs-chip-label">热门话题</span>{result.hotTopics.slice(0, 8).map(item => <span key={item.topic} className="chip chip-soft">#{item.topic}</span>)}</div>}
         {result.notes.length
           ? <ul className="xhs-hot-list">{result.notes.map(note => <HotNoteRow key={note.id} note={note} adopted={adopted.has(note.id)} onAdopt={() => void adopt(note)} onOpen={() => openLink(note.link, notify)} />)}</ul>
-          : <p className="empty-state"><strong>没有查到热门笔记</strong>换个关键词，或把时间范围放宽一些。</p>}
+          : <EmptyState icon="search" title="没有查到热门笔记">换个关键词，或把时间范围放宽一些。</EmptyState>}
         {result.latest.length > 0 && result.notes.length < 5 && <>
           <h3 className="xhs-sub">近期热门参考</h3>
           <ul className="xhs-hot-list">{result.latest.slice(0, 10).map(note => <HotNoteRow key={note.id} note={note} adopted={adopted.has(note.id)} onAdopt={() => void adopt(note)} onOpen={() => openLink(note.link, notify)} />)}</ul>

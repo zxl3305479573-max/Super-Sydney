@@ -10,8 +10,9 @@ import path from 'node:path';
  * 界面上却只剩一块空白，而且没有任何报错，排查成本很高。这里用源码断言把这个坑钉住。
  */
 test('预览 iframe 不使用空 sandbox，且继续禁止脚本', () => {
-  const source = fs.readFileSync(path.join(import.meta.dirname, '..', 'renderer', 'native-content', 'steps.tsx'), 'utf8');
-  const frames = source.split('\n').filter(line => line.includes('<iframe'));
+  const root = path.join(import.meta.dirname, '..', 'renderer');
+  const files = fs.readdirSync(root, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.tsx'));
+  const frames = files.flatMap(file => fs.readFileSync(path.join(root, file), 'utf8').split('\n').filter(line => line.includes('<iframe')).map(line => `${file}: ${line}`));
   assert.ok(frames.length, '没有找到预览 iframe');
   for (const frame of frames) {
     assert.doesNotMatch(frame, /sandbox=""/, `预览 iframe 又用上了空 sandbox：${frame.trim()}`);

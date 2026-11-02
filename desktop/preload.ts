@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { SydneyApi, VideoProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
@@ -102,6 +102,7 @@ const api: SydneyApi = {
   inspectVideoQuality: id => ipcRenderer.invoke('video:quality', id),
   openVideoFile: id => ipcRenderer.invoke('video:open-video', id),
   getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
+  getFfmpegStatus: () => ipcRenderer.invoke('video:ffmpeg:status'),
   saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
   saveVideoTtsKey: value => ipcRenderer.invoke('video:tts:key:save', value),
   deleteVideoTtsKey: () => ipcRenderer.invoke('video:tts:key:delete'),
@@ -159,6 +160,8 @@ const api: SydneyApi = {
   updateIp: (id, patch) => ipcRenderer.invoke('ip:update', id, patch),
   deleteIp: id => ipcRenderer.invoke('ip:delete', id),
   addIpImage: (id, kind, label) => ipcRenderer.invoke('ip:image:add', id, kind, label),
+  importIpPoses: (id, paths) => ipcRenderer.invoke('ip:poses:import', id, paths),
+  filePath: file => webUtils.getPathForFile(file),
   removeIpPose: (id, poseId) => ipcRenderer.invoke('ip:pose:remove', id, poseId),
   selectIp: (module, id) => ipcRenderer.invoke('ip:select', module, id),
   getIpKit: id => ipcRenderer.invoke('ip:kit', id),
