@@ -87,6 +87,10 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   const guide = platformGuide[VIDEO_PLATFORMS.some(item => item.value === project.platform) ? project.platform : 'general'];
   const target = project.durationSeconds > 0 ? project.durationSeconds : 60;
   const audience = project.audience.trim() || (workflow === 'product-demo' ? '第一次了解这个产品的人' : '第一次接触该主题的普通观众');
+  const structure = contentStructureGuide(project.options.contentStructure);
+  const contentBrief = project.options.contentBrief.trim()
+    ? `\n<本项目创作要求>\n${project.options.contentBrief.trim()}\n</本项目创作要求>\n`
+    : '';
   const research = project.options.productResearch.trim();
   const productEvidence = `<官网研究资料>\n${research || `官网：${project.options.websiteUrl || project.topic || '未抓取'}`}\n</官网研究资料>`;
   if (workflow === 'product-demo' && stage === 'topics') {
@@ -98,7 +102,7 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   }
   if (workflow === 'product-demo' && stage === 'script') {
     return `写一条 ${target} 秒的产品短视频口播脚本。平台：${platform}；受众：${audience}；产品名称或标题：${project.title || project.topic}。\n${guide}\n`
-      + `${productEvidence}\n`
+      + `${contentBrief}${productEvidence}\n`
       + '结构：前 3 秒点出观众正在面对的具体问题或官网明确提供的价值；随后用官网可证实的功能解释产品如何解决；最后给出一个明确但不夸大的下一步。'
       + '只讲官网资料里存在的产品、功能和价值，不补写资料没有的功能、客户、价格、数字、兼容范围或效果。'
       + '一句话只讲一件事，短句、口语化；不要“大家好、欢迎收看、话不多说”等开场；不要复述整站导航。'
@@ -107,7 +111,7 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   }
   if (workflow === 'product-demo' && stage === 'storyboard') {
     return `把下面这条产品口播拆成分镜。平台：${platform}；目标总时长：${target} 秒。\n${guide}\n`
-      + `${productEvidence}\n`
+      + `${contentBrief}${productEvidence}\n`
       + `要求：4-10 个镜头，每镜 ${MIN_SHOT_SECONDS}-${MAX_SHOT_SECONDS} 秒，总秒数接近 ${target} 秒。`
       + '画面将使用已抓取的官网页面截图并叠加品牌 Logo，因此 visual 要写清这一镜展示官网的哪类页面内容或产品动作，不要要求不存在的客户案例、产品视频或界面。'
       + '- narration：口播原文，一字不改，合起来覆盖整篇脚本。\n'
@@ -119,6 +123,7 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   }
   if (stage === 'topics') {
     return `为「${platform}」生成 5 个可核实、可拍成短视频的选题。目标受众：${audience}。${guide}\n`
+      + `${contentBrief}`
       + `用户方向：${project.topic || project.title || '根据目标受众生成常青话题'}。\n`
       + `五个候选必须角度不同，覆盖不同场景、问题、步骤或观点，不要用同义标题凑数。\n`
       + `标题像观众会主动搜索的一句话，不用夸张承诺；开场钩子必须具体，避免重复套话。\n`
@@ -127,9 +132,8 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
   }
   if (stage === 'script') {
     return `写一条 ${target} 秒的短视频口播脚本。平台：${platform}；受众：${audience}；标题：${project.title || project.topic}；方向：${project.topic || '同上'}。\n${guide}\n`
-      + `先在心里想清楚（不要写出来）：观众卡在哪个困惑、一句话结论是什么、支撑结论的 3-5 个要点、最后能马上做的一件小事。\n`
-      + `${explainerStructures}\n`
-      + `要求：第一句直接进入问题、场景或结论，不用“大家好”“今天聊聊”“话不多说”“欢迎收看”等开场；不介绍本条视频本身。一句话只讲一件事，多用短句；不照着资料顺序复述；结尾给一个具体可做的小建议；按 ${Math.round(target * 4)} 字左右控制（中文口播约每秒 4 字）。\n`
+      + `${contentBrief}${structure}\n`
+      + `要求：第一句直接进入问题、场景或结论，不用“大家好”“今天聊聊”“话不多说”“欢迎收看”等开场；不介绍本条视频本身。一句话只讲一件事，多用短句；不照着资料顺序复述；按选定结构自然收束，不要每次都强加关注、点赞或行动号召；按 ${Math.round(target * 4)} 字左右控制（中文口播约每秒 4 字）。\n`
       + '中间用自然口语衔接，不堆“首先、其次、最后”；不要让每段都用同一种句式开头。不要编造案例和研究来增强说服力。\n'
       + '数字、单位写成口语读法（如「一百三」「两个小时」），避免配音念错。\n'
       + '输出契约：script 字段内只能放可直接朗读的纯文本；禁止 Markdown、标题层级、项目符号、表情、URL、时间码、“镜头”“画面”“字幕”“旁白”等制作标记，也不要写括号动作提示。\n'
@@ -137,8 +141,9 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
       + '把脚本写进 script 字段，纯口播文本，可以分段换行，不要写画面提示、不要写时间码、不要出现「镜头」这类词。只输出 JSON：{"script":"..."}';
   }
   return `把下面这条口播脚本拆成分镜。平台：${platform}；目标总时长：${target} 秒。\n${guide}\n`
+    + `${contentBrief}${structure}\n`
     + `要求：镜头 4-12 个，每镜 ${MIN_SHOT_SECONDS}-${MAX_SHOT_SECONDS} 秒，所有镜头秒数加起来接近 ${target} 秒；一镜只承担一个作用。\n`
-    + `叙事顺序要成立：开场钩子 → 问题或场景 → 2-4 个核心要点 / 步骤 → 结论或行动建议。第一镜通常用 hook，最后一镜通常是 takeaway 或 cta。\n`
+    + `叙事顺序必须服从上面的内容结构，不要套用与结构冲突的固定顺序；第一镜通常用 hook，最后一镜通常是 takeaway 或 cta。\n`
     + `不要让相邻镜头重复同一种画面和构图。概念镜头要有可理解的日常生活场景，抽象内容可用一个简洁视觉隐喻，但不要为了隐喻牺牲事实。\n`
     + `- narration：该镜对应的口播原文，一字不改（合起来要覆盖整篇脚本，不要漏句、不要添加脚本里没有的内容）；字幕和配音都直接用它。\n`
     + `- role：这一镜在讲解里的作用，只能取 ${VIDEO_SHOT_ROLES.map(item => `${item.value}（${item.label}）`).join('、')}；第一镜通常是 hook。\n`
@@ -148,9 +153,10 @@ function buildVideoPrompt(project: VideoProject, stage: VideoStage): string {
     + `字段：shots 数组，每项含 no、seconds、role、caption、visual、narration、image_prompt。\n口播脚本：\n${project.script}\n只输出 JSON：{"shots":[...]}`;
 }
 
-/** 讲解结构四选一（参考 Hyperframes faceless-explainer 的 story-design）：结构定了，节奏才不会散。 */
-const explainerStructures = '从下面四种讲解结构里选一种最合适的：'
-  + '概念讲解（这是什么、为什么重要，层层揭开）；'
-  + '步骤讲解（怎么做，3-5 步按顺序，每步一个动作）；'
-  + '清单讲解（N 个要点 / 误区，彼此并列，三点最好记）；'
-  + '故事讲解（一个具体场景 → 转折 → 道理，道理要能推广）。';
+function contentStructureGuide(structure: VideoProject['options']['contentStructure']): string {
+  if (structure === 'problem') return '内容结构已指定为「问题拆解」：具体场景 / 痛点 → 为什么会这样 → 2-4 个关键判断或解决点 → 结论与行动建议。不要虚构案例。';
+  if (structure === 'steps') return '内容结构已指定为「步骤教程」：先说完成目标 → 按实际执行顺序讲 3-5 步 → 每步只讲一个动作和判断标准 → 常见错误 → 最后复述第一步。';
+  if (structure === 'list') return '内容结构已指定为「清单盘点」：先说清楚清单适用场景 → 3-5 个彼此不同的要点 / 误区 → 每点给出判断依据或动作 → 总结最值得先做的一项。不要为了凑数重复。';
+  if (structure === 'story') return '内容结构已指定为「场景故事」：一个具体日常场景 → 出现冲突或误解 → 关键转折 → 解释背后的道理 → 把道理落到观众下一步。只用用户提供或可核实的事实。';
+  return '内容结构使用「自动匹配题材」：先判断主题更适合问题拆解、步骤教程、清单盘点或场景故事，再选一种并从头到尾保持一致；不要把四种结构混在一起。';
+}

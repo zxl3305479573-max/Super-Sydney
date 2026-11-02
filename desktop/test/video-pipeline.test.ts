@@ -83,6 +83,9 @@ test('shot parsing tolerates model drift and drops empty shots', () => {
   assert.equal(shots[0].index, 2);
   assert.equal(shots[0].seconds, 7);
   assert.equal(shots[0].caption, '先说结论');
+  assert.equal(shots[0].motion, 'auto');
+  assert.equal(shots[0].soundEffect, 'none');
+  assert.equal(shots[0].soundEffectVolume, 24);
   assert.equal(shots[1].seconds, 5);
   assert.deepEqual(parseVideoShots('not json'), []);
   assert.deepEqual(parseVideoShots(''), []);

@@ -51,6 +51,8 @@ export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   productAssetSignature: '',
   voiceMode: 'tts',
   template: 'warm',
+  contentStructure: 'auto',
+  contentBrief: '',
   imageMode: 'none',
   bgmPath: '',
   bgmMode: 'none',
@@ -60,7 +62,6 @@ export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   bgmFadeIn: 0.6,
   bgmFadeOut: 2,
   footer: DEFAULT_VIDEO_FOOTER,
-  ipId: '',
   ...VIDEO_IMAGE_PROMPT_DEFAULTS
 };
 
@@ -128,6 +129,15 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
     if (!VIDEO_TEMPLATES.some(item => item.value === value.template)) throw new Error('未知的画面模板');
     next.template = value.template as VideoRenderOptions['template'];
   }
+  if (value.contentStructure !== undefined) {
+    const structures = ['auto', 'problem', 'steps', 'list', 'story'] as const;
+    if (!structures.includes(value.contentStructure as typeof structures[number])) throw new Error('未知的视频内容结构');
+    next.contentStructure = value.contentStructure as VideoRenderOptions['contentStructure'];
+  }
+  if (value.contentBrief !== undefined) {
+    if (typeof value.contentBrief !== 'string') throw new Error('视频创作要求必须是文本');
+    next.contentBrief = value.contentBrief.trim().slice(0, 4000);
+  }
   if (value.imageMode !== undefined) {
     if (value.imageMode !== 'none' && value.imageMode !== 'ai') throw new Error('未知的配图方式');
     next.imageMode = value.imageMode;
@@ -166,10 +176,6 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   if (value.footer !== undefined) {
     if (typeof value.footer !== 'string') throw new Error('页脚必须是文本');
     next.footer = value.footer.replace(/\s+/g, ' ').trim().slice(0, 40);
-  }
-  if (value.ipId !== undefined) {
-    if (typeof value.ipId !== 'string') throw new Error('IP 编号必须是文本');
-    next.ipId = value.ipId.trim().slice(0, 60);
   }
   if (value.storyboardImagePromptRule !== undefined) {
     if (typeof value.storyboardImagePromptRule !== 'string') throw new Error('分镜生图规则必须是文本');
@@ -339,14 +345,11 @@ export function audioKey(voiceProfile: string, narration: string): string {
 /** 逐镜配图尺寸由独立的视觉提示词模块维护；这里保留别名给素材账本和界面使用。 */
 export const SHOT_IMAGE_SIZE = VIDEO_SHOT_IMAGE_SIZE;
 
-/**
- * 选了 IP 的视频，配图的键里带上 IP：换 IP 后旧配图自然算过期、会重新生成；
- * 没选 IP 时键和以前一样，已有配图不受影响。提示词本身不变，角色由参考图带进画面。
- */
+/** 视频配图只由镜头提示词决定，和公众号 / 小红书的 IP 库完全隔离。 */
 export const shotImagePrompt = buildVideoShotImagePrompt;
 
-export function imageKey(prompt: string, ipId = ''): string {
-  return contentHash(ipId ? `image\n${SHOT_IMAGE_SIZE}\nip:${ipId}\n${prompt}` : `image\n${SHOT_IMAGE_SIZE}\n${prompt}`);
+export function imageKey(prompt: string): string {
+  return contentHash(`image\n${SHOT_IMAGE_SIZE}\n${prompt}`);
 }
 
 function projectTitle(project: VideoProject): string {
@@ -361,7 +364,7 @@ export function shotAudio(project: VideoProject, shot: VideoShot): VideoAudioAss
 }
 
 export function shotImage(project: VideoProject, shot: VideoShot): VideoImageAsset | null {
-  const key = imageKey(shotImagePrompt(shot, projectTitle(project), project.options.shotImagePromptTemplate), project.options.ipId);
+  const key = imageKey(shotImagePrompt(shot, projectTitle(project), project.options.shotImagePromptTemplate));
   return project.assets.images.find(item => item.key === key) ?? null;
 }
 

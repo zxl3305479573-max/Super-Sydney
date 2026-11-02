@@ -303,6 +303,19 @@ export type VideoStage = 'topics' | 'script' | 'storyboard';
 export type VideoProjectStatus = 'idea' | 'script' | 'storyboard' | 'exported';
 /** 镜头在讲解里的作用：开场钩子、讲问题、讲概念、步骤、证据、结论、行动建议。 */
 export type VideoShotRole = 'hook' | 'problem' | 'concept' | 'step' | 'evidence' | 'takeaway' | 'cta';
+export type VideoMotionPreset = 'auto' | 'static' | 'push-in' | 'pull-out' | 'pan-left' | 'pan-right' | 'reveal-up' | 'pop';
+export const VIDEO_MOTION_PRESETS: Array<{ value: VideoMotionPreset; label: string }> = [
+  { value: 'auto', label: '自动运镜' }, { value: 'static', label: '静止' },
+  { value: 'push-in', label: '缓慢推进' }, { value: 'pull-out', label: '缓慢拉远' },
+  { value: 'pan-left', label: '向左平移' }, { value: 'pan-right', label: '向右平移' },
+  { value: 'reveal-up', label: '向上揭示' }, { value: 'pop', label: '轻弹强调' }
+];
+export type VideoSoundEffect = 'none' | 'soft-pop' | 'whoosh' | 'click' | 'tick' | 'impact';
+export const VIDEO_SOUND_EFFECTS: Array<{ value: VideoSoundEffect; label: string }> = [
+  { value: 'none', label: '无' }, { value: 'soft-pop', label: '轻弹' },
+  { value: 'whoosh', label: '转场风声' }, { value: 'click', label: '确认点击' },
+  { value: 'tick', label: '节奏提示' }, { value: 'impact', label: '重点落点' }
+];
 export type VideoShot = {
   index: number;
   /** 分镜给的估计时长（秒）；配音之后以真实音频时长为准。 */
@@ -317,10 +330,21 @@ export type VideoShot = {
   role?: VideoShotRole | '';
   /** AI 配图用的提示词；为空时退回 visual。 */
   imagePrompt?: string;
+  /** 逐镜运镜预设；auto 会按相邻镜头轮换方向。 */
+  motion?: VideoMotionPreset;
+  /** 内置离线音效；不依赖个人 IP 或外部音频库。 */
+  soundEffect?: VideoSoundEffect;
+  /** 可选的本地音效素材；相对镜头开头播放。 */
+  soundEffectPath?: string;
+  /** 音效音量，百分比 0–100。 */
+  soundEffectVolume?: number;
+  /** 音效相对镜头开头的延迟秒数。 */
+  soundEffectAt?: number;
 };
 export type VideoVoiceMode = 'tts' | 'silent';
 export type VideoTemplate = 'warm' | 'clean' | 'night';
 export type VideoImageMode = 'none' | 'ai';
+export type VideoContentStructure = 'auto' | 'problem' | 'steps' | 'list' | 'story';
 /** 视频工作台的生产路径。旧项目没有该字段时自动使用 script-to-video。 */
 export type VideoWorkflow = 'script-to-video' | 'footage-edit' | 'product-demo' | 'browser-demo' | 'localize';
 export type VideoBgmMode = 'none' | 'auto' | 'custom';
@@ -361,6 +385,10 @@ export type VideoRenderOptions = {
   productAssetSignature: string;
   voiceMode: VideoVoiceMode;
   template: VideoTemplate;
+  /** 口播内容结构；独立于成片视觉模板。 */
+  contentStructure: VideoContentStructure;
+  /** 用户为本项目补充的写作要求，会传给脚本与分镜模型。 */
+  contentBrief: string;
   imageMode: VideoImageMode;
   /** 背景音乐（本地文件）；空串表示不加。 */
   bgmPath: string;
@@ -378,8 +406,6 @@ export type VideoRenderOptions = {
   bgmFadeOut: number;
   /** 画面底部固定的一行：账号名或合规提示。 */
   footer: string;
-  /** 画面里带哪个 IP 的品牌角标和角色（IP 库里的 id）；空串表示不带。 */
-  ipId: string;
   /** 分镜模型填写 image_prompt 的自定义规则；空串按默认规则。 */
   storyboardImagePromptRule: string;
   /** 逐镜 AI 配图的最终提示词模板，支持 {title}、{subject}。 */
@@ -554,9 +580,6 @@ export type WechatIpCoverInput = {
   sub: string;
   tag: string;
 };
-
-/** 视频的 IP 竖版封面（见 services/video-ip-cover）。 */
-export type VideoIpCoverInput = { style: 'light' | 'dark'; pose: string; title: string; sub: string };
 
 /* ── IP 库 ─────────────────────────────────────────────────────── */
 
@@ -1015,8 +1038,6 @@ export interface SydneyApi {
   generateVideoStage(id: number, stage: VideoStage): Promise<VideoProject>;
   generateVideoCover(id: number): Promise<VideoProject>;
   chooseVideoCover(id: number): Promise<VideoProject | null>;
-  /** 用这条视频选的 IP 本地排版出竖版封面（不调图片接口）。 */
-  renderVideoIpCover(id: number, input: VideoIpCoverInput): Promise<VideoProject>;
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
@@ -1033,6 +1054,7 @@ export interface SydneyApi {
   saveVideoMp4(id: number): Promise<string | null>;
   /** 选择背景音乐；用户取消时返回 null。 */
   chooseVideoBgm(id: number): Promise<VideoProject | null>;
+  chooseVideoSoundEffect(id: number): Promise<string | null>;
   inspectVideoQuality(id: number): Promise<VideoQualityReport>;
   openVideoFile(id: number): Promise<string>;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;

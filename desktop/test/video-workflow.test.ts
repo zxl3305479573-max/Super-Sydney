@@ -44,6 +44,34 @@ test('script stage sends the target length and returns plain script text', async
   assert.match(body, /写完后自检/);
 });
 
+test('script and storyboard stages share the selected content structure and brief', async () => {
+  let scriptBody = '';
+  let storyboardBody = '';
+  const configured = project({
+    topic: '家庭收纳',
+    options: {
+      ...VIDEO_RENDER_DEFAULTS,
+      contentStructure: 'steps',
+      contentBrief: '面向第一次整理小户型的人，只讲三个动作，避免空泛鸡汤。'
+    }
+  });
+  await requestVideoStage(configured, 'script', config, async (_url, init) => {
+    scriptBody = String(init?.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"script":"先清空桌面，再按使用频率分区。"}' } }] }), { status: 200 });
+  });
+  const withScript = { ...configured, script: '先清空桌面，再按使用频率分区。' };
+  await requestVideoStage(withScript, 'storyboard', config, async (_url, init) => {
+    storyboardBody = String(init?.body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '{"shots":[{"no":1,"seconds":5,"role":"hook","caption":"先清空","visual":"桌面上的物品被分到地面收纳篮","narration":"先清空桌面，再按使用频率分区。"}]}' } }] }), { status: 200 });
+  });
+  for (const body of [scriptBody, storyboardBody]) {
+    assert.match(body, /步骤教程/);
+    assert.match(body, /只讲三个动作/);
+  }
+  assert.match(storyboardBody, /服从上面的内容结构/);
+  assert.doesNotMatch(scriptBody, /从下面四种讲解结构里选一种/);
+});
+
 test('storyboard stage normalizes shots and refuses an empty result', async () => {
   let body = '';
   const result = await requestVideoStage(project({ script: '开场白' }), 'storyboard', config, async (_url, init) => {

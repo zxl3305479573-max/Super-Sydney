@@ -24,15 +24,12 @@ import {
 import { probeDuration, probeImageSize, probeVideo, renderFrameFiles, resolveFfmpeg, runFfmpeg, scanVideoContent, speechSpan } from '../services/video-render';
 import { listSystemVoices, readVideoTtsSettings, requestSpeech, synthesizeSystemSpeech, writeVideoTtsSettings } from '../services/video-tts';
 import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
-import { pickPose } from '../services/ip-theme';
-import { normalizeVideoIpCoverInput, renderVideoIpCover, videoCoverSize } from '../services/video-ip-cover';
-import { renderHtmlPages } from '../services/html-pages-render';
-import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
 import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export';
 import { searchVideoTopicHotspots } from '../services/video-topic-search';
 import { runVideoSkill } from '../services/video-skill-adapters';
 import { ensureAutoBgm } from '../services/video-bgm';
+import { ensureSoundEffect, soundEffectDuration } from '../services/video-sfx';
 import { videoFrameSpec } from '../services/video-frame-spec';
 import { evaluateVideoQuality } from '../services/video-quality';
 import { assetDirectory, generateImageFile, removeAssetDirectory, videoApiConfig } from './content-support';
@@ -156,10 +153,7 @@ export function registerVideoIpc(ctx: AppContext): void {
   ipcMain.handle('video:topics:search', async (_event, query: VideoTopicSearchQuery): Promise<VideoTopicSearchResult> =>
     searchVideoTopicHotspots(db, query, ctx.redfoxApiKey()));
   ipcMain.handle('video:create', (_event, platform: VideoPlatform, topic = '') => {
-    let project = createVideoProject(db, platform, topic);
-    // 新视频默认带上视频模块上次选的 IP；之后每条视频各自记着自己的。
-    const ipId = ctx.ipLibrary.selections().video;
-    if (ipId) project = updateVideoProject(db, project.id, { options: { ...project.options, ipId } });
+    const project = createVideoProject(db, platform, topic);
     ctx.broadcast();
     return project;
   });
@@ -184,7 +178,9 @@ export function registerVideoIpc(ctx: AppContext): void {
         ? { path: project.coverPath, caption: '封面', thumbnail: imageThumbnail(project.coverPath) }
         : null,
       shotImages: shots.map(shot => thumb(shotImage(project, shot)?.path)),
-      preview: (project.assets.preview?.paths ?? []).map(thumb),
+      preview: project.assets.preview?.signature === previewSignature(project)
+        ? project.assets.preview.paths.map(thumb)
+        : [],
       videoPath: video && fs.existsSync(video.path) ? video.path : ''
     };
   });
@@ -208,17 +204,6 @@ export function registerVideoIpc(ctx: AppContext): void {
    * 生成竖版封面（9:16）。
    * 使用全局图片服务生成视频封面，尺寸按视频平台规格选择。
    */
-  /** 用这条视频选的 IP 本地排版出竖版封面，不调图片接口。 */
-  ipcMain.handle('video:ip-cover:render', async (_event, id: number, raw: unknown) => requests.run(id, async () => {
-    const project = getVideoProject(db, id);
-    if (!project.options.ipId) throw new Error('这条视频还没有选用 IP：在「画面」步骤或这里选一个');
-    const input = normalizeVideoIpCoverInput(raw);
-    if (!input.title) throw new Error('封面标题不能为空');
-    const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-ip-${Date.now()}.png`);
-    const size = videoCoverSize(project.platform);
-    await renderHtmlPages([renderVideoIpCover(input, ipRenderKit(ctx.ipLibrary, project.options.ipId), size)], size.width, size.height, [target]);
-    return update(id, { coverPath: target });
-  }));
   ipcMain.handle('video:cover:generate', async (_event, id: number) => requests.run(id, async () => {
     const project = getVideoProject(db, id);
     if (!(project.title || project.topic).trim()) throw new Error('请先确定选题或填写标题，再生成封面');
@@ -228,8 +213,7 @@ export function registerVideoIpc(ctx: AppContext): void {
         target,
         videoCoverPrompt(project, project.options.coverImagePromptTemplate),
         project.platform === 'bilibili' || project.platform === 'general' ? '1536x1024' : '1024x1536',
-        undefined,
-        ipReferenceImage(ctx.ipLibrary, project.options.ipId)
+        undefined
       )
     });
   }));
@@ -299,17 +283,14 @@ export function registerVideoIpc(ctx: AppContext): void {
     const shots = parseVideoShots(project.storyboardJson);
     if (!shots.length) throw new Error('请先生成分镜，再配图');
     const title = project.title.trim() || project.topic.trim() || '短视频';
-    // 这条视频选了 IP 时，配图里融入 IP 角色（参考图传给接口）；IP 进了配图的键，换 IP 会重新生成。
-    const ipId = project.options.ipId;
-    const ip = ipReferenceImage(ctx.ipLibrary, ipId);
     const root = assetDirectory(ctx, 'video-assets', id);
     const directory = path.join(root, 'images');
     fs.mkdirSync(directory, { recursive: true });
     const wanted = new Map(shots.map(shot => {
       const prompt = shotImagePrompt(shot, title, project.options.shotImagePromptTemplate);
-      return [imageKey(prompt, ipId), prompt] as const;
+      return [imageKey(prompt), prompt] as const;
     }));
-    const labelOf = new Map(shots.map(shot => [imageKey(shotImagePrompt(shot, title, project.options.shotImagePromptTemplate), ipId), shotLabel(shot)] as const));
+    const labelOf = new Map(shots.map(shot => [imageKey(shotImagePrompt(shot, title, project.options.shotImagePromptTemplate)), shotLabel(shot)] as const));
     const kept = force === true ? [] : project.assets.images.filter(item => wanted.has(item.key) && fs.existsSync(item.path));
     for (const item of project.assets.images) if (!kept.includes(item)) removeInside(root, item.path);
     let assets: VideoRenderAssets = { ...project.assets, images: kept };
@@ -318,7 +299,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     const labels = pending.map(([key]) => labelOf.get(key) ?? '镜头');
     for (const [index, [key, prompt]] of pending.entries()) {
       progress({ id, task: 'images', done: index, total: pending.length, message: `正在生成第 ${index + 1}/${pending.length} 张配图…`, labels });
-      const file = await generateImageFile(path.join(directory, `${key}.png`), prompt, SHOT_IMAGE_SIZE, undefined, ip);
+      const file = await generateImageFile(path.join(directory, `${key}.png`), prompt, SHOT_IMAGE_SIZE);
       assets = { ...assets, images: [...assets.images, { key, path: file }] };
       project = update(id, { assets });
     }
@@ -335,22 +316,6 @@ export function registerVideoIpc(ctx: AppContext): void {
   });
 
   /**
-   * 帧里的 IP 角色：用 IP 库里文件的 file:// 地址（帧页面走 loadFile，读得到本地文件）。不放头像和品牌名。
-   * 选的 IP 已被删掉或没有角色图就不带，不让渲染失败。
-   */
-  const frameIp = (ipId: string) => {
-    if (!ipId) return null;
-    try {
-      const ip = ctx.ipLibrary.get(ipId);
-      const url = (file: string) => pathToFileURL(ctx.ipLibrary.filePathOf(ip.id, file)).href;
-      const hero = pickPose(ip.poses, '', ['指', '介绍', '打字'], 1);
-      return hero ? { heroUrl: url(hero.file) } : null;
-    } catch {
-      return null;
-    }
-  };
-
-  /**
    * 把若干段画面排版成 HTML，再逐张截出各段的静帧（.png 或 .jpg）；
    * 返回图片路径，顺序是各段静帧依次展开。
    */
@@ -362,7 +327,6 @@ export function registerVideoIpc(ctx: AppContext): void {
     const frame = videoFrameSpec(project.platform);
     const title = project.title.trim() || project.topic.trim() || '短视频';
     const pad = (value: number) => String(value).padStart(4, '0');
-    const ip = frameIp(project.options.ipId);
     const productMode = project.options.workflow === 'product-demo';
     const productScreenshots = productMode ? project.options.productScreenshots.filter(file => fs.existsSync(file)) : [];
     if (productMode && !productScreenshots.length) throw new Error('官网截图不存在，请先重新抓取官网素材');
@@ -380,7 +344,7 @@ export function registerVideoIpc(ctx: AppContext): void {
         frame, platform: project.platform, template: project.options.template, title, keyText: shot.caption, subtitle: segment.subtitle,
         imageUrl: imageFile && fs.existsSync(imageFile) ? pathToFileURL(imageFile).href : '',
         shotNumber: segment.shot + 1, shotCount: shots.length, footer: project.options.footer,
-        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion, ip,
+        role: shot.role ?? '', lead: frameLead(shots, segment.shot), motion: segment.stills[0].motion,
         productMode, logoUrl, brandColors: project.options.brandColors
       }), 'utf8');
       const stills = segment.stills.map((still, index) => ({ style: motionStyle(still.motion), target: path.join(directory, `frame-${pad(position + 1)}-${pad(index + 1)}.${extension}`) }));
@@ -469,9 +433,20 @@ export function registerVideoIpc(ctx: AppContext): void {
       const durations = plan.segments.flatMap(segment => segment.stills.map(still => still.frames));
       fs.writeFileSync(listPath, buildConcatList(frames.map((file, index) => ({ path: file, frames: durations[index] }))), 'utf8');
       const temp = path.join(work, 'video.tmp.mp4');
+      const soundEffects = shots.flatMap((shot, index) => {
+        const at = timeline.shots[index]?.start ?? 0;
+        const delay = Math.max(0, shot.soundEffectAt ?? 0);
+        const file = shot.soundEffectPath?.trim() || ensureSoundEffect(ctx.dataDir, shot.soundEffect ?? 'none');
+        if (!file) return [];
+        if (!fs.existsSync(file)) throw new Error(`第 ${index + 1} 镜的音效文件不存在，请重新选择`);
+        const start = at + delay;
+        if (start >= timeline.total) return [];
+        return [{ path: file, at: start, duration: shot.soundEffectPath ? Math.min(3, timeline.total - start) : soundEffectDuration(shot.soundEffect ?? 'none'), volume: Math.min(1, Math.max(0, shot.soundEffectVolume ?? 24) / 100) }];
+      });
       await runFfmpeg(tools, buildFfmpegArgs({
         frame,
         narration: shots.map((shot, index) => ({ path: voiceMode === 'tts' ? shotAudio(project, shot)?.path ?? '' : '', seconds: seconds[index] })),
+        soundEffects,
         bgm: resolvedBgmPath ? {
           path: resolvedBgmPath,
           volume: bgmVolume / 100,
@@ -512,6 +487,11 @@ export function registerVideoIpc(ctx: AppContext): void {
     if (result.canceled || !result.filePaths[0]) return null;
     const project = getVideoProject(db, id);
     return update(id, { options: { ...project.options, bgmPath: result.filePaths[0], bgmMode: 'custom' } });
+  });
+  ipcMain.handle('video:sfx:choose', async (_event, id: number) => {
+    assertIdle(id, '选择音效');
+    const result = await dialog.showOpenDialog(ctx.window()!, { properties: ['openFile'], filters: [{ name: '音效', extensions: ['wav', 'mp3', 'm4a', 'aac', 'flac', 'ogg'] }] });
+    return result.canceled ? null : result.filePaths[0] ?? null;
   });
   ipcMain.handle('video:quality', async (_event, id: number) => {
     assertIdle(id, '检查成片');

@@ -1,5 +1,5 @@
 import {
-  AUTO_BGM_TEMPLATE_VERSION, resolveVideoBgmStyle,
+  AUTO_BGM_TEMPLATE_VERSION, resolveVideoBgmStyle, VIDEO_MOTION_PRESETS,
   type VideoProject, type VideoShot, type VideoShotRole, type VideoStage
 } from '../shared.ts';
 import {
@@ -90,7 +90,12 @@ export function parseVideoShots(value: string): VideoShot[] {
       narration,
       caption,
       role: roleSet.has(role) ? role as VideoShotRole : '',
-      imagePrompt: String(record.imagePrompt ?? record.image_prompt ?? '').trim()
+      imagePrompt: String(record.imagePrompt ?? record.image_prompt ?? '').trim(),
+      motion: VIDEO_MOTION_PRESETS.some(item => item.value === record.motion) ? record.motion as VideoShot['motion'] : 'auto',
+      soundEffect: ['none', 'soft-pop', 'whoosh', 'click', 'tick', 'impact'].includes(String(record.soundEffect)) ? record.soundEffect as VideoShot['soundEffect'] : 'none',
+      soundEffectPath: typeof record.soundEffectPath === 'string' ? record.soundEffectPath.trim().slice(0, 2000) : '',
+      soundEffectVolume: Number.isFinite(Number(record.soundEffectVolume)) ? Math.min(100, Math.max(0, Number(record.soundEffectVolume))) : 24,
+      soundEffectAt: Number.isFinite(Number(record.soundEffectAt)) ? Math.min(30, Math.max(0, Number(record.soundEffectAt))) : 0
     }];
   });
 }
@@ -302,20 +307,20 @@ export function previewSignature(project: VideoProject): string {
   });
 }
 
-/** 画面模板的版本：改了模板排版就加一，旧成片和预览随之标成过期。 */
-export const FRAME_TEMPLATE_VERSION = 8;
+/** 画面模板或其素材来源变化时递增，让旧预览和成片自动过期。 */
+export const FRAME_TEMPLATE_VERSION = 10;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
-  const { workflow, template, imageMode, footer, ipId, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;
+  const { workflow, template, imageMode, footer, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;
   return {
     version: FRAME_TEMPLATE_VERSION,
     title: project.title.trim() || project.topic.trim(),
-    workflow, template, imageMode, footer, ipId,
+    workflow, template, imageMode, footer,
     logoPath: workflow === 'product-demo' ? logoPath : '',
     productScreenshots: workflow === 'product-demo' ? productScreenshots : [],
     brandColors: workflow === 'product-demo' ? brandColors : [],
     productAssetSignature: workflow === 'product-demo' ? productAssetSignature : '',
-    shots: shots.map(shot => [shot.caption, shot.role ?? '']),
+    shots: shots.map(shot => [shot.caption, shot.role ?? '', shot.motion ?? 'auto', shot.soundEffect ?? 'none', shot.soundEffectPath ?? '', shot.soundEffectVolume ?? 24, shot.soundEffectAt ?? 0]),
     images: imageMode === 'ai' ? shots.map(shot => shotImage(project, shot)?.key ?? '') : []
   };
 }

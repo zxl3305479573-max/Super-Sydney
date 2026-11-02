@@ -27,6 +27,8 @@ test('render options merge patches and reject values the renderer cannot honour'
   assert.equal(VIDEO_RENDER_DEFAULTS.bgmVolume, 12);
   assert.equal(VIDEO_RENDER_DEFAULTS.bgmStyle, 'auto');
   assert.equal(VIDEO_RENDER_DEFAULTS.bgmDucking, true);
+  assert.equal(VIDEO_RENDER_DEFAULTS.contentStructure, 'auto');
+  assert.equal(VIDEO_RENDER_DEFAULTS.contentBrief, '');
   assert.deepEqual([VIDEO_RENDER_DEFAULTS.bgmFadeIn, VIDEO_RENDER_DEFAULTS.bgmFadeOut], [0.6, 2]);
   const next = normalizeRenderOptions({
     template: 'night', bgmMode: 'auto', bgmVolume: 250, bgmStyle: 'calm', bgmDucking: false, bgmFadeIn: 20, bgmFadeOut: -2,
@@ -52,6 +54,11 @@ test('render options merge patches and reject values the renderer cannot honour'
   assert.throws(() => normalizeRenderOptions({ shotImagePromptTemplate: 3 }), /逐镜配图/);
   assert.equal(normalizeRenderOptions({ shotImagePromptTemplate: '' }).shotImagePromptTemplate, VIDEO_RENDER_DEFAULTS.shotImagePromptTemplate);
   assert.equal(normalizeRenderOptions({ coverImagePromptTemplate: '封面 {title}' }).coverImagePromptTemplate, '封面 {title}');
+  assert.deepEqual(normalizeRenderOptions({ contentStructure: 'steps', contentBrief: ' 只讲重点 ' }), {
+    ...VIDEO_RENDER_DEFAULTS, contentStructure: 'steps', contentBrief: '只讲重点'
+  });
+  assert.throws(() => normalizeRenderOptions({ contentStructure: 'viral' }), /内容结构/);
+  assert.throws(() => normalizeRenderOptions({ contentBrief: 3 }), /创作要求/);
   const product = normalizeRenderOptions({
     workflow: 'product-demo',
     websiteUrl: 'example.com',

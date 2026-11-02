@@ -1,4 +1,4 @@
-import type { VideoPlatform, VideoRenderOptions, VideoShot, VideoShotRole, VideoTemplate } from '../shared.ts';
+import type { VideoMotionPreset, VideoPlatform, VideoRenderOptions, VideoShot, VideoShotRole, VideoTemplate } from '../shared.ts';
 import { SHOT_GAP_SECONDS, displayWidth, type VideoTimeline } from './video-pipeline.ts';
 import { contentHash } from './video-production.ts';
 import { chooseProductAccent } from './video-product-research.ts';
@@ -22,9 +22,9 @@ export const VIDEO_FPS = 30;
 type Palette = { bg: string; ink: string; accent: string; panel: string; track: string; muted: string };
 
 const PALETTES: Record<VideoTemplate, Palette> = {
-  warm: { bg: '#F3EBDD', ink: '#2B1E14', accent: '#B4472C', panel: '#FBF6EE', track: '#E2D5C3', muted: '#7D6B5B' },
-  clean: { bg: '#FFFFFF', ink: '#17212B', accent: '#1C7A57', panel: '#EEF4F0', track: '#DCE5E0', muted: '#5E6C76' },
-  night: { bg: '#111B2A', ink: '#F4EFE6', accent: '#F0B443', panel: '#1B2940', track: '#2A3A52', muted: '#9BA8B8' }
+  warm: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' },
+  clean: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' },
+  night: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' }
 };
 
 /* ── 镜头内动效 ──────────────────────────────────────────────────
@@ -55,6 +55,15 @@ export type FrameMotion = {
   zoom: number;
   /** 字幕这一行已经读到第几个字（逐字高亮）；不配音时恒为 0。 */
   lit: number;
+  /** 平移位移比例 -1..1，CSS 按素材尺寸换算。 */
+  pan?: number;
+  /** 揭示 / 弹性强调进度 0..1。 */
+  reveal?: number;
+  pop?: number;
+  titleIn?: number;
+  leadIn?: number;
+  bodyIn?: number;
+  accent?: number;
 };
 
 export type FramePlanOptions = {
@@ -78,11 +87,13 @@ export function framePlanOptions(
 
 /** 动效参数 → <html> 的 style 属性；截图时逐帧改写它。 */
 export function motionStyle(motion: FrameMotion): string {
-  return `--enter:${motion.enter};--key:${motion.key};--bar:${motion.bar};--zoom:${motion.zoom};--lit:${motion.lit}`;
+  const extra = motion.pan !== undefined || motion.reveal !== undefined || motion.pop !== undefined
+    ? `;--pan:${motion.pan ?? 0};--reveal:${motion.reveal ?? 1};--pop:${motion.pop ?? 1};--title-in:${motion.titleIn ?? 1};--lead-in:${motion.leadIn ?? 1};--body-in:${motion.bodyIn ?? 1};--accent:${motion.accent ?? 1}` : '';
+  return `--enter:${motion.enter};--key:${motion.key};--bar:${motion.bar};--zoom:${motion.zoom};--lit:${motion.lit}${extra}`;
 }
 
 function sameMotion(a: FrameMotion, b: FrameMotion): boolean {
-  return a.enter === b.enter && a.key === b.key && a.bar === b.bar && a.zoom === b.zoom && a.lit === b.lit;
+  return a.enter === b.enter && a.key === b.key && a.bar === b.bar && a.zoom === b.zoom && a.lit === b.lit && (a.pan ?? 0) === (b.pan ?? 0) && (a.reveal ?? 1) === (b.reveal ?? 1) && (a.pop ?? 1) === (b.pop ?? 1) && (a.titleIn ?? 1) === (b.titleIn ?? 1) && (a.leadIn ?? 1) === (b.leadIn ?? 1) && (a.bodyIn ?? 1) === (b.bodyIn ?? 1) && (a.accent ?? 1) === (b.accent ?? 1);
 }
 
 /** 缓出（三次方）：开头快、收尾慢，停下来时不顿。取三位小数，相邻帧比较时不受浮点误差影响。 */
@@ -133,6 +144,8 @@ export function karaokeTimes(lines: string[], start: number, end: number): numbe
 
 export type MotionTiming = {
   shotStart: number; shotEnd: number; pushIn: boolean; litTimes: number[];
+  preset?: VideoMotionPreset;
+  shotIndex?: number;
   /** 入场从哪一刻开始；缺省为镜头开头。片头第一镜提前到开头之前，第一帧就是完整画面。 */
   enterAt?: number;
 };
@@ -142,13 +155,34 @@ export function motionAt(timing: MotionTiming, t: number): FrameMotion {
   const local = t - timing.shotStart;
   const entering = t - (timing.enterAt ?? timing.shotStart);
   const length = Math.max(timing.shotEnd - timing.shotStart, 1e-3);
-  const push = timing.pushIn ? Math.round(PUSH_IN * PUSH_STEPS * Math.min(1, Math.max(0, local / length))) / PUSH_STEPS : 0;
+  const entrance = easeOut(entering / ENTER_SECONDS);
+  const selected = timing.preset ?? 'auto';
+  const autoPresets: VideoMotionPreset[] = ['push-in', 'pan-right', 'reveal-up', 'pull-out', 'pan-left', 'pop'];
+  const preset = selected === 'auto' ? autoPresets[(timing.shotIndex ?? Math.floor(timing.shotStart)) % autoPresets.length] : selected;
+  const progress = Math.min(1, Math.max(0, local / length));
+  const travel = easeOut(progress);
+  const usePush = preset === 'push-in' || (preset === 'pop' && timing.pushIn);
+  const push = usePush ? Math.round(0.12 * PUSH_STEPS * progress) / PUSH_STEPS : preset === 'reveal-up' ? Math.round(0.05 * PUSH_STEPS * progress) / PUSH_STEPS : 0;
+  const panDirection = preset === 'pan-left' ? -1 : preset === 'pan-right' ? 1 : 0;
+  const pan = Math.round((1 - travel) * panDirection * 20) / 20;
+  const staged = (delay: number) => easeOut((entering - delay) / 0.5);
+  const titleIn = preset === 'static' ? 1 : staged(0);
+  const leadIn = preset === 'static' ? 1 : staged(0.12);
+  const bodyIn = preset === 'static' ? 1 : staged(0.26);
+  const accent = (0.5 + 0.5 * Math.sin(Math.PI * Math.min(1, progress))) * (preset === 'static' ? 0 : 1);
   return {
-    enter: easeOut(entering / ENTER_SECONDS),
-    key: timing.pushIn ? easeOut((entering - KEY_DELAY) / (ENTER_SECONDS - KEY_DELAY)) : 1,
-    bar: easeOut(entering / ENTER_SECONDS),
-    zoom: Math.round((1 + push) * 100000) / 100000,
-    lit: timing.litTimes.filter(at => at <= t + 1e-9).length
+    enter: entrance,
+    key: usePush ? easeOut((entering - KEY_DELAY) / (ENTER_SECONDS - KEY_DELAY)) : bodyIn,
+    bar: travel,
+    zoom: Math.round((preset === 'static' ? 1 : preset === 'pull-out' ? 1.12 - 0.12 * progress : 1 + push) * 100000) / 100000,
+    lit: timing.litTimes.filter(at => at <= t + 1e-9).length,
+    pan,
+    reveal: preset === 'reveal-up' ? bodyIn : 1,
+    pop: preset === 'pop' ? bodyIn : 1,
+    titleIn,
+    leadIn,
+    bodyIn,
+    accent
   };
 }
 
@@ -157,7 +191,8 @@ export function settledMotion(subtitle: string, options: FramePlanOptions): Fram
   return {
     enter: 1, key: 1, bar: 1,
     zoom: options.pushIn ? 1 + PUSH_IN / 2 : 1,
-    lit: options.karaoke ? Math.ceil(Array.from(subtitle).length / 2) : 0
+    lit: options.karaoke ? Math.ceil(Array.from(subtitle).length / 2) : 0,
+    pan: 0, reveal: 1, pop: 1, titleIn: 1, leadIn: 1, bodyIn: 1, accent: 1
   };
 }
 
@@ -189,11 +224,6 @@ export type FrameInput = {
   logoUrl?: string;
   /** 官网提取到的品牌色候选；不合法或对比度不合适时退回模板色。 */
   brandColors?: string[];
-  /**
-   * IP 角色（在标题右侧，不压画面主体和字幕）；null 表示不带。不放头像和品牌名。
-   * 图片是 file:// 地址，和配图一样由 loadFile 读取。
-   */
-  ip?: { heroUrl: string } | null;
 };
 
 export function escapeHtml(value: string): string {
@@ -251,7 +281,6 @@ export function buildFrameHtml(input: FrameInput): string {
   const safe = videoSafeArea(platform, frame);
   const color = PALETTES[input.template] ?? PALETTES.warm;
   const accent = chooseProductAccent(input.brandColors ?? [], color.accent);
-  const hero = input.ip?.heroUrl ?? '';
   const logo = input.productMode ? input.logoUrl ?? '' : '';
   const title = escapeHtml(input.title.trim());
   const key = input.keyText.trim();
@@ -274,16 +303,18 @@ export function buildFrameHtml(input: FrameInput): string {
     : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(key || input.title, cardTextWidth)}px">${escapeHtml(key || input.title.trim())}</p></div>`;
   const layout = landscape
     ? `
-.title{position:absolute;left:${contentLeft}px;right:300px;top:${contentTop}px;height:110px;display:flex;align-items:flex-end;font-size:58px;line-height:1.25;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance}
+.title{position:absolute;left:${contentLeft}px;right:300px;top:${contentTop}px;height:110px;display:flex;align-items:flex-end;font-size:58px;line-height:1.25;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance;opacity:var(--title-in,1);transform:translateX(calc((1 - var(--title-in,1)) * -48px))}
 .progress{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:200px;height:10px;display:flex;gap:10px}
-.visual{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;border-radius:28px;overflow:hidden;background:${color.panel}}
-.visual img{display:block;width:100%;height:100%;object-fit:cover;opacity:var(--enter);transform:scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
+.visual{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;border-radius:28px;overflow:hidden;background:${color.panel};transform:translateY(calc((1 - var(--body-in,1)) * 52px)) scale(calc(.94 + .06 * var(--body-in,1)));transform-origin:center}
+.visual img{display:block;width:112%;height:112%;margin:-6%;object-fit:cover;opacity:var(--enter);transform:translateX(calc(var(--pan, 0) * 2%)) scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
+.visual{clip-path:inset(calc((1 - var(--reveal, 1)) * 12%) 0 0 0)}
 .visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
-.visual.product img{object-fit:contain;background:#fff}
-.key{position:absolute;left:${contentLeft}px;right:${contentRight + 650}px;top:940px;height:68px;font-size:50px;line-height:68px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:scale(calc(.92 + .08 * var(--key)))}
+.visual.product img{width:100%;height:100%;margin:0;object-fit:contain;background:#fff}
+.key{position:absolute;left:${contentLeft}px;right:${contentRight + 650}px;top:940px;height:68px;font-size:50px;line-height:68px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:translateY(calc((1 - var(--reveal, 1)) * 32px)) scale(calc(.92 + .08 * var(--pop, 1)))}
 .card{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;padding:64px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
-.card span{font-size:38px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:min(1,calc(var(--enter) * 1.6))}
-.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:min(1,calc(var(--enter) * 1.6));transform:scale(calc(.92 + .08 * var(--enter)))}
+.card{transform:translateX(calc(var(--pan,0) * 5%)) scale(var(--zoom));transform-origin:center}
+.card span{font-size:38px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 30px))}
+.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:var(--body-in,1);transform:translateY(calc((1 - var(--body-in,1)) * 48px)) scale(calc(.88 + .12 * var(--pop, 1)))}
 .card.solid{background:${accent}}
 .card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
 .card.solid p{color:${color.panel}}
@@ -291,19 +322,20 @@ export function buildFrameHtml(input: FrameInput): string {
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
 .footer{position:absolute;left:1210px;right:${contentRight}px;top:900px;font-size:28px;letter-spacing:2px;text-align:center;color:${color.muted}}
-${hero ? `.ip-hero{position:absolute;right:${safe.right + 20}px;top:${safe.top + 16}px;width:170px;height:180px;object-fit:contain;object-position:right bottom}.title{right:${Math.max(310, safe.right + 210)}px}` : ''}
 ${logo ? `.brand-logo{position:absolute;right:${safe.right + 24}px;top:${safe.top + 24}px;width:160px;height:90px;object-fit:contain;object-position:right center}.title{right:${Math.max(320, safe.right + 220)}px}` : ''}`
     : `
-.title{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop}px;height:150px;display:flex;align-items:flex-end;font-size:60px;line-height:1.35;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance}
+.title{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop}px;height:150px;display:flex;align-items:flex-end;font-size:60px;line-height:1.35;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance;opacity:var(--title-in,1);transform:translateY(calc((1 - var(--title-in,1)) * 52px))}
 .progress{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 180}px;height:10px;display:flex;gap:10px}
-.visual{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;border-radius:28px;overflow:hidden;background:${color.panel}}
-.visual img{display:block;width:100%;height:100%;object-fit:cover;opacity:var(--enter);transform:scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
+.visual{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;border-radius:28px;overflow:hidden;background:${color.panel};transform:translateY(calc((1 - var(--body-in,1)) * 64px)) scale(calc(.92 + .08 * var(--body-in,1)));transform-origin:center}
+.visual img{display:block;width:112%;height:112%;margin:-6%;object-fit:cover;opacity:var(--enter);transform:translateX(calc(var(--pan, 0) * 2%)) scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
+.visual{clip-path:inset(calc((1 - var(--reveal, 1)) * 12%) 0 0 0)}
 .visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
-.visual.product img{object-fit:contain;background:#fff}
-.key{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 820}px;height:70px;font-size:60px;line-height:70px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:scale(calc(.92 + .08 * var(--key)))}
+.visual.product img{width:100%;height:100%;margin:0;object-fit:contain;background:#fff}
+.key{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 820}px;height:70px;font-size:60px;line-height:70px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:translateY(calc((1 - var(--reveal, 1)) * 32px)) scale(calc(.92 + .08 * var(--pop, 1)))}
 .card{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;padding:64px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
-.card span{font-size:44px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:min(1,calc(var(--enter) * 1.6))}
-.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:min(1,calc(var(--enter) * 1.6));transform:scale(calc(.92 + .08 * var(--enter)))}
+.card{transform:translateX(calc(var(--pan,0) * 5%)) scale(var(--zoom));transform-origin:center}
+.card span{font-size:44px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 34px))}
+.card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:var(--body-in,1);transform:translateY(calc((1 - var(--body-in,1)) * 52px)) scale(calc(.88 + .12 * var(--pop, 1)))}
 .card.solid{background:${accent}}
 .card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
 .card.solid p{color:${color.panel}}
@@ -311,7 +343,6 @@ ${logo ? `.brand-logo{position:absolute;right:${safe.right + 24}px;top:${safe.to
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
 .footer{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${footerTop}px;font-size:32px;letter-spacing:2px;text-align:center;color:${color.muted}}
-${hero ? `.ip-hero{position:absolute;right:${safe.right + 20}px;top:${safe.top + 24}px;width:220px;height:236px;object-fit:contain;object-position:right bottom}.title{right:${Math.max(410, safe.right + 260)}px}` : ''}
 ${logo ? `.brand-logo{position:absolute;right:${safe.right + 30}px;top:${safe.top + 34}px;width:180px;height:110px;object-fit:contain;object-position:right center}.title{right:${Math.max(380, safe.right + 230)}px}` : ''}`;
   return `<!doctype html>
 <html lang="zh-CN" style="${motionStyle(input.motion)}"><head><meta charset="utf-8"><style>
@@ -322,7 +353,6 @@ html,body{width:${frame.width}px;height:${frame.height}px;overflow:hidden;backgr
 .progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${accent}}
 ${layout}
 </style></head><body>
-${hero ? `<img class="ip-hero" src="${escapeHtml(hero)}" alt="">` : ''}
 ${logo ? `<img class="brand-logo" src="${escapeHtml(logo)}" alt="">` : ''}
 <div class="title">${title}</div>
 <div class="progress">${progress}</div>
@@ -349,7 +379,7 @@ export function buildFramePlan(shots: VideoShot[], timeline: VideoTimeline, opti
     if (!range) return [];
     // 片头第一镜不做入场：第一帧常被平台当作预览图，不能是一张空卡片。
     const enterAt = position === 0 ? range.start - ENTER_SECONDS : range.start;
-    const base = { shot: position, shotStart: range.start, shotEnd: range.end, enterAt, pushIn: options.pushIn };
+    const base = { shot: position, shotStart: range.start, shotEnd: range.end, enterAt, pushIn: options.pushIn, preset: shots[position].motion ?? 'auto', shotIndex: position };
     const lines = timeline.lines.filter(line => line.shot === position);
     if (!lines.length) return [{ ...base, subtitle: '', end: range.end, litTimes: [] as number[] }];
     // 出声区间：有静音检测结果就用它；没有时按整镜减去末尾气口估计。
@@ -414,6 +444,7 @@ export type ComposeInput = {
   frame?: VideoFrameSpec;
   /** 每镜一段口播：path 为空表示这一镜静音（选了不配音或这一镜没有口播）。 */
   narration: Array<{ path: string; seconds: number }>;
+  soundEffects?: Array<{ path: string; at: number; duration: number; volume: number }>;
   bgm: {
     path: string;
     volume: number;
@@ -451,6 +482,22 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
     }
   });
   graph.push(`${input.narration.map((_, position) => `[n${position}]`).join('')}concat=n=${input.narration.length}:v=0:a=1[nar]`);
+  let audioBase = 'nar';
+  const activeEffects = (input.soundEffects ?? []).filter(effect => effect.path && effect.at < input.total);
+  for (const [index, effect] of activeEffects.entries()) {
+    const start = Math.max(0, effect.at);
+    const duration = Math.max(0.01, Math.min(effect.duration, input.total - start));
+    if (duration <= 0 || !effect.path) continue;
+    args.push('-i', effect.path);
+    graph.push(`[${inputIndex}:a]aresample=44100,${AUDIO_FORMAT},atrim=end=${duration.toFixed(3)},volume=${Math.max(0, Math.min(1, effect.volume)).toFixed(3)},adelay=${Math.round(start * 1000)}|${Math.round(start * 1000)},apad=whole_dur=${total}[sfx${index}]`);
+    inputIndex += 1;
+  }
+  const effectCount = activeEffects.length;
+  if (effectCount) {
+    const effects = activeEffects.map((_, index) => `[sfx${index}]`).join('');
+    graph.push(`[${audioBase}]${effects}amix=inputs=${effectCount + 1}:duration=first:dropout_transition=0:normalize=0[audiofx]`);
+    audioBase = 'audiofx';
+  }
   if (input.bgm) {
     args.push('-stream_loop', '-1', '-i', input.bgm.path);
     const fadeIn = Math.min(Math.max(0, input.bgm.fadeIn), input.total);
@@ -461,14 +508,14 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
     ].filter(Boolean).join(',');
     graph.push(`[${inputIndex}:a]aresample=44100,${AUDIO_FORMAT},volume=${input.bgm.volume.toFixed(3)},atrim=end=${total}${fades ? `,${fades}` : ''}[bg]`);
     if (input.bgm.ducking) {
-      graph.push('[nar]asplit=2[narmix][narside]');
+      graph.push('[nar]asplit=2[narout][narside]');
       graph.push('[bg][narside]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=320:makeup=1[bgducked]');
-      graph.push('[narmix][bgducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+      graph.push(`[${audioBase}][bgducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`);
     } else {
-      graph.push('[nar][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]');
+      graph.push(`[${audioBase}][bg]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`);
     }
   } else {
-    graph.push('[nar]anull[aout]');
+    graph.push(`[${audioBase}]anull[aout]`);
   }
   args.push(
     '-filter_complex', graph.join(';'),

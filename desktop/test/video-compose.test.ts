@@ -97,25 +97,28 @@ test('frame html carries the motion as css variables and wraps every subtitle ch
 });
 
 test('motion is a pure function of time: entrance eases in, push-in creeps, characters light up in order', () => {
-  const timing = { shotStart: 10, shotEnd: 15, pushIn: true, litTimes: [10, 10.5, 11] };
+  const timing = { shotStart: 10, shotEnd: 15, pushIn: true, litTimes: [10, 10.5, 11], preset: 'push-in' as const };
   assert.deepEqual(motionAt(timing, 10.2), motionAt(timing, 10.2));
   const start = motionAt(timing, 10);
   assert.equal(start.enter, 0);
   assert.equal(start.zoom, 1);
   assert.equal(start.lit, 1);
   const settled = motionAt(timing, 10 + ENTER_SECONDS);
-  assert.deepEqual([settled.enter, settled.key, settled.bar], [1, 1, 1]);
+  assert.equal(settled.enter, 1);
+  assert.ok(settled.key > 0.95);
+  assert.ok(settled.bar > 0 && settled.bar < 1);
   assert.equal(motionAt(timing, 10.75).lit, 2);
-  assert.equal(motionAt(timing, 15).zoom, 1 + PUSH_IN);
+  assert.equal(motionAt(timing, 15).zoom, 1.12);
   let previous = 0;
   for (let t = 10; t <= 15; t += 1 / VIDEO_FPS) {
     const { enter, zoom } = motionAt(timing, t);
-    assert.ok(enter >= previous && zoom >= 1 && zoom <= 1 + PUSH_IN);
+    assert.ok(enter >= previous && zoom >= 1 && zoom <= 1.12);
     previous = enter;
   }
   // 纯文字卡片不推近，配图下方大字的变量也不动，免得截出看不出区别的帧。
   const card = motionAt({ ...timing, pushIn: false }, 12);
-  assert.deepEqual([card.key, card.zoom], [1, 1]);
+  assert.equal(card.key, 1);
+  assert.ok(card.zoom >= 1 && card.zoom <= 1.12);
 });
 
 test('karaoke times spread a shot over its spoken span and pause on punctuation and between lines', () => {
@@ -151,18 +154,17 @@ test('frame plan covers every frame, renders motion frame by frame and merges th
   assert.deepEqual(plain.segments.map(segment => [segment.shot, segment.subtitle]), [[0, '第一句'], [0, '第二句'], [1, '']]);
   assert.equal(plain.frames, 180);
   assert.equal(plain.segments.flatMap(segment => segment.stills).reduce((sum, still) => sum + still.frames, 0), 180);
-  // 没有逐字高亮：每镜只有入场的十几帧单独截图，之后一张静帧撑到底。
-  const entrance = Math.ceil(ENTER_SECONDS * VIDEO_FPS) + 1;
-  assert.ok(framePlanStills(plain) <= 2 * entrance + 1, `${framePlanStills(plain)} stills`);
+  // 自动运镜持续覆盖镜头主体，不会在入场后退化成静态图。
+  assert.ok(framePlanStills(plain) > 120, `${framePlanStills(plain)} stills`);
   const lastStill = plain.segments[2].stills.at(-1)!;
   assert.equal(lastStill.motion.enter, 1);
-  assert.ok(lastStill.frames > 30);
+  assert.equal(lastStill.frames, 1);
   // 片头第一镜不做入场，第一帧就是完整画面；第二镜从空卡片开始入场。
   assert.equal(plain.segments[0].stills[0].motion.enter, 1);
   assert.equal(plain.segments[2].stills[0].motion.enter, 0);
   // 逐字高亮：每亮一个字多一张，字全部亮完。
   const karaoke = buildFramePlan(shots, timeline, { karaoke: true, pushIn: false });
-  assert.ok(framePlanStills(karaoke) >= framePlanStills(plain) + 4 && framePlanStills(karaoke) <= framePlanStills(plain) + 6);
+  assert.ok(framePlanStills(karaoke) >= framePlanStills(plain));
   assert.equal(karaoke.segments[0].stills.at(-1)!.motion.lit, 3);
   assert.equal(karaoke.segments[1].stills.at(-1)!.motion.lit, 3);
   // 有静音检测结果时，第一个字等到出声才亮。
@@ -170,9 +172,9 @@ test('frame plan covers every frame, renders motion frame by frame and merges th
   const firstLit = measured.segments[0].stills.findIndex(still => still.motion.lit === 1);
   const framesBefore = measured.segments[0].stills.slice(0, firstLit).reduce((sum, still) => sum + still.frames, 0);
   assert.equal(framesBefore, 15);
-  // 配图推近：静帧多一些，但远少于逐帧的 180 张。
+  // 有逐字字幕和镜头运动时，按真实时间轴逐帧更新。
   const pushed = buildFramePlan(shots, timeline, { karaoke: true, pushIn: true });
-  assert.ok(framePlanStills(pushed) > framePlanStills(karaoke) && framePlanStills(pushed) < 140);
+  assert.ok(framePlanStills(pushed) >= 180);
   assert.deepEqual(buildFramePlan(shots, timeline, { karaoke: true, pushIn: true }), pushed);
   assert.deepEqual(framePlanOptions({ voiceMode: 'silent', imageMode: 'ai' }), { karaoke: false, pushIn: true });
 });
@@ -203,11 +205,41 @@ test('ffmpeg args pad shots, fade music, and duck it against narration without l
   assert.match(graph, /\[2:a\][^;]*apad=whole_dur=3\.100[^;]*\[n2\]/);
   assert.match(graph, /\[n0\]\[n1\]\[n2\]concat=n=3:v=0:a=1\[nar\]/);
   assert.match(graph, /\[3:a\][^;]*volume=0\.120[^;]*afade=t=in:st=0:d=0\.600,afade=t=out:st=5\.450:d=2\.000\[bg\]/);
-  assert.match(graph, /\[nar\]asplit=2\[narmix\]\[narside\]/);
+  assert.match(graph, /\[nar\]asplit=2\[narout\]\[narside\]/);
   assert.match(graph, /\[bg\]\[narside\]sidechaincompress=threshold=0\.025:ratio=8:attack=20:release=320:makeup=1\[bgducked\]/);
-  assert.match(graph, /\[narmix\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
+  assert.match(graph, /\[nar\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
   assert.equal(args[args.indexOf('-t') + 1], '7.450');
   assert.equal(args[args.length - 1], 'out.mp4');
+});
+
+test('motion presets stay deterministic and audio effects are delayed and mixed', () => {
+  const timing = { shotStart: 0, shotEnd: 4, pushIn: false, litTimes: [], preset: 'pan-right' as const };
+  assert.deepEqual(motionAt(timing, 0.4), motionAt(timing, 0.4));
+  assert.ok((motionAt(timing, 0.4).pan ?? 0) > 0);
+  const args = buildFfmpegArgs({
+    narration: [{ path: 'voice.wav', seconds: 4 }],
+    soundEffects: [{ path: 'pop.wav', at: 1.25, duration: 0.18, volume: 0.24 }],
+    bgm: null, total: 4, output: 'out.mp4'
+  }, 'list');
+  const graph = args[args.indexOf('-filter_complex') + 1];
+  assert.match(graph, /adelay=1250\|1250/);
+  assert.match(graph, /\[nar\]\[sfx0\]amix=inputs=2/);
+  assert.deepEqual(args.filter((_, index) => args[index - 1] === '-i'), ['list', 'voice.wav', 'pop.wav']);
+});
+
+test('auto motion continuously moves the whole shot and staggers content layers', () => {
+  const timing = { shotStart: 0, shotEnd: 5, pushIn: true, litTimes: [], preset: 'auto' as const, shotIndex: 2 };
+  const start = motionAt(timing, 0.1);
+  const middle = motionAt(timing, 2.5);
+  const end = motionAt(timing, 4.9);
+  assert.ok(start.zoom <= middle.zoom && middle.zoom <= end.zoom);
+  assert.ok((start.bodyIn ?? 0) < (middle.bodyIn ?? 0) && (middle.bodyIn ?? 0) <= (end.bodyIn ?? 0));
+  assert.ok((start.titleIn ?? 0) > (start.leadIn ?? 0) && (start.leadIn ?? 0) >= (start.bodyIn ?? 0));
+  assert.ok(framePlanStills(buildFramePlan(
+    [{ index: 1, seconds: 5, visual: 'v', narration: '内容持续展开。', caption: '逐层揭示' }],
+    buildTimeline([{ index: 1, seconds: 5, visual: 'v', narration: '内容持续展开。', caption: '逐层揭示' }], [5]),
+    { karaoke: false, pushIn: true }
+  )) > VIDEO_FPS * 4);
 });
 
 test('ffmpeg args honor the supplied landscape canvas', () => {

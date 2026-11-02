@@ -2,10 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { IpRenderKit } from '../shared.ts';
 import { WECHAT_COVER_SIZE, WECHAT_SHARE_SIZE, emptyWechatIpCoverInput, normalizeWechatIpCoverInput, renderWechatIpCover, wechatCoverPose } from '../services/wechat-ip-cover.ts';
-import { VIDEO_COVER_SIZE, VIDEO_LANDSCAPE_COVER_SIZE, emptyVideoIpCoverInput, normalizeVideoIpCoverInput, renderVideoIpCover, videoCoverSize } from '../services/video-ip-cover.ts';
 import { buildFrameHtml, settledMotion } from '../services/video-compose.ts';
 import { FRAME_TEMPLATE_VERSION } from '../services/video-pipeline.ts';
-import { VIDEO_RENDER_DEFAULTS, imageKey, normalizeRenderOptions, parseRenderOptions } from '../services/video-production.ts';
+import { VIDEO_RENDER_DEFAULTS, normalizeRenderOptions, parseRenderOptions } from '../services/video-production.ts';
 
 const KIT: IpRenderKit = {
   id: 'k1', name: '某某工作室', tagline: '',
@@ -33,50 +32,18 @@ test('公众号：2.35:1 封面与 1:1 分享图尺寸正确，配色取自 IP�
   assert.deepEqual(normalizeWechatIpCoverInput({ style: 'neon', title: ' 标题 ', extra: 1 }), { style: 'light', pose: '', title: '标题', sub: '', tag: '' });
 });
 
-test('视频：竖版封面 1080×1920，不放头像和品牌名', () => {
-  const html = renderVideoIpCover({ ...emptyVideoIpCoverInput('三分钟|看懂【体检单】'), sub: '收藏备用' }, KIT);
-  assert.ok(html.includes(`width:${VIDEO_COVER_SIZE.width}px;height:${VIDEO_COVER_SIZE.height}px`));
-  assert.ok(html.includes('<mark>体检单</mark>') && html.includes('收藏备用') && html.includes('base64,TE'));
-  assert.ok(!html.includes('某某工作室') && !html.includes(KIT.avatar) && !html.includes('class="brand"'));
-  assert.equal(normalizeVideoIpCoverInput({ style: 'light' }).style, 'light');
-  assert.equal(normalizeVideoIpCoverInput({ style: '?' }).style, 'dark');
-});
-
-test('视频：横屏平台生成 1920×1080 的左右布局封面', () => {
-  const size = videoCoverSize('bilibili');
-  assert.deepEqual(size, VIDEO_LANDSCAPE_COVER_SIZE);
-  const html = renderVideoIpCover(emptyVideoIpCoverInput('横屏封面标题'), KIT, size);
-  assert.ok(html.includes('width:1920px;height:1080px'));
-  assert.ok(html.includes('.wrap{position:absolute;left:120px;top:150px;width:820px'));
-  assert.ok(html.includes('.hero{position:absolute;right:100px'));
-  assert.deepEqual(videoCoverSize('douyin'), VIDEO_COVER_SIZE);
-});
-
-test('视频帧：带 IP 时只有标题右侧的角色、标题让出位置；不带时和以前一样', () => {
+test('视频帧不包含个人 IP 角色或品牌元素', () => {
   const base = {
     template: 'warm' as const, title: '血压怎么量才准', keyText: '先坐五分钟', subtitle: '量之前先静坐', imageUrl: '',
     shotNumber: 1, shotCount: 3, footer: '', role: '' as const, lead: '', motion: settledMotion('量之前先静坐', { karaoke: false, pushIn: false })
   };
   const plain = buildFrameHtml(base);
   assert.ok(!plain.includes('ip-badge') && !plain.includes('class="ip-hero"'));
-  const withIp = buildFrameHtml({ ...base, ip: { heroUrl: 'file:///h.png' } });
-  assert.ok(withIp.includes('<img class="ip-hero" src="file:///h.png" alt="">'));
-  assert.ok(withIp.includes('.title{right:411px}'));
-  assert.ok(!withIp.includes('ip-badge'), '不放头像和品牌名');
-  assert.equal(buildFrameHtml({ ...base, ip: { heroUrl: '' } }), plain);
   assert.ok(FRAME_TEMPLATE_VERSION >= 5, '改了帧模板排版，版本号要加一');
 });
 
-test('视频渲染选项：ipId 默认空、可设置、类型不对报错；旧数据没有这一项也能读', () => {
-  assert.equal(VIDEO_RENDER_DEFAULTS.ipId, '');
-  assert.equal(normalizeRenderOptions({ ipId: ' sydney ' }).ipId, 'sydney');
-  assert.throws(() => normalizeRenderOptions({ ipId: 3 }), /IP 编号/);
-  assert.equal(parseRenderOptions('{"template":"clean"}').ipId, '');
-});
-
-test('视频配图的键：没选 IP 和以前一样，选了 IP 带上 IP，换 IP 会重新生成', () => {
-  const plain = imageKey('一杯茶');
-  assert.equal(imageKey('一杯茶', ''), plain);
-  assert.notEqual(imageKey('一杯茶', 'sydney'), plain);
-  assert.notEqual(imageKey('一杯茶', 'sydney'), imageKey('一杯茶', 'other'));
+test('视频渲染选项不包含个人 IP 选择', () => {
+  assert.equal('ipId' in VIDEO_RENDER_DEFAULTS, false);
+  assert.equal(parseRenderOptions('{"template":"clean"}').footer, '');
+  assert.equal('ipId' in normalizeRenderOptions({ ipId: 'legacy' } as never), false);
 });
