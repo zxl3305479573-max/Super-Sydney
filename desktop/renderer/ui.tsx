@@ -81,7 +81,7 @@ export function ConfirmButton({ onConfirm, children, armedLabel = '确认删除�
   return <button type="button" title={title} disabled={disabled} className={`${className} ${armed ? 'is-armed' : ''}`} onClick={() => { if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>{armed ? armedLabel : children}</button>;
 }
 
-export function Modal({ open, onClose, title, eyebrow, children, footer, width = 720 }: { open: boolean; onClose: () => void; title: ReactNode; eyebrow?: string; children: ReactNode; footer?: ReactNode; width?: number }) {
+export function Modal({ open, onClose, title, eyebrow, children, footer, width = 720, backdropClassName = '' }: { open: boolean; onClose: () => void; title: ReactNode; eyebrow?: string; children: ReactNode; footer?: ReactNode; width?: number; backdropClassName?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -92,7 +92,7 @@ export function Modal({ open, onClose, title, eyebrow, children, footer, width =
     return () => { window.removeEventListener('keydown', onKey); previous?.focus?.(); };
   }, [open, onClose]);
   if (!open) return null;
-  return <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+  return <div className={`modal-backdrop ${backdropClassName}`} onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="modal" role="dialog" aria-modal="true" tabIndex={-1} ref={ref} style={{ width: `min(${width}px, calc(100vw - 48px))` }}>
       <header className="modal-head">
         <div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2>{title}</h2></div>

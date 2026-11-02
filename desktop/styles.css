@@ -3086,6 +3086,39 @@ body, .app-shell, .workspace, .main-scroll, .titlebar { background: var(--bg); }
 /* 侧边栏：可收起成图标栏，窄窗口变抽屉（Dashboard Shell / shadcn Sidebar） */
 .app-shell { transition: grid-template-columns .22s cubic-bezier(.2, .8, .2, 1); }
 .brand { position: relative; justify-content: space-between; }
+.brand-identity { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.app-update-badge {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; position: relative;
+  min-height: 26px; padding: 3px 7px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--muted); font-size: 10.5px; white-space: nowrap;
+  cursor: pointer; -webkit-app-region: no-drag;
+}
+.app-update-badge:hover { background: var(--surface-hover); color: var(--ink); }
+.app-update-badge:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.app-update-badge.has-update { border-color: var(--primary-line); background: var(--primary-soft); color: var(--primary); }
+.app-update-badge > i { width: 5px; height: 5px; flex: none; border-radius: 50%; background: currentColor; }
+.app-update-badge.is-compact { width: 26px; padding-inline: 0; }
+.app-update-badge.is-compact > span { display: none; }
+.app-update-badge.is-compact > i { position: absolute; top: 3px; right: 3px; }
+.app-update-content { display: grid; gap: 16px; }
+.app-update-backdrop { z-index: 100; }
+.app-update-content > p { margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.8; }
+.app-update-version { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); font-size: 13px; }
+.app-update-version > span { color: var(--muted); }
+.app-update-latest { color: var(--primary); }
+.app-update-download { display: grid; gap: 8px; }
+.app-update-download > progress { width: 100%; height: 8px; border: 0; border-radius: 8px; overflow: hidden; accent-color: var(--primary); }
+.app-update-download > progress::-webkit-progress-bar { background: var(--surface-soft); }
+.app-update-download > progress::-webkit-progress-value { border-radius: 8px; background: var(--primary); }
+.app-update-download > div { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+.app-update-notes { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; }
+.app-update-notes > h3 { margin: 0 0 10px; font-size: 13px; }
+.app-update-notes > div { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-soft); font-size: 12px; line-height: 1.8; }
+.app-update-content > .app-update-current { display: flex; align-items: center; gap: 7px; color: var(--primary); }
+.app-update-content > .app-update-error { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--danger); overflow-wrap: anywhere; }
+.app-update-checked { color: var(--muted); font-size: 11px; }
+.is-collapsed .brand-identity { flex-direction: column; gap: 4px; }
+.app-shell.is-collapsed .brand { height: 98px; }
 .sidebar-toggle, .titlebar-menu {
   display: grid; flex: none; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--muted); cursor: pointer; -webkit-app-region: no-drag; transition: background .15s ease-out, color .15s ease-out;

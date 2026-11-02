@@ -44,6 +44,7 @@ import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
 import { VideoPublisherView } from './services/video-publisher-view';
 import { registerVideoPublisherIpc } from './ipc/video-publisher';
+import { registerAppUpdateIpc } from './ipc/app-update';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -223,6 +224,7 @@ if (primaryInstance) app.whenReady().then(() => {
   // 网页地址的记录是攒一会儿再落盘的，退出前补写一次。
   app.on('will-quit', () => ctx.lastPages.flush());
   registerWindowIpc(() => windowRef, themeFile());
+  registerAppUpdateIpc(() => windowRef);
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });

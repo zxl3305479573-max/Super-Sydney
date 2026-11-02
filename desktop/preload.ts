@@ -1,7 +1,16 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { SydneyApi, VideoProgress, VideoPublishProgress, WindowChromeState } from './shared';
+import type { AppUpdateState, SydneyApi, VideoProgress, VideoPublishProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
+  getAppUpdateState: () => ipcRenderer.invoke('app-update:state'),
+  checkAppUpdate: () => ipcRenderer.invoke('app-update:check'),
+  downloadAppUpdate: () => ipcRenderer.invoke('app-update:download'),
+  installAppUpdate: () => ipcRenderer.invoke('app-update:install'),
+  onAppUpdateChanged: callback => {
+    const listener = (_event: unknown, state: AppUpdateState) => callback(state);
+    ipcRenderer.on('app-update:changed', listener);
+    return () => ipcRenderer.removeListener('app-update:changed', listener);
+  },
   getState: () => ipcRenderer.invoke('state:get'),
   createEvent: event => ipcRenderer.invoke('event:create', event),
   updateEvent: (id, patch) => ipcRenderer.invoke('event:update', id, patch),

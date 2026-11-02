@@ -53,11 +53,12 @@ function ThemeSwitch({ theme, onToggle }: { theme: AppTheme; onToggle: (origin: 
  * 自绘标题栏：整条可拖动（双击最大化由系统处理），左边是当前位置，右边是窗口按钮。
  * macOS 用系统红绿灯，不画按钮。
  */
-export function TitleBar({ crumbs, chrome, scrolled, theme, onToggleTheme, onMenu }: {
+export function TitleBar({ crumbs, chrome, scrolled, theme, onToggleTheme, onMenu, updateAction }: {
   crumbs: string[]; chrome: WindowChromeState; scrolled: boolean;
   theme: AppTheme; onToggleTheme: (origin: { x: number; y: number }) => void;
   /** 窄窗口下侧边栏收成抽屉，这个按钮把它拉出来。 */
   onMenu?: () => void;
+  updateAction?: ReactNode;
 }) {
   const control = (action: WindowControl) => void window.sydney.windowControl(action);
   return <header className={`titlebar ${scrolled ? 'is-scrolled' : ''}`}>
@@ -68,6 +69,7 @@ export function TitleBar({ crumbs, chrome, scrolled, theme, onToggleTheme, onMen
       {crumbs.map((crumb, index) => <span key={crumb} className={index === crumbs.length - 1 ? 'is-current' : ''}>{crumb}</span>)}
     </div>
     <div className="titlebar-tools">
+      {updateAction}
       <ThemeSwitch theme={theme} onToggle={onToggleTheme} />
     </div>
     {chrome.platform !== 'darwin' && <div className="window-controls">

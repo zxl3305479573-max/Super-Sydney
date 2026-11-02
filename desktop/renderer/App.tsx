@@ -13,6 +13,7 @@ import { SettingsView } from './SettingsView';
 import { EventDetails, ManualRecord, type EventActions } from './EventItem';
 import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui';
 import { TitleBar, useWindowChrome } from './TitleBar';
+import { AppUpdateBadge, AppUpdateDialog, useAppUpdate } from './AppUpdate';
 import { ToastStack, useToasts, type ToastOptions, type ToastTone } from './Toasts';
 import { useTheme } from './theme';
 import brandMark from '../assets/brand-mark.png?asset';
@@ -107,6 +108,7 @@ export default function App() {
   const [theme, toggleTheme] = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const appUpdate = useAppUpdate();
 
   // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置。
   useLayoutEffect(() => {
@@ -172,7 +174,7 @@ export default function App() {
   const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
   const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
 
-  const covered = manualOpen || detailId !== null || (narrow && drawerOpen);
+  const covered = manualOpen || detailId !== null || appUpdate.open || (narrow && drawerOpen);
   /**
    * 嵌入网页是主进程浮在界面之上的视图：模块被隐藏或有弹层时把它摘下来（overlay），
    * 页面进程本身留着，切回来登录态、浏览位置、表单内容都还在。
@@ -202,7 +204,10 @@ export default function App() {
     {narrow && <div className="sidebar-scrim" aria-hidden="true" onClick={() => setDrawerOpen(false)} />}
     <aside className="sidebar" aria-label="侧边栏" inert={narrow && !drawerOpen ? true : undefined}>
       <div className="brand">
-        <img className="brand-mark" src={brandMark} alt="Sydney" />
+        <div className="brand-identity">
+          <img className="brand-mark" src={brandMark} alt="Sydney" />
+          <AppUpdateBadge update={appUpdate} compact={rail} />
+        </div>
         <button type="button" className="sidebar-toggle" title={narrow ? '关闭菜单（Esc）' : rail ? '展开侧边栏（Ctrl+B）' : '收起侧边栏（Ctrl+B）'} aria-label={narrow ? '关闭菜单' : rail ? '展开侧边栏' : '收起侧边栏'} aria-expanded={narrow ? drawerOpen : !rail}
           onClick={() => narrow ? setDrawerOpen(false) : setCollapsed(value => !value)}><Icon name={narrow ? 'x' : 'sidebar'} size={16} /></button>
       </div>
@@ -228,7 +233,8 @@ export default function App() {
     </aside>
 
     <div className="workspace">
-      <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} onMenu={narrow ? () => setDrawerOpen(true) : undefined} />
+      <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} onMenu={narrow ? () => setDrawerOpen(true) : undefined}
+        updateAction={narrow ? <AppUpdateBadge update={appUpdate} /> : undefined} />
       <div className="main-scroll" ref={scrollRef} onScroll={event => { scrollByView.current[view] = event.currentTarget.scrollTop; setScrolled(event.currentTarget.scrollTop > 2); }}>
         <main className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
           {header && <header className="topbar">
@@ -247,6 +253,7 @@ export default function App() {
 
     <EventDetails event={detailEvent} drafting={drafting === detailId} actions={actions} onClose={() => setDetailId(null)} />
     <ManualRecord open={manualOpen} onClose={() => setManualOpen(false)} onSave={saveManual} />
+    <AppUpdateDialog update={appUpdate} />
     <ToastStack toasts={toasts} onDismiss={dismissToast} />
   </div>;
 }

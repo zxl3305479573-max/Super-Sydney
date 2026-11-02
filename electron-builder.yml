@@ -16,6 +16,12 @@ asarUnpack:
   - node_modules/active-win/**/*
 npmRebuild: false
 
+publish:
+  provider: github
+  owner: zxl3305479573-max
+  repo: Super-Sydney
+  releaseType: release
+
 win:
   icon: desktop/assets/icon.ico
   target:

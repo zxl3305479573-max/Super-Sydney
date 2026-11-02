@@ -1,0 +1,59 @@
+name: 发布 Windows 安装包
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: 校验标签与应用版本一致
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "标签 $env:GITHUB_REF_NAME 与应用版本 $version 不一致"
+          }
+      - run: npm ci
+      - run: npm run typecheck
+      - name: 验证应用更新流程
+        run: node --experimental-strip-types --test desktop/test/app-updater.test.ts
+      - name: 生成安装包与更新清单
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: 保存构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sydney-${{ github.ref_name }}-windows
+          path: |
+            release/Sydney-Setup-*.exe
+            release/Sydney-Setup-*.exe.blockmap
+            release/Sydney-Portable-*.exe
+            release/latest.yml
+          if-no-files-found: error
+      - name: 发布版本及应用更新文件
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $installer = "release/Sydney-Setup-$version-x64.exe"
+          $portable = "release/Sydney-Portable-$version-x64.exe"
+          $blockmap = "$installer.blockmap"
+          $manifest = "release/latest.yml"
+          foreach ($file in @($installer, $portable, $blockmap, $manifest)) {
+            if (-not (Test-Path -LiteralPath $file)) { throw "缺少发布文件：$file" }
+          }
+          gh release create $env:GITHUB_REF_NAME $installer $portable $blockmap $manifest --verify-tag --title "Sydney v$version" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw "发布失败，退出码：$LASTEXITCODE" }

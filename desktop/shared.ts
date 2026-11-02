@@ -956,7 +956,28 @@ export type WindowChromeState = { maximized: boolean; fullscreen: boolean; focus
 export type WindowControl = 'minimize' | 'toggle-maximize' | 'close';
 export type AppTheme = 'light' | 'dark';
 
+export type AppUpdateState = {
+  status: 'idle' | 'checking' | 'not-available' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error' | 'unsupported';
+  supported: boolean;
+  currentVersion: string;
+  latestVersion: string;
+  releaseNotes: string;
+  releaseDate: string;
+  progress: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+  downloaded: boolean;
+  checkedAt: string;
+  error: string;
+};
+
 export interface SydneyApi {
+  getAppUpdateState(): Promise<AppUpdateState>;
+  checkAppUpdate(): Promise<AppUpdateState>;
+  downloadAppUpdate(): Promise<AppUpdateState>;
+  installAppUpdate(): Promise<AppUpdateState>;
+  onAppUpdateChanged(callback: (state: AppUpdateState) => void): () => void;
   getState(): Promise<AppState>;
   createEvent(event: Partial<WorkEvent>): Promise<number>;
   updateEvent(id: number, patch: Partial<WorkEvent>): Promise<void>;

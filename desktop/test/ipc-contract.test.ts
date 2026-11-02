@@ -81,3 +81,21 @@ test('video publisher IPC contract exposes view controls and batch publishing', 
     assert.equal(invokes.get(channel), arity, `${channel} preload 参数数量不符合发布契约`);
   }
 });
+
+test('app update IPC is exposed only through the main renderer contract', () => {
+  const handlers = handlerArity();
+  const invokes = preloadArity();
+  const expected: Record<string, number> = {
+    'app-update:state': 0,
+    'app-update:check': 0,
+    'app-update:download': 0,
+    'app-update:install': 0
+  };
+  for (const [channel, arity] of Object.entries(expected)) {
+    assert.equal(handlers.get(channel), arity, `${channel} 主进程参数数量不符合更新契约`);
+    assert.equal(invokes.get(channel), arity, `${channel} preload 参数数量不符合更新契约`);
+  }
+  const preload = fs.readFileSync(path.join(desktopDir, 'preload.ts'), 'utf8');
+  assert.match(preload, /onAppUpdateChanged:\s*callback\s*=>\s*\{[\s\S]*?ipcRenderer\.on\('app-update:changed'/);
+  assert.match(preload, /onAppUpdateChanged:[\s\S]*?return\s*\(\)\s*=>\s*ipcRenderer\.removeListener\('app-update:changed'/);
+});

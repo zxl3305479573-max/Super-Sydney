@@ -10,9 +10,9 @@ try {
   if ($LASTEXITCODE -ne 0) { throw "electron-vite build failed with exit code $LASTEXITCODE" }
 
   if ($Unpacked) {
-    npx --no-install electron-builder --dir --win --x64
+    npx --no-install electron-builder --dir --win --x64 --publish never
   } else {
-    npx --no-install electron-builder --win --x64
+    npx --no-install electron-builder --win --x64 --publish never
   }
   if ($LASTEXITCODE -ne 0) { throw "electron-builder failed with exit code $LASTEXITCODE" }
 } finally {
