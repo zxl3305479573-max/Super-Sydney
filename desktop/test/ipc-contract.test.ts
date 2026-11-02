@@ -62,3 +62,22 @@ test('every preload invoke has a main-process handler with the same arity', () =
     assert.equal(handlers.get(channel), count, `${channel} 参数个数不一致：preload ${count}，handler ${handlers.get(channel)}`);
   }
 });
+
+test('video publisher IPC contract exposes view controls and batch publishing', () => {
+  const handlers = handlerArity();
+  const invokes = preloadArity();
+  const expected: Record<string, number> = {
+    'video-publish:view:state': 1,
+    'video-publish:view:open': 1,
+    'video-publish:view:close': 0,
+    'video-publish:view:bounds': 1,
+    'video-publish:view:navigate': 2,
+    'video-publish:view:go': 2,
+    'video-publish:view:external': 1,
+    'video-publish:run': 3
+  };
+  for (const [channel, arity] of Object.entries(expected)) {
+    assert.equal(handlers.get(channel), arity, `${channel} 主进程参数数量不符合发布契约`);
+    assert.equal(invokes.get(channel), arity, `${channel} preload 参数数量不符合发布契约`);
+  }
+});
