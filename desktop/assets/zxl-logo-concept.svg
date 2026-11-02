@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <g stroke="#111111" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Z: explicit top bar, shared descending stroke, and lower bar. -->
+    <path stroke-width="3.2" d="M27 31H98Q102 31 99 35L31 85Q26 89 32 92H66" />
+    <!-- X: the rising diagonal crosses the Z and becomes the upright of L. -->
+    <path stroke-width="3.2" d="M42 34L88 79Q94 85 94 92V96Q94 99 91 99H69" />
+    <!-- Fine inline accents make the monogram feel drawn and dimensional. -->
+    <path stroke-width="1" d="M31 27H96M34 96H63M73 103H90" />
+    <path stroke-width="1" d="M47 32L60 45M77 68L88 79" />
+    <!-- Short contour strokes soften the ends and mark the woven crossing. -->
+    <path stroke-width="1.3" d="M25 35C23 38 24 41 27 43M96 104C100 103 103 100 103 96" />
+  </g>
+</svg>

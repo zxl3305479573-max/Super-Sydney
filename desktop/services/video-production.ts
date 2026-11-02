@@ -34,7 +34,7 @@ export function shotRoleLabel(role: string | undefined): string {
   return VIDEO_SHOT_ROLES.find(item => item.value === role)?.label ?? '';
 }
 
-export const DEFAULT_VIDEO_FOOTER = '健康科普 · 不替代医生诊疗';
+export const DEFAULT_VIDEO_FOOTER = '';
 
 export const VIDEO_RENDER_DEFAULTS: VideoRenderOptions = {
   workflow: 'script-to-video',
@@ -350,7 +350,7 @@ export function imageKey(prompt: string, ipId = ''): string {
 }
 
 function projectTitle(project: VideoProject): string {
-  return project.title.trim() || project.topic.trim() || '健康科普';
+  return project.title.trim() || project.topic.trim() || '短视频';
 }
 
 /** 这一镜当前有效的配音（账本里键对得上）；口播为空或从没配过音时为 null。 */

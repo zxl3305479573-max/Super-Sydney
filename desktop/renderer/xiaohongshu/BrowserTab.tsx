@@ -20,6 +20,10 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   const { notify } = ctx;
   const accountId = ctx.account.id;
   const stageRef = useRef<HTMLDivElement>(null);
+  const handledPublishNonce = useRef(0);
+  const initialPublishNonce = useRef(publishNonce);
+  const lifecycleTimer = useRef<number | null>(null);
+  const activeLifecycleId = useRef('');
   const [state, setState] = useState<XhsViewState | null>(null);
   const [keyword, setKeyword] = useState('');
   const { busy, run, locked } = useBusy(notify);
@@ -31,27 +35,44 @@ export function BrowserTab({ ctx, overlay, publishNonce = 0, onNotes, onProfile 
   useEffect(() => window.sydney.onXhsViewChanged(refresh), [refresh]);
 
   useEffect(() => {
-    if (overlay) { void window.sydney.closeXhsView(); return; }
-    void window.sydney.openXhsView(accountId).then(setState).catch(error => notify(readableError(error)));
-    const report = () => void window.sydney.setXhsViewBounds(readStage());
-    report();
+    if (lifecycleTimer.current !== null) window.clearTimeout(lifecycleTimer.current);
+    if (overlay) {
+      const lifecycleId = activeLifecycleId.current;
+      lifecycleTimer.current = window.setTimeout(() => { lifecycleTimer.current = null; void window.sydney.closeXhsView(lifecycleId); }, 0);
+      return () => {
+        if (lifecycleTimer.current !== null) window.clearTimeout(lifecycleTimer.current);
+        lifecycleTimer.current = null;
+      };
+    }
+    const nonce = initialPublishNonce.current;
+    const shouldPublish = nonce > 0 && handledPublishNonce.current !== nonce;
+    if (shouldPublish) handledPublishNonce.current = nonce;
+    const lifecycleId = crypto.randomUUID();
+    activeLifecycleId.current = lifecycleId;
+    const initialBounds = readStage();
+    const report = () => void window.sydney.setXhsViewBounds(readStage(), lifecycleId);
     const observer = new ResizeObserver(report);
     if (stageRef.current) observer.observe(stageRef.current);
     window.addEventListener('resize', report);
     window.addEventListener('scroll', report, true);
+    lifecycleTimer.current = window.setTimeout(() => {
+      lifecycleTimer.current = null;
+      void window.sydney.openXhsView(accountId, shouldPublish ? 'publish' : null, initialBounds, lifecycleId).then(setState).catch(error => notify(readableError(error)));
+    }, 0);
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', report);
       window.removeEventListener('scroll', report, true);
-      void window.sydney.closeXhsView();
+      if (lifecycleTimer.current !== null) window.clearTimeout(lifecycleTimer.current);
+      lifecycleTimer.current = window.setTimeout(() => { lifecycleTimer.current = null; void window.sydney.closeXhsView(lifecycleId); }, 0);
     };
   }, [overlay, readStage, notify, accountId]);
 
-  // 放在挂载视图的 effect 之后：IPC 按顺序处理，视图先挂上再跳转。
   useEffect(() => {
-    if (!publishNonce) return;
-    void window.sydney.navigateXhsView({ kind: 'publish' }).then(setState).catch(error => notify(readableError(error)));
-  }, [publishNonce, notify]);
+    if (overlay || !publishNonce || publishNonce === initialPublishNonce.current || handledPublishNonce.current === publishNonce) return;
+    handledPublishNonce.current = publishNonce;
+    void window.sydney.openXhsView(accountId, 'publish', readStage(), activeLifecycleId.current).then(setState).catch(error => notify(readableError(error)));
+  }, [publishNonce, overlay, accountId, notify]);
 
   const onCreator = Boolean(state?.url && /^https:\/\/creator\.xiaohongshu\.com\//.test(state.url));
   const navigate = (kind: 'home' | 'search' | 'publish') => run('nav', async () => setState(await window.sydney.navigateXhsView({ kind, value: keyword })));

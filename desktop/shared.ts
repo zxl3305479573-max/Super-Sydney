@@ -292,7 +292,7 @@ export type ArticleStatsView = {
 };
 export type ArticleStatsImportResult = { file: string; added: number; updated: number; view: ArticleStatsView };
 /* ── 视频模块 ────────────────────────────────────────────────────
- * 面向中老年健康科普账号的短视频流水线：选题 → 口播脚本 → 分镜 →
+ * 面向多题材、多平台的短视频流水线：选题 → 口播脚本 → 分镜 →
  * 配音与字幕 → 画面 → 成片 → 封面 → 制作包。
  * 模型负责选题、脚本与分镜（和可选的逐镜配图）；配音走 TTS，字幕、画面帧与成片在本地确定性生成；
  * 导出前必须由人确认，模块不代替任何平台做发布。
@@ -1108,9 +1108,9 @@ export interface SydneyApi {
   interpretXhsAnalytics(accountId: number): Promise<XhsAnalyticsView>;
   getXhsView(): Promise<XhsViewState>;
   /** 显示某个账号的小红书窗口：每个账号一个独立会话，登录状态互不相通。 */
-  openXhsView(accountId: number): Promise<XhsViewState>;
-  closeXhsView(): Promise<void>;
-  setXhsViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  openXhsView(accountId: number, target?: 'publish' | null, bounds?: SiteViewBounds | null, lifecycleId?: string): Promise<XhsViewState>;
+  closeXhsView(lifecycleId?: string): Promise<void>;
+  setXhsViewBounds(bounds: SiteViewBounds | null, lifecycleId?: string): Promise<void>;
   /** publish 打开网页版创作者中心的发布页（不代填、不代发，只是打开）。 */
   navigateXhsView(target: { kind: 'home' | 'search' | 'publish' | 'url'; value?: string }): Promise<XhsViewState>;
   xhsViewGo(action: 'back' | 'reload'): Promise<XhsViewState>;

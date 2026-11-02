@@ -7,6 +7,7 @@ import { IpLibraryCard } from './IpLibrary';
 type Patch = Partial<Settings>;
 
 const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
+  { id: 'appearance', label: '外观', icon: 'spark' },
   { id: 'vault', label: '知识库', icon: 'book' },
   { id: 'activity', label: '活动记录', icon: 'window' },
   { id: 'ai', label: 'AI 对话采集', icon: 'bot' },
@@ -134,6 +135,9 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
   const [redfoxKey, setRedfoxKey] = useState('');
   const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [redfoxTesting, setRedfoxTesting] = useState(false);
+  const [palette, setPalette] = useState(() => {
+    try { return localStorage.getItem('sydney.palette') || 'blue'; } catch { return 'blue'; }
+  });
   /** 没保存 key、靠环境变量 REDFOX_API_KEY 时主进程会在 masked 里注明来源，这时没有可删除的东西。 */
   const redfoxFromEnv = redfoxStatus.configured && redfoxStatus.masked.includes('环境变量');
   useEffect(() => { void window.sydney.getRedfoxKeyStatus().then(setRedfoxStatus); }, []);
@@ -155,6 +159,23 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
     </nav>
 
     <div className="settings-body">
+      <section id="set-appearance" className="set-card appearance-card">
+        <header><Icon name="spark" size={18} /><div><h2>外观与皮肤</h2><p>布局和功能保持一致，只切换界面强调色。浅色 / 深色模式仍可在标题栏切换。</p></div></header>
+        <div className="palette-picker" role="radiogroup" aria-label="界面皮肤">
+          {[
+            { id: 'blue', label: '经典蓝', color: '#365fc8' },
+            { id: 'emerald', label: '森林绿', color: '#16835b' },
+            { id: 'violet', label: '柔和紫', color: '#7852b8' },
+            { id: 'rose', label: '玫瑰红', color: '#c04f68' },
+            { id: 'graphite', label: '石墨灰', color: '#596273' }
+          ].map(item => <button key={item.id} type="button" role="radio" aria-checked={palette === item.id} className={`palette-option ${palette === item.id ? 'is-active' : ''}`} onClick={() => {
+            setPalette(item.id);
+            document.documentElement.dataset.palette = item.id;
+            try { localStorage.setItem('sydney.palette', item.id); } catch { /* 只影响下次启动的默认值 */ }
+          }}><i style={{ background: item.color }} /><span>{item.label}</span></button>)}
+        </div>
+      </section>
+
       <section id="set-vault" className="set-card">
         <header><Icon name="book" size={18} /><div><h2>知识库</h2><p>确认后的事件、日报、周报和进化记录写入这个 Obsidian 目录。</p></div></header>
         <Row title="Obsidian 知识库目录" description={<code className="path">{settings.vaultPath || '未设置'}</code>}

@@ -138,9 +138,9 @@ test('voice coverage tells missing audio apart from audio that went stale after 
 test('shot images are keyed by the full prompt so a changed prompt needs a new image', () => {
   const prompt = shotImagePrompt(shots[0], '控糖早餐');
   assert.match(prompt, /清晨厨房/);
-  assert.match(prompt, /不要出现任何文字/);
+  assert.match(prompt, /画面中不要出现文字/);
   assert.match(prompt, /一个清晰的主体和一个明确动作/);
-  assert.match(prompt, /中国家庭或社区日常场景/);
+  assert.doesNotMatch(prompt, /中老年|健康科普|公众号|小红书/);
   // 没有配图提示词时退回画面描述。
   assert.match(shotImagePrompt(shots[1], '控糖早餐'), /饭桌/);
   const withImage = project({ options: { ...VIDEO_RENDER_DEFAULTS, imageMode: 'ai' }, assets: { ...emptyRenderAssets(), images: [{ key: imageKey(prompt), path: 'i.png' }] } });

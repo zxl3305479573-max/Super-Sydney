@@ -43,6 +43,8 @@ export class XhsView {
   /** 当前挂在窗口上的账号；0 表示没挂。 */
   private attachedId = 0;
   private lastRead = 0;
+  private initialTarget = '';
+  private lifecycleId = '';
 
   constructor(private readonly ctx: AppContext) {
     migrateLegacyPartition(ctx);
@@ -62,21 +64,31 @@ export class XhsView {
   }
 
   /** 显示某个账号的窗口；换了账号就把上一个摘下来（它的进程留着，切回来原样）。 */
-  show(accountId: unknown): XhsViewState {
+  show(accountId: unknown, target: 'publish' | null = null, bounds?: unknown, lifecycleId?: string): XhsViewState {
     const id = Number(accountId);
     if (!Number.isInteger(id) || id <= 0 || !listXhsAccounts(this.ctx.db).some(account => account.id === id)) throw new Error('小红书账号不存在');
+    if (typeof lifecycleId === 'string' && lifecycleId) this.lifecycleId = lifecycleId;
+    const existing = this.views.get(id);
+    const alreadyStarted = Boolean(existing?.started);
     this.accountId = id;
     this.wanted = true;
-    this.sync();
+    this.initialTarget = target === 'publish' ? XHS_PUBLISH_URL : '';
+    if (bounds !== undefined) this.setBounds(bounds);
+    else this.sync();
+    if (target === 'publish' && alreadyStarted) {
+      void this.load(this.views.get(id)!, XHS_PUBLISH_URL);
+    }
     return this.state();
   }
 
-  close(): void {
+  close(lifecycleId?: string): void {
+    if (typeof lifecycleId === 'string' && lifecycleId !== this.lifecycleId) return;
     this.wanted = false;
     this.sync();
   }
 
-  setBounds(input: unknown): void {
+  setBounds(input: unknown, lifecycleId?: string): void {
+    if (typeof lifecycleId === 'string' && lifecycleId !== this.lifecycleId) return;
     const win = this.liveWindow();
     if (!win) this.bounds = null;
     else {
@@ -183,7 +195,9 @@ export class XhsView {
       if (!current.started) {
         // 重启后第一次打开这个账号的窗口：回到上次停的小红书页面，否则首页。
         const saved = this.ctx.lastPages.get(`xhs:${this.accountId}`);
-        void this.load(current, saved && isXhsHost(saved) ? saved : XHS_HOME);
+        const initial = this.initialTarget;
+        this.initialTarget = '';
+        void this.load(current, initial || (saved && isXhsHost(saved) ? saved : XHS_HOME));
       }
     }
     if (before !== this.attachedId) this.notify();

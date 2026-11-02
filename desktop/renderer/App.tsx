@@ -14,6 +14,7 @@ import { EventDetails, ManualRecord, type EventActions } from './EventItem';
 import { Icon, KeepAlive, readableError, useVisited, type IconName } from './ui';
 import { TitleBar, useWindowChrome } from './TitleBar';
 import { useTheme } from './theme';
+import brandMark from '../assets/brand-mark.png?asset';
 
 type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
 type Toast = { id: number; message: string; tone: 'info' | 'error' };
@@ -64,8 +65,6 @@ function initialView(): View {
   return 'today';
 }
 
-const reduceMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-
 function greeting(): string {
   const hour = new Date().getHours();
   const date = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
@@ -85,16 +84,14 @@ export default function App() {
   const chrome = useWindowChrome();
   const [theme, toggleTheme] = useTheme();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const mainRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
 
-  // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置，并淡入一下（只动透明度，不影响嵌入网页的定位）。
+  // 内容区是共用的滚动容器：切页面时回到这个页面上次的滚动位置。
   useLayoutEffect(() => {
     try { localStorage.setItem(VIEW_KEY, view); } catch { /* 存不了就下次从今日工作开始 */ }
     const top = scrollByView.current[view] ?? 0;
     scrollRef.current?.scrollTo({ top });
     setScrolled(top > 2);
-    if (!reduceMotion()) mainRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
   }, [view]);
 
   const refresh = useCallback(async () => setState(await window.sydney.getState()), []);
@@ -159,7 +156,7 @@ export default function App() {
 
   return <div className={`app-shell platform-${chrome.platform} ${chrome.focused ? '' : 'is-blurred'}`}>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">S</span><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
+      <div className="brand"><img className="brand-mark" src={brandMark} alt="" /><div><strong>Sydney</strong><small>个人工作 OS</small></div></div>
       <nav className="nav" aria-label="主导航">
         {NAV.map(group => <div key={group.group} className="nav-group">
           <span className="nav-group-label">{group.group}</span>
@@ -183,7 +180,7 @@ export default function App() {
     <div className="workspace">
       <TitleBar crumbs={crumbsOf(view)} chrome={chrome} scrolled={scrolled} theme={theme} onToggleTheme={toggleTheme} />
       <div className="main-scroll" ref={scrollRef} onScroll={event => { scrollByView.current[view] = event.currentTarget.scrollTop; setScrolled(event.currentTarget.scrollTop > 2); }}>
-        <main ref={mainRef} className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
+        <main className={`main-content ${fullWidth ? 'main-content-wide' : ''}`}>
           {header && <header className="topbar">
             <div><p className="eyebrow">{view === 'today' ? greeting() : 'Sydney 工作台'}</p><h1>{header.title}</h1>{header.subtitle && <p className="topbar-sub">{header.subtitle}</p>}</div>
             <div className="top-actions">

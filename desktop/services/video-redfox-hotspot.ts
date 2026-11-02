@@ -1,5 +1,5 @@
 import type { VideoPlatform, XhsHotNote, XhsHotspotQuery, XhsHotspotResult } from '../shared.ts';
-import { normalizeHotspotQuery, parseCount, type FetchLike } from './xhs-hotspot.ts';
+import { normalizeHotspotQuery, parseHotspotCount as parseCount, type FetchLike } from './hotspot-query.ts';
 
 /**
  * 红狐视频平台选题接口。

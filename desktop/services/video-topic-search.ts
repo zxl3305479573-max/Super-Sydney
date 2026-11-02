@@ -1,10 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { VideoPlatform, VideoTopicSearchQuery, VideoTopicSearchResult, XhsHotspotResult } from '../shared';
-import { readHotspotCache, writeHotspotCache } from './xhs-store';
-import { normalizeHotspotQuery, type FetchLike } from './xhs-hotspot';
-import { searchTopicHotspots } from './topic-hotspot-search';
+import { normalizeHotspotQuery, type FetchLike } from './hotspot-query';
 import { isVideoRedfoxPlatform, searchVideoRedfox } from './video-redfox-hotspot';
-import { searchBing } from './xhs-render';
+import { searchPublicWeb } from './web-search';
 
 const platformName: Record<VideoPlatform, string> = {
   douyin: '抖音',
@@ -14,6 +12,20 @@ const platformName: Record<VideoPlatform, string> = {
   general: '通用平台'
 };
 const platforms = new Set<VideoPlatform>(['douyin', 'shipinhao', 'xiaohongshu', 'bilibili', 'general']);
+
+function ensureVideoCache(db: DatabaseSync): void {
+  db.exec('CREATE TABLE IF NOT EXISTS video_hotspot_cache (cache_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, fetched_at TEXT NOT NULL)');
+}
+function readVideoCache(db: DatabaseSync, key: string): XhsHotspotResult | null {
+  ensureVideoCache(db);
+  const row = db.prepare('SELECT result_json, fetched_at FROM video_hotspot_cache WHERE cache_key=?').get(key) as { result_json: string; fetched_at: string } | undefined;
+  if (!row || Date.now() - Date.parse(row.fetched_at) > 24 * 60 * 60 * 1000) return null;
+  try { return { ...(JSON.parse(row.result_json) as XhsHotspotResult), cached: true }; } catch { return null; }
+}
+function writeVideoCache(db: DatabaseSync, key: string, result: XhsHotspotResult): void {
+  ensureVideoCache(db);
+  db.prepare('INSERT INTO video_hotspot_cache (cache_key, result_json, fetched_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET result_json=excluded.result_json, fetched_at=excluded.fetched_at').run(key, JSON.stringify({ ...result, cached: false }), result.fetchedAt);
+}
 
 function cacheKey(
   platform: VideoPlatform,
@@ -31,7 +43,7 @@ function cacheKey(
 /**
  * 视频选题的平台路由器。
  *
- * 小红书沿用现有红狐接口；抖音、视频号、B 站分别走官方对应接口。
+ * 各视频平台分别走独立的红狐接口或公共网页搜索。
  * 自动模式优先红狐，接口未开放、无权限或网络失败时回落到对应平台的联网搜索。
  */
 export async function searchVideoTopicHotspots(
@@ -47,10 +59,6 @@ export async function searchVideoTopicHotspots(
   const normalized = normalizeHotspotQuery(query);
   const decorate = (result: XhsHotspotResult): VideoTopicSearchResult => ({ ...result, platform });
 
-  if (platform === 'xiaohongshu') {
-    return decorate(await searchTopicHotspots(db, query, apiKey, fetchImpl));
-  }
-
   let notice = '';
   if (source === 'redfox' || (source === 'auto' && apiKey)) {
     if (!isVideoRedfoxPlatform(platform)) {
@@ -58,14 +66,14 @@ export async function searchVideoTopicHotspots(
       notice = `${platformName[platform]}没有专属红狐选题数据，已改用联网搜索`;
     } else {
       const key = cacheKey(platform, 'redfox', normalized);
-      const cached = query.refresh ? null : readHotspotCache(db, key);
+      const cached = query.refresh ? null : readVideoCache(db, key);
       if (cached) return decorate(cached);
       try {
         const result = await searchVideoRedfox(platform, query, {
           apiKey,
           fetch: fetchImpl as unknown as FetchLike
         });
-        writeHotspotCache(db, key, result);
+        writeVideoCache(db, key, result);
         return decorate(result);
       } catch (error) {
         if (source === 'redfox') throw error;
@@ -78,10 +86,10 @@ export async function searchVideoTopicHotspots(
 
   if (!normalized.keyword) throw new Error(`${notice ? `${notice}；` : ''}联网搜索需要关键词`);
   const key = cacheKey(platform, 'web', normalized);
-  const cached = query.refresh ? null : readHotspotCache(db, key);
+  const cached = query.refresh ? null : readVideoCache(db, key);
   if (cached) return decorate({ ...cached, notice: notice || cached.notice });
 
-  const notes = await searchBing(normalized.keyword, platform);
+  const notes = await searchPublicWeb(normalized.keyword, platform);
   const result: XhsHotspotResult = {
     source: 'web',
     keyword: normalized.keyword,
@@ -97,6 +105,6 @@ export async function searchVideoTopicHotspots(
     notice,
     tips: `${platformName[platform]}联网搜索结果来自公开网页，没有平台互动数据：只能看标题钩子、内容形态与方向有没有人写，热度和互动结论未经数据验证。`
   };
-  writeHotspotCache(db, key, result);
+  writeVideoCache(db, key, result);
   return decorate(result);
 }

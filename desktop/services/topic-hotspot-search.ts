@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { XhsHotspotQuery, XhsHotspotResult } from '../shared';
 import { hotspotCacheKey, normalizeHotspotQuery, searchRedfox, type FetchLike } from './xhs-hotspot';
-import { searchBing } from './xhs-render';
+import { searchPublicWeb } from './web-search';
 import { readHotspotCache, writeHotspotCache } from './xhs-store';
 
 /**
@@ -46,7 +46,7 @@ export async function searchTopicHotspots(
   const cached = input.refresh ? null : readHotspotCache(db, key);
   if (cached) return { ...cached, notice: notice || cached.notice };
 
-  const notes = await searchBing(normalized.keyword);
+  const notes = await searchPublicWeb(normalized.keyword, 'xiaohongshu');
   const result: XhsHotspotResult = {
     source: 'web',
     keyword: normalized.keyword,

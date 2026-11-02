@@ -26,7 +26,7 @@ import { listSystemVoices, readVideoTtsSettings, requestSpeech, synthesizeSystem
 import { createVideoProject, deleteVideoProject, getVideoProject, listVideoProjects, updateVideoProject } from '../services/video-store';
 import { pickPose } from '../services/ip-theme';
 import { normalizeVideoIpCoverInput, renderVideoIpCover, videoCoverSize } from '../services/video-ip-cover';
-import { renderHtmlPages } from '../services/xhs-render';
+import { renderHtmlPages } from '../services/html-pages-render';
 import { ipReferenceImage, ipRenderKit } from './ip';
 import { requestVideoStage } from '../services/video-workflow';
 import { copyRenderedVideoTo, exportVideoPackage, suggestedMp4Name } from '../services/video-export';
@@ -35,10 +35,10 @@ import { runVideoSkill } from '../services/video-skill-adapters';
 import { ensureAutoBgm } from '../services/video-bgm';
 import { videoFrameSpec } from '../services/video-frame-spec';
 import { evaluateVideoQuality } from '../services/video-quality';
-import { assetDirectory, contentApiConfig, generateImageFile, removeAssetDirectory } from './content-support';
+import { assetDirectory, generateImageFile, removeAssetDirectory, videoApiConfig } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
- * 与公众号并列的第二条内容流水线。模型做选题、口播脚本与分镜（和可选的逐镜配图）；
+ * 独立的视频生产流水线。模型做选题、口播脚本与分镜（和可选的逐镜配图）；
  * 配音走 TTS，镜头时长以真实音频为准；字幕、画面帧与成片在本地确定性生成。
  * 花钱的动作（配音接口、AI 配图、封面）都要用户点按钮，导出只是写知识库，
  * 模块不代替任何平台做发布。
@@ -186,7 +186,7 @@ export function registerVideoIpc(ctx: AppContext): void {
   ipcMain.handle('video:generate', async (_event, id: number, stage: VideoStage) => requests.run(id, async () => {
     const project = getVideoProject(db, id);
     assertVideoStage(project, stage);
-    const generated = await requestVideoStage(project, stage, contentApiConfig(ctx));
+    const generated = await requestVideoStage(project, stage, videoApiConfig(ctx));
     const patch: Partial<VideoProject> = { ...generated };
     if (stage === 'script') patch.status = 'script';
     if (stage === 'storyboard') patch.status = parseVideoShots(generated.storyboardJson || '').length ? 'storyboard' : project.status;
@@ -200,7 +200,7 @@ export function registerVideoIpc(ctx: AppContext): void {
   });
   /**
    * 生成竖版封面（9:16）。
-   * 与公众号封面共用同一套图片接口与错误处理，但尺寸不同——竖屏封面的构图和横版不通用。
+   * 使用全局图片服务生成视频封面，尺寸按视频平台规格选择。
    */
   /** 用这条视频选的 IP 本地排版出竖版封面，不调图片接口。 */
   ipcMain.handle('video:ip-cover:render', async (_event, id: number, raw: unknown) => requests.run(id, async () => {
@@ -221,7 +221,7 @@ export function registerVideoIpc(ctx: AppContext): void {
       coverPath: await generateImageFile(
         target,
         videoCoverPrompt(project, project.options.coverImagePromptTemplate),
-        project.platform === 'bilibili' || project.platform === 'general' ? '1792x1024' : '1024x1792',
+        project.platform === 'bilibili' || project.platform === 'general' ? '1536x1024' : '1024x1536',
         undefined,
         ipReferenceImage(ctx.ipLibrary, project.options.ipId)
       )
@@ -285,12 +285,12 @@ export function registerVideoIpc(ctx: AppContext): void {
     return project;
   }));
 
-  /** 逐镜 AI 配图：复用公众号的图片接口；按提示词哈希登记，只补缺失或提示词改过的镜头。 */
+  /** 逐镜 AI 配图：按提示词哈希登记，只补缺失或提示词改过的镜头。 */
   ipcMain.handle('video:images', async (_event, id: number, force?: boolean) => requests.run(id, async () => {
     let project = getVideoProject(db, id);
     const shots = parseVideoShots(project.storyboardJson);
     if (!shots.length) throw new Error('请先生成分镜，再配图');
-    const title = project.title.trim() || project.topic.trim() || '健康科普';
+    const title = project.title.trim() || project.topic.trim() || '短视频';
     // 这条视频选了 IP 时，配图里融入 IP 角色（参考图传给接口）；IP 进了配图的键，换 IP 会重新生成。
     const ipId = project.options.ipId;
     const ip = ipReferenceImage(ctx.ipLibrary, ipId);
@@ -349,7 +349,7 @@ export function registerVideoIpc(ctx: AppContext): void {
   ) => {
     const shots = parseVideoShots(project.storyboardJson);
     const frame = videoFrameSpec(project.platform);
-    const title = project.title.trim() || project.topic.trim() || '健康科普';
+    const title = project.title.trim() || project.topic.trim() || '短视频';
     const pad = (value: number) => String(value).padStart(4, '0');
     const ip = frameIp(project.options.ipId);
     const productMode = project.options.workflow === 'product-demo';
@@ -539,7 +539,7 @@ export function registerVideoIpc(ctx: AppContext): void {
     return requests.run(id, async () => {
       let project = getVideoProject(db, id);
       assertVideoExportable(project);
-      if (project.assets.video && isRenderFresh(project)) {
+      if (project.assets.video && fs.existsSync(project.assets.video.path) && isRenderFresh(project)) {
         project = await ensureVideoQuality(project);
         assertQualityAllowsExport(project);
       }

@@ -25,7 +25,7 @@ import { yamlScalar } from '../services/wewrite-config';
 import { readWeWriteFiles, syncStyleTopics } from '../services/wewrite-files';
 import { assetDirectory, contentApiConfig, generateImageFile, readContentTaxonomy, removeAssetDirectory } from './content-support';
 import { normalizeWechatIpCoverInput, renderWechatIpCover, WECHAT_COVER_SIZE, WECHAT_SHARE_SIZE } from '../services/wechat-ip-cover';
-import { renderHtmlPages } from '../services/xhs-render';
+import { renderHtmlPages } from '../services/html-pages-render';
 import { ipReferenceImage, ipRenderKit } from './ip';
 
 /* ── 桌面端原生公众号内容管道 ─────────────────────────────────── */

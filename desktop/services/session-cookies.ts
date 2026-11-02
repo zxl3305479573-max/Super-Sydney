@@ -8,7 +8,8 @@ import type { Cookie, CookiesSetDetails, Session } from 'electron';
  * 过期时间，让它和普通 cookie 一样落盘；站点退出登录时会删掉同名 cookie，退出照样生效，
  * 服务端让登录失效时也照样要求重新登录。应用不另存账号或 cookie 文件。
  */
-export const KEEP_LOGIN_DAYS = 30;
+/** 登录态最长续期窗口；每次打开对应站点时还会把已有 Cookie 再续一年。 */
+export const KEEP_LOGIN_DAYS = 365;
 
 /** cookie 所属的主机名（去掉表示子域通配的前导点）。 */
 export function cookieHost(cookie: Pick<Cookie, 'domain'>): string {
@@ -64,6 +65,14 @@ const keptSessions = new WeakSet<Session>();
 export function keepLoginAcrossRestarts(session: Session, siteHosts: () => readonly string[]): void {
   if (keptSessions.has(session)) return;
   keptSessions.add(session);
+  // 进程重启后，已有的持久 Cookie 也可能只剩很短有效期；打开模块时统一续期。
+  void session.cookies.get({}).then(cookies => {
+    for (const cookie of cookies) {
+      if (!cookie.session && shouldPersist(cookie, false, siteHosts())) {
+        void session.cookies.set(persistentCopy(cookie, Date.now())).catch(() => { /* 站点自行刷新即可 */ });
+      }
+    }
+  }).catch(() => { /* 读取 Cookie 失败不影响页面打开 */ });
   session.cookies.on('changed', (_event, cookie, _cause, removed) => {
     if (!shouldPersist(cookie, removed, siteHosts())) return;
     // 写回的是持久 cookie，再次触发 changed 时 session 为 false，不会循环。

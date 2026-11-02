@@ -1,4 +1,5 @@
 import type { XhsHotNote, XhsHotspotQuery, XhsHotspotResult } from '../shared.ts';
+import { hotspotCacheKey, HOTSPOT_CACHE_TTL_MS, DEFAULT_HOTSPOT_DAYS, DEFAULT_HOTSPOT_PAGE_SIZE, REDFOX_MAX_PAGE_SIZE, normalizeHotspotQuery, parseHotspotCount } from './hotspot-query.ts';
 
 /**
  * 小红书热点数据：红狐 API 客户端与结果归一化。
@@ -10,11 +11,7 @@ import type { XhsHotNote, XhsHotspotQuery, XhsHotspotResult } from '../shared.ts
 
 export const REDFOX_SEARCH_URL = 'https://redfox.hk/story/api/xhs/search/search';
 export const REDFOX_KEY_URL = 'https://redfox.hk/settings/api-keys';
-export const REDFOX_MAX_PAGE_SIZE = 50;
-export const DEFAULT_HOTSPOT_DAYS = 7;
-export const DEFAULT_HOTSPOT_PAGE_SIZE = 20;
-/** 红狐每天只更新一次，24 小时内同样的查询直接用缓存，不重复花额度。 */
-export const HOTSPOT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export { REDFOX_MAX_PAGE_SIZE, DEFAULT_HOTSPOT_DAYS, DEFAULT_HOTSPOT_PAGE_SIZE, HOTSPOT_CACHE_TTL_MS, normalizeHotspotQuery };
 
 export type FetchLike = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<{ status: number; text(): Promise<string> }>;
 
@@ -37,34 +34,7 @@ class RedfoxError extends Error {
   }
 }
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-function localDate(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** 把用户输入整理成一次确定的查询：日期默认近 7 天，条数夹在 1~50。缓存键也由它决定。 */
-export function normalizeHotspotQuery(query: XhsHotspotQuery, now: Date = new Date()): { keyword: string; startDate: string; endDate: string; pageSize: number } {
-  const keyword = String(query.keyword ?? '').replace(/\s+/g, ' ').trim();
-  const startDate = String(query.startDate ?? '').trim();
-  const endDate = String(query.endDate ?? '').trim();
-  if (startDate && !DATE.test(startDate)) throw new Error('开始日期格式应为 yyyy-MM-dd');
-  if (endDate && !DATE.test(endDate)) throw new Error('结束日期格式应为 yyyy-MM-dd');
-  if (startDate && endDate && startDate > endDate) throw new Error('开始日期不能晚于结束日期');
-  const fallbackStart = new Date(now.getTime() - DEFAULT_HOTSPOT_DAYS * 24 * 60 * 60 * 1000);
-  const size = Math.round(Number(query.pageSize ?? DEFAULT_HOTSPOT_PAGE_SIZE));
-  return {
-    keyword,
-    startDate: startDate || localDate(fallbackStart),
-    endDate,
-    pageSize: Number.isFinite(size) ? Math.min(REDFOX_MAX_PAGE_SIZE, Math.max(1, size)) : DEFAULT_HOTSPOT_PAGE_SIZE
-  };
-}
-
-export function hotspotCacheKey(query: ReturnType<typeof normalizeHotspotQuery>, source: 'redfox' | 'web' = 'redfox'): string {
-  return [source, query.keyword, source === 'web' ? '' : query.startDate, source === 'web' ? '' : query.endDate, query.pageSize].join('|');
-}
+export { hotspotCacheKey };
 
 /** 只放行小红书自己的 https 链接，避免把任意地址交给系统浏览器。 */
 export function isXhsLink(value: unknown): boolean {
@@ -87,15 +57,7 @@ export function isHttpLink(value: unknown): boolean {
 }
 
 /** 数据源偶尔给 "1.2w"、"5000+" 这类字符串，统一转成数字；解析不了的记 0。 */
-export function parseCount(value: unknown): number {
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-  const text = String(value ?? '').replace(/[+,\s]/g, '').toLowerCase();
-  if (!text) return 0;
-  const wan = text.endsWith('w') || text.endsWith('万');
-  const number = Number(wan ? text.slice(0, -1) : text);
-  if (!Number.isFinite(number) || number <= 0) return 0;
-  return Math.round(wan ? number * 10000 : number);
-}
+export const parseCount = parseHotspotCount;
 
 /** 展示用的模糊互动数：<5000 原值，5000~9999 显示 5000+，过万按万向下取整。 */
 export function fuzzyCount(value: number): string {

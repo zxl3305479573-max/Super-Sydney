@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { XhsHotspotQuery, XhsHotspotResult } from '../shared.ts';
 import { readHotspotCache, writeHotspotCache } from './xhs-store.ts';
 import { normalizeHotspotQuery, type FetchLike } from './xhs-hotspot.ts';
-import { searchBing } from './xhs-render.ts';
+import { searchPublicWeb } from './web-search.ts';
 import { searchWechatRedfox } from './wechat-redfox-hotspot.ts';
 
 /** 公众号选题数据源：红狐公众号搜索 → 联网搜索。 */
@@ -38,7 +38,7 @@ export async function searchWechatTopicHotspots(
   const key = ['content', 'wechat', 'web', normalized.keyword, normalized.pageSize].join('|');
   const cached = input.refresh ? null : readHotspotCache(db, key);
   if (cached) return { ...cached, notice: notice || cached.notice };
-  const notes = await searchBing(normalized.keyword, 'general');
+  const notes = await searchPublicWeb(normalized.keyword, 'general');
   const result: XhsHotspotResult = {
     source: 'web',
     keyword: normalized.keyword,

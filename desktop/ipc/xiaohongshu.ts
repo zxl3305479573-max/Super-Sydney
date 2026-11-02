@@ -22,7 +22,8 @@ import {
   chainAdvice, deriveXhsStatus, localChecks, mergeCheckItems, prepareXhsEdit, addCandidates, readCandidates, readCardPlan, readCheckReport, readImages, readPositioning,
   readPositioningChat, routeByRules, stampBasis
 } from '../services/xhs-pipeline';
-import { fitToThreeFour, renderHtmlPages } from '../services/xhs-render';
+import { fitToThreeFour } from '../services/xhs-render';
+import { renderHtmlPages } from '../services/html-pages-render';
 import { analyticsDigest, auditMetrics, buildXhsAnalytics, matchXhsNote, tableToXhsStats } from '../services/xhs-stats';
 import {
   createXhsAccount, createXhsNote, createXhsReport, deleteXhsAccount, deleteXhsNote, deleteXhsReport, deleteXhsStat, getXhsAccount, getXhsNote, listXhsAccounts, listXhsNotes,
@@ -507,9 +508,9 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   /* ── 应用内小红书窗口 ───────────────────────────────────────── */
 
   ipcMain.handle('xhs:view:state', () => view.state());
-  ipcMain.handle('xhs:view:open', (_event, accountId: number) => view.show(accountId));
-  ipcMain.handle('xhs:view:close', () => view.close());
-  ipcMain.handle('xhs:view:bounds', (_event, bounds: unknown) => view.setBounds(bounds));
+  ipcMain.handle('xhs:view:open', (_event, accountId: number, target?: 'publish' | null, bounds?: unknown, lifecycleId?: string) => view.show(accountId, target === 'publish' ? 'publish' : null, bounds, lifecycleId));
+  ipcMain.handle('xhs:view:close', (_event, lifecycleId?: string) => view.close(lifecycleId));
+  ipcMain.handle('xhs:view:bounds', (_event, bounds: unknown, lifecycleId?: string) => view.setBounds(bounds, lifecycleId));
   ipcMain.handle('xhs:view:navigate', (_event, target: { kind?: unknown; value?: unknown }) => view.navigate(target ?? {}));
   ipcMain.handle('xhs:view:go', (_event, action: 'back' | 'reload') => view.go(action === 'back' ? 'back' : 'reload'));
   ipcMain.handle('xhs:view:read', () => view.read());

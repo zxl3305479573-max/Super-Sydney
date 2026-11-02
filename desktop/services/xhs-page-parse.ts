@@ -1,6 +1,7 @@
-import type { VideoPlatform, XhsHotNote, XhsPageRead, XhsProfileRead } from '../shared.ts';
+import type { XhsHotNote, XhsPageRead, XhsProfileRead } from '../shared.ts';
 import { fingerprint } from './xhs-pipeline.ts';
 import { parseCount } from './xhs-hotspot.ts';
+import { bingSearchUrls, normalizeWebResults } from './web-topic-search.ts';
 
 /**
  * 页面读取的纯逻辑：在页面里执行的抽取脚本（只读已渲染的 DOM），以及抽取结果的归一化。
@@ -50,6 +51,8 @@ export type RawPageExtract = {
   cards?: unknown;
   profile?: { name?: unknown; redId?: unknown; bio?: unknown; interactions?: unknown } | null;
 };
+
+export { bingSearchUrls, normalizeWebResults };
 
 const str = (value: unknown, max = 300) => (typeof value === 'string' ? value.trim() : '').slice(0, max);
 
@@ -116,52 +119,4 @@ export function normalizePageRead(raw: RawPageExtract): XhsPageRead {
   const path = (() => { try { return new URL(url).pathname; } catch { return ''; } })();
   const kind: XhsPageRead['kind'] = profile ? 'profile' : path.startsWith('/search_result') ? 'search' : path.startsWith('/explore') ? 'feed' : 'other';
   return { url, kind, notes, profile };
-}
-
-/* ── 联网搜索（必应结果页）兜底 ─────────────────────────────── */
-
-/** 在必应结果页里执行的抽取脚本。 */
-export const BING_EXTRACT_SCRIPT = `(() => Array.from(document.querySelectorAll('li.b_algo')).slice(0, 20).map(li => {
-  const a = li.querySelector('h2 a');
-  const p = li.querySelector('.b_caption p, p');
-  return { title: a ? a.textContent.trim() : '', url: a ? a.href : '', snippet: p ? p.textContent.trim() : '' };
-}))()`;
-
-export function bingSearchUrls(keyword: string, platform: VideoPlatform = 'xiaohongshu'): string[] {
-  const word = keyword.trim();
-  const queries = platform === 'douyin'
-    ? [`抖音 ${word} 热门视频`, `抖音 ${word}`]
-    : platform === 'shipinhao'
-      ? [`视频号 ${word} 热门视频`, `微信视频号 ${word}`]
-      : platform === 'bilibili'
-        ? [`B站 ${word} 热门视频`, `哔哩哔哩 ${word}`]
-        : platform === 'general'
-          ? [`${word} 短视频 热门`, `${word}`]
-          : [`小红书 ${word} 爆款笔记`, `小红书 ${word}`];
-  return queries.map(query => `https://cn.bing.com/search?q=${encodeURIComponent(query)}&setlang=zh-CN`);
-}
-
-/**
- * 必应结果 → 热点条目：没有互动数据，统一标 unverified；
- * 摘要开头「2026年2月21日 ·」这类日期提出来当发布时间，必应跳转链接保留原样。
- */
-export function normalizeWebResults(rows: unknown, limit = 20): XhsHotNote[] {
-  const seen = new Set<string>();
-  return (Array.isArray(rows) ? rows : []).flatMap(item => {
-    if (!item || typeof item !== 'object') return [];
-    const row = item as Record<string, unknown>;
-    const url = str(row.url, 2000);
-    const title = str(row.title, 100);
-    if (!title || !/^https?:\/\//.test(url) || seen.has(url)) return [];
-    seen.add(url);
-    let snippet = str(row.snippet, 400);
-    const date = snippet.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日\s*[·•]\s*/);
-    if (date) snippet = snippet.slice(date[0].length);
-    return [{
-      id: `web-${fingerprint(url)}`, title, desc: snippet, cover: '', link: url,
-      createTime: date ? `${date[1]}-${date[2].padStart(2, '0')}-${date[3].padStart(2, '0')}` : '',
-      topics: [], author: { id: '', nickname: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return '网页'; } })(), fans: 0 },
-      interactive: 0, liked: 0, collected: 0, comments: 0, shared: 0, score: null, unverified: true
-    }];
-  }).slice(0, limit);
 }

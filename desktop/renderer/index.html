@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Sydney · 个人工作 OS</title>
+    <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><link rel="icon" type="image/svg+xml" href="./favicon.svg" /><title>Sydney · 个人工作 OS</title>
     <!-- 首帧前定好主题：上次选过就用它，没选过跟随系统；放在样式之前，避免先闪一下浅色。 -->
     <script>
       (function () {
@@ -9,6 +9,10 @@
         try { theme = localStorage.getItem('sydney.theme'); } catch (error) { /* 读不到就跟随系统 */ }
         if (theme !== 'dark' && theme !== 'light') theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         document.documentElement.dataset.theme = theme;
+        var palette = null;
+        try { palette = localStorage.getItem('sydney.palette'); } catch (error) { /* 使用默认配色 */ }
+        if (['blue', 'emerald', 'violet', 'rose', 'graphite'].indexOf(palette) < 0) palette = 'blue';
+        document.documentElement.dataset.palette = palette;
       })();
     </script>
   </head>

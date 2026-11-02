@@ -25,6 +25,12 @@ test('a host-only cookie stays host-only', () => {
   assert.equal('domain' in copy, false);
 });
 
+test('login cookies are kept for a one-year rolling window', () => {
+  assert.equal(KEEP_LOGIN_DAYS, 365);
+  const now = Date.UTC(2026, 0, 1);
+  assert.equal(persistentCopy(cookie(), now).expirationDate, now / 1000 + 365 * 86_400);
+});
+
 test('only new session cookies of the site itself are persisted', () => {
   const weixin = ['weixin.qq.com'];
   assert.equal(shouldPersist(cookie(), false, weixin), true);

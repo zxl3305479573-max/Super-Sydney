@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { AppContext } from '../app-context';
 import type { ContentTaxonomy } from '../shared';
 import type { ContentApiConfig } from '../services/content-workflow';
-import { buildContentApiConfig, imageApiConfig } from '../services/content-api-config';
+import { buildContentApiConfig, imageApiConfig, writerEndpoint as buildWriterEndpoint } from '../services/content-api-config';
 import { readTaxonomy } from '../services/content-store';
 import { requestGeneratedImage, withIpInstruction, type ImageReference } from '../services/image-generation';
 import { parseStyleSummary } from '../services/wewrite-config';
@@ -25,6 +25,13 @@ export function contentApiConfig(ctx: AppContext, subdirectionId?: number | null
     taxonomy: readContentTaxonomy(ctx),
     subdirectionId
   });
+}
+
+/** 视频只读取全应用共享模型端点，不读取公众号资料、受众、语气或禁用词。 */
+export function videoApiConfig(ctx: AppContext): Pick<ContentApiConfig, 'apiKey' | 'baseUrl' | 'model'> {
+  const files = readWeWriteFiles();
+  if (!ctx.settings.read().llmEnabled) throw new Error('请先在「设置 → 模型」里允许调用内容模型');
+  return { apiKey: ctx.llmApiKey(), ...buildWriterEndpoint(files.configText) };
 }
 
 /** 生成的图片按「模块/任务 id」落在 userData 下，返回目录（不存在则创建）。 */

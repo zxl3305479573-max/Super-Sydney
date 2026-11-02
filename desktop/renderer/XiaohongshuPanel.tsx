@@ -79,7 +79,7 @@ export default function XiaohongshuPanel({ notify, overlay }: { notify: (message
 
   const goTo = useCallback((next: XhsTab) => setTab(next), []);
   const [publishNonce, setPublishNonce] = useState(0);
-  const openPublish = useCallback(() => { setPublishNonce(Date.now()); setTab('browser'); }, []);
+  const openPublish = useCallback(() => { setPublishNonce(value => value + 1); setTab('browser'); }, []);
   const openNote = useCallback((id: number, step?: XhsStepKey) => { setNoteTarget({ id, step, nonce: Date.now() }); setTab('notes'); }, []);
 
   if (!account) return <section className="xhs-panel"><p className="empty-state"><strong>正在加载小红书模块…</strong></p></section>;

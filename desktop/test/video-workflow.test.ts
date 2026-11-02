@@ -6,7 +6,7 @@ import { VIDEO_RENDER_DEFAULTS, emptyRenderAssets } from '../services/video-prod
 
 function project(patch: Partial<VideoProject> = {}): VideoProject {
   return {
-    id: 3, platform: 'douyin', topic: '控糖早餐', title: '控糖早餐怎么吃', audience: '中老年读者', durationSeconds: 60, status: 'idea',
+    id: 3, platform: 'douyin', topic: '控糖早餐', title: '控糖早餐怎么吃', audience: '', durationSeconds: 60, status: 'idea',
     topicsJson: '', script: '', storyboardJson: '', coverPath: '', exportPath: '', createdAt: '', updatedAt: '',
     options: { ...VIDEO_RENDER_DEFAULTS }, assets: emptyRenderAssets(), ...patch
   };
@@ -23,9 +23,9 @@ test('topic stage returns candidates and keeps the platform guide in the prompt'
   const topics = JSON.parse(String(result.topicsJson)) as { topics: Array<{ title: string }> };
   assert.equal(topics.topics[0].title, '早餐别只喝粥');
   assert.match(body, /抖音/);
-  // 健康合规规则必须随每次调用一起下发，不能依赖模型记忆。
-  assert.match(body, /不诊断、不开药方/);
-  assert.match(body, /没有联网核实能力/);
+  assert.match(body, /第一次接触该主题的普通观众/);
+  assert.match(body, /无法确认的事实应标记为待核实/);
+  assert.doesNotMatch(body, /中老年|健康科普|公众号/);
   assert.match(body, /五个候选必须角度不同/);
   assert.match(body, /evidence_to_verify/);
   assert.match(body, /不得编造趋势数据/);

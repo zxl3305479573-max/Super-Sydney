@@ -19,7 +19,7 @@ test('逐镜配图提示词单独维护，并按 imagePrompt、visual、caption�
   const prompt = buildVideoShotImagePrompt({ ...shot, imagePrompt: '清晨的厨房餐桌' }, '早餐怎么吃');
   assert.match(prompt, /主题「早餐怎么吃」/);
   assert.match(prompt, /画面：清晨的厨房餐桌/);
-  assert.match(prompt, /中国家庭或社区日常场景/);
+  assert.doesNotMatch(prompt, /中老年|健康科普|公众号|小红书/);
   assert.match(buildVideoShotImagePrompt(shot, '早餐怎么吃'), /画面：厨房/);
   assert.match(buildVideoShotImagePrompt({ ...shot, visual: '' }, '早餐怎么吃'), /画面：早餐/);
   const custom = buildVideoShotImagePrompt(shot, '早餐怎么吃', '自定义 {title}：{subject}');
@@ -32,10 +32,10 @@ test('分镜生图规则和竖版封面提示词也在独立模块中', () => {
   assert.match(VIDEO_STORYBOARD_IMAGE_PROMPT_RULE, /主体 \+ 一个明确动作 \+ 环境 \+ 构图 \+ 光线 \+ 情绪/);
   assert.match(VIDEO_STORYBOARD_IMAGE_PROMPT_RULE, /不要出现任何文字、数字、标志/);
   const cover = buildVideoCoverImagePrompt(project({ script: '第一段内容。'.repeat(40) }));
-  assert.match(cover, /9:16 竖版短视频封面/);
+  assert.match(cover, /9:16 短视频封面/);
   assert.match(cover, /主题「早餐怎么吃」/);
   assert.match(cover, /内容线索：第一段内容/);
-  assert.match(cover, /底部留出干净的标题安全区/);
+  assert.match(cover, /底部留出标题安全区/);
   assert.match(buildVideoCoverImagePrompt(project({ title: '$&', script: '' })), /主题「\$&」/);
   assert.equal(buildVideoCoverImagePrompt(project(), '封面 {title}｜{context}'), '封面 早餐怎么吃｜内容线索：先吃鸡蛋，再搭配主食。');
   assert.equal(VIDEO_IMAGE_PROMPT_DEFAULTS.storyboardImagePromptRule, VIDEO_STORYBOARD_IMAGE_PROMPT_RULE);

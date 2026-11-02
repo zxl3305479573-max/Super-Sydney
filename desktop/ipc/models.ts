@@ -3,6 +3,7 @@ import type { AppContext } from '../app-context';
 import type { ModelConfigDraft, ModelConfigView, ModelPresetInput } from '../shared';
 import { writerEndpoint } from '../services/content-api-config';
 import { requestChatContent } from '../services/llm-json';
+import { normalizeModelConfigDraft } from '../services/model-config';
 import { matchActivePreset } from '../services/model-presets';
 import { maskSecret, parseImageConfig, yamlScalar } from '../services/wewrite-config';
 import { readWeWriteFiles } from '../services/wewrite-files';
@@ -34,22 +35,37 @@ function collectModelConfig(ctx: AppContext): ModelConfigView {
 export function registerModelIpc(ctx: AppContext): void {
   ipcMain.handle('models:get', () => collectModelConfig(ctx));
 
-  /** key 留空表示保留现有的；先写 config.yaml 再存内容 key，key 存不进去时至少地址和模型已经保存。 */
+  /**
+   * key 留空表示保留现有的。先保存 key，再写 config.yaml；配置文件写失败时
+   * 回滚刚写入的 key，避免出现「地址已换但 key 还是旧的」的半套配置。
+   */
   ipcMain.handle('models:save', (_event, draft: ModelConfigDraft): ModelConfigView => {
-    rewriteModelConfig(ctx, current => {
-      current.writer = { ...current.writer!, baseUrl: draft.writer.baseUrl.trim(), model: draft.writer.model.trim() };
-      current.image = {
-        provider: draft.image.provider.trim(), model: draft.image.model.trim(), baseUrl: draft.image.baseUrl.trim(),
-        apiKey: draft.image.apiKey.trim(), estimatedCost: draft.image.estimatedCost
-      };
-    });
-    if (draft.writer.apiKey.trim()) {
-      try {
-        ctx.secretStore.save(draft.writer.apiKey);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`地址与模型已保存，但内容模型 key 未能写入系统安全存储：${detail}`);
+    const normalized = normalizeModelConfigDraft(draft);
+    const previousKey = ctx.secretStore.read();
+    const nextKey = normalized.writer.apiKey;
+    let keyChanged = false;
+    if (nextKey && nextKey !== previousKey) {
+      ctx.secretStore.save(nextKey);
+      keyChanged = true;
+    }
+    try {
+      rewriteModelConfig(ctx, current => {
+        current.writer = { ...current.writer!, baseUrl: normalized.writer.baseUrl, model: normalized.writer.model };
+        current.image = {
+          provider: normalized.image.provider, model: normalized.image.model, baseUrl: normalized.image.baseUrl,
+          apiKey: normalized.image.apiKey, estimatedCost: normalized.image.estimatedCost
+        };
+      });
+    } catch (error) {
+      if (keyChanged) {
+        try {
+          if (previousKey) ctx.secretStore.save(previousKey);
+          else ctx.secretStore.remove();
+        } catch {
+          // 原始错误更有用；回滚失败不会把密钥内容写进错误信息。
+        }
       }
+      throw error;
     }
     return collectModelConfig(ctx);
   });
