@@ -1,13 +1,13 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { AppState, LlmKeyStatus, ModelConfigDraft, ModelConfigView, ModelPresetKind, ModelPresetView, Settings } from '../shared';
 import ModelPresetBar from './ModelPresetBar';
-import { Icon, LinesEditor, Switch, TagEditor, readableError, type IconName } from './ui';
+import { Icon, KeepAlive, LinesEditor, Switch, TagEditor, readableError, useVisited, type IconName } from './ui';
 import { IpLibraryCard } from './IpLibrary';
 import { SystemStatusCard } from './SystemStatus';
 
 type Patch = Partial<Settings>;
 
-const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
+const SECTIONS = [
   { id: 'status', label: '系统状态', icon: 'pulse' },
   { id: 'appearance', label: '外观', icon: 'spark' },
   { id: 'vault', label: '知识库', icon: 'book' },
@@ -17,7 +17,26 @@ const SECTIONS: Array<{ id: string; label: string; icon: IconName }> = [
   { id: 'models', label: '模型', icon: 'key' },
   { id: 'ip', label: 'IP 形象', icon: 'user' },
   { id: 'data', label: '选题数据', icon: 'chart' }
-];
+] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName }>;
+
+type SettingsSection = typeof SECTIONS[number]['id'];
+const SECTION_KEY = 'sydney.settings.section';
+
+function initialSection(): SettingsSection {
+  try {
+    const saved = localStorage.getItem(SECTION_KEY);
+    return SECTIONS.find(section => section.id === saved)?.id ?? 'status';
+  } catch {
+    return 'status';
+  }
+}
+
+function SettingsPage({ id, active, visited, children }: { id: SettingsSection; active: SettingsSection; visited: SettingsSection[]; children: ReactNode }) {
+  if (!visited.includes(id)) return null;
+  return <KeepAlive show={active === id}>
+    <div id={`set-page-${id}`} className="settings-page" role="region" aria-labelledby={`set-nav-${id}`}>{children}</div>
+  </KeepAlive>;
+}
 
 function statusBadge(status: { state: string; error: string }) {
   const map: Record<string, [string, string]> = { disabled: ['未开启', 'off'], stopped: ['开始记录后生效', 'idle'], listening: ['监听中', 'on'], capturing: ['采样中', 'on'], error: ['出错', 'error'] };
@@ -133,7 +152,17 @@ function NumberInput({ value, min, onCommit, suffix }: { value: number; min: num
 
 export function SettingsView({ state, onSetting, onChooseFiles, notify }: { state: AppState; onSetting: (patch: Patch) => Promise<void>; onChooseFiles: () => Promise<void>; notify: (message: string) => void }) {
   const settings = state.settings;
-  const [active, setActive] = useState('status');
+  const [active, setActive] = useState<SettingsSection>(initialSection);
+  const visited = useVisited(active);
+  const layoutRef = useRef<HTMLDivElement>(null);
+  const previousSection = useRef(active);
+  const scrollBySection = useRef<Partial<Record<SettingsSection, number>>>({});
+  useLayoutEffect(() => {
+    try { localStorage.setItem(SECTION_KEY, active); } catch {}
+    if (previousSection.current === active) return;
+    previousSection.current = active;
+    layoutRef.current?.closest<HTMLElement>('.main-scroll')?.scrollTo({ top: scrollBySection.current[active] ?? 0, behavior: 'instant' });
+  }, [active]);
   const [redfoxKey, setRedfoxKey] = useState('');
   const [redfoxStatus, setRedfoxStatus] = useState<LlmKeyStatus>({ configured: false, masked: '', encryptionAvailable: true });
   const [redfoxTesting, setRedfoxTesting] = useState(false);
@@ -152,17 +181,25 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
     finally { setRedfoxTesting(false); }
   };
   const chooseVault = async () => { const next = await window.sydney.chooseVault(); if (next) notify(`知识库已切换到 ${next}`); };
-  const jump = (id: string) => { setActive(id); document.getElementById(`set-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  const jump = (id: string) => {
+    const section = SECTIONS.find(item => item.id === id);
+    if (!section || section.id === active) return;
+    scrollBySection.current[active] = layoutRef.current?.closest<HTMLElement>('.main-scroll')?.scrollTop ?? 0;
+    setActive(section.id);
+  };
 
-  return <div className="settings-layout">
+  return <div className="settings-layout" ref={layoutRef}>
     <nav className="settings-nav" aria-label="设置分区">
-      {SECTIONS.map(section => <button key={section.id} className={active === section.id ? 'is-active' : ''} onClick={() => jump(section.id)}><Icon name={section.icon} size={15} />{section.label}</button>)}
+      {SECTIONS.map(section => <button key={section.id} id={`set-nav-${section.id}`} type="button" className={active === section.id ? 'is-active' : ''} aria-current={active === section.id ? 'page' : undefined} aria-controls={`set-page-${section.id}`} onClick={() => jump(section.id)}><Icon name={section.icon} size={15} />{section.label}</button>)}
       <p className="settings-nav-note"><Icon name="shield" size={14} />所有数据默认只保存在本机；修改即时生效。</p>
     </nav>
 
     <div className="settings-body">
+      <SettingsPage id="status" active={active} visited={visited}>
       <SystemStatusCard vaultPath={settings.vaultPath} onJump={jump} />
+      </SettingsPage>
 
+      <SettingsPage id="appearance" active={active} visited={visited}>
       <section id="set-appearance" className="set-card appearance-card">
         <header><Icon name="spark" size={18} /><div><h2>外观与皮肤</h2><p>布局和功能保持一致，只切换界面强调色。浅色 / 深色模式仍可在标题栏切换。</p></div></header>
         <div className="palette-picker" role="radiogroup" aria-label="界面皮肤">
@@ -179,13 +216,17 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           }}><i style={{ background: item.color }} /><span>{item.label}</span></button>)}
         </div>
       </section>
+      </SettingsPage>
 
+      <SettingsPage id="vault" active={active} visited={visited}>
       <section id="set-vault" className="set-card">
         <header><Icon name="book" size={18} /><div><h2>知识库</h2><p>确认后的事件、日报、周报和进化记录写入这个 Obsidian 目录。</p></div></header>
         <Row title="Obsidian 知识库目录" description={<code className="path">{settings.vaultPath || '未设置'}</code>}
           control={<div className="btn-group"><button className="button button-secondary" onClick={() => void chooseVault()}><Icon name="folder" />更换目录</button><button className="button button-quiet" onClick={() => void window.sydney.openVault()}>打开</button></div>} />
       </section>
+      </SettingsPage>
 
+      <SettingsPage id="activity" active={active} visited={visited}>
       <section id="set-activity" className="set-card">
         <header><Icon name="window" size={18} /><div><h2>活动记录</h2><p>只记录应用名称、窗口标题和使用时长，不记录键盘输入。</p></div></header>
         <Row title="先全部保存，再人工确认" description="不在允许名单里的非敏感窗口也会进入待确认列表，由你决定保留或删除。密码、支付与私人聊天始终跳过。"
@@ -198,7 +239,9 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           <TagEditor tone="danger" values={settings.blockedApps} placeholder="例如 1Password、微信" onChange={values => void onSetting({ blockedApps: values })} />
         </Row>
       </section>
+      </SettingsPage>
 
+      <SettingsPage id="ai" active={active} visited={visited}>
       <section id="set-ai" className="set-card">
         <header><Icon name="bot" size={18} /><div><h2>AI 对话采集</h2><p>只采集你输入的提示词和每轮最终答复；工具只记名称与改动的文件路径，不保存工具输出、思考过程和历史会话。</p></div></header>
         <Row title="Codex 对话" badge={statusBadge(state.codexCapture)} description="监听 ~/.codex/sessions 中新增的会话。"
@@ -211,7 +254,9 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           <LinesEditor values={settings.claudeExtraRoots} placeholder="D:\\other-claude\\projects" onChange={values => void onSetting({ claudeExtraRoots: values })} />
         </Row>}
       </section>
+      </SettingsPage>
 
+      <SettingsPage id="files" active={active} visited={visited}>
       <section id="set-files" className="set-card">
         <header><Icon name="folder" size={18} /><div><h2>文件与屏幕</h2><p>文件只记录路径和变化类型；屏幕帧本地加密，不上传、不做 OCR。</p></div></header>
         <Row title="监听文件变化" description={settings.inputWatchPaths.length ? '监听下方关联的文件 / 目录。' : '未关联文件时监听知识库的 01-输入 目录。'}
@@ -229,11 +274,17 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           <Row title="保留时间" description="超过时间的帧自动删除。" control={<NumberInput value={settings.screenRetentionHours} min={1} suffix="小时" onCommit={value => void onSetting({ screenRetentionHours: value })} />} />
         </>}
       </section>
+      </SettingsPage>
 
+      <SettingsPage id="models" active={active} visited={visited}>
       <ModelsCard enabled={settings.llmEnabled} onToggle={value => void onSetting({ llmEnabled: value })} notify={notify} />
+      </SettingsPage>
 
+      <SettingsPage id="ip" active={active} visited={visited}>
       <IpLibraryCard notify={notify} />
+      </SettingsPage>
 
+      <SettingsPage id="data" active={active} visited={visited}>
       <section id="set-data" className="set-card">
         <header><Icon name="chart" size={18} /><div><h2>内容选题 · 热点数据（红狐）</h2><p>公众号、小红书和视频模块共用这一个红狐 Key。只在你点搜索或生成选题时把关键词发给红狐；同样的查询 24 小时内走本地缓存。</p></div></header>
         <Row title="红狐 API Key" badge={<span className={`badge ${redfoxStatus.configured ? 'badge-on' : 'badge-off'}`}>{redfoxFromEnv ? '使用环境变量' : redfoxStatus.configured ? `已保存 ${redfoxStatus.masked}` : '未保存'}</span>}
@@ -246,6 +297,7 @@ export function SettingsView({ state, onSetting, onChooseFiles, notify }: { stat
           </div>
         </Row>
       </section>
+      </SettingsPage>
     </div>
   </div>;
 }
