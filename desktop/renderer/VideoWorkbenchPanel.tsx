@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  VIDEO_BGM_STYLES, VIDEO_MOTION_PRESETS, VIDEO_SOUND_EFFECTS, resolveVideoBgmStyle,
-  type VideoAssetBundle, type VideoBgmMode, type VideoBgmStyle, type VideoContentStructure, type VideoPlatform, type VideoProgress, type VideoProject, type VideoQualityReport, type VideoShot,
+  VIDEO_BGM_STYLES, resolveVideoBgmStyle,
+  type VideoAssetBundle, type VideoBgmMode, type VideoBgmStyle, type VideoPlatform, type VideoProgress, type VideoProject, type VideoQualityReport, type VideoShot,
   type VideoShotRole, type VideoStage, type VideoWorkflow
 } from '../shared';
 import { videoFrameSpec } from '../services/video-frame-spec';
 import { isQualityFresh, isRenderFresh, parseVideoShots, serializeVideoShots } from '../services/video-pipeline';
 import { VIDEO_SHOT_ROLES } from '../services/video-production';
 import { EmptyState, Stepper, TaskList, readableError, type StepState } from './ui';
-import VideoPublishPanel from './VideoPublishPanel';
+import { PublisherTab } from './video/PublisherTab';
 
 type WorkStep = 'brief' | 'script' | 'storyboard' | 'voice' | 'visuals' | 'render' | 'cover' | 'deliver';
 type WorkflowCard = { value: VideoWorkflow; label: string; description: string; engine: string; detail: string };
@@ -37,14 +37,6 @@ const PLATFORMS: Array<{ value: VideoPlatform; label: string }> = [
   { value: 'xiaohongshu', label: '小红书' }, { value: 'bilibili', label: 'B 站' }, { value: 'general', label: '通用' }
 ];
 
-const CONTENT_STRUCTURES: Array<{ value: VideoContentStructure; label: string; hint: string }> = [
-  { value: 'auto', label: '自动匹配', hint: '根据题材选择一种结构并保持到底' },
-  { value: 'problem', label: '问题拆解', hint: '场景 / 痛点 → 原因 → 解决点' },
-  { value: 'steps', label: '步骤教程', hint: '目标 → 3-5 步 → 常见错误' },
-  { value: 'list', label: '清单盘点', hint: '3-5 个不同要点或误区' },
-  { value: 'story', label: '场景故事', hint: '场景 → 冲突 → 转折 → 行动' }
-];
-
 const PROGRESS_TASK_LABELS: Record<VideoProgress['task'], string> = {
   voice: '生成配音',
   images: '生成配图',
@@ -52,7 +44,7 @@ const PROGRESS_TASK_LABELS: Record<VideoProgress['task'], string> = {
   render: '渲染成片'
 };
 
-export default function VideoWorkbenchPanel({ notify }: { notify: (message: string) => void }) {
+export default function VideoWorkbenchPanel({ notify, overlay = false }: { notify: (message: string) => void; overlay?: boolean }) {
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [workflow, setWorkflow] = useState<VideoWorkflow>('script-to-video');
@@ -72,8 +64,6 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   const [targetCode, setTargetCode] = useState('zh');
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [logoPath, setLogoPath] = useState('');
-  const [contentStructure, setContentStructure] = useState<VideoContentStructure>('auto');
-  const [contentBrief, setContentBrief] = useState('');
   const [bgmMode, setBgmMode] = useState<VideoBgmMode>('none');
   const [bgmVolume, setBgmVolume] = useState(12);
   const [bgmStyle, setBgmStyle] = useState<VideoBgmStyle>('auto');
@@ -139,8 +129,6 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     setTargetCode(selected.options.targetCode ?? 'zh');
     setWebsiteUrl(selected.options.websiteUrl ?? '');
     setLogoPath(selected.options.logoPath ?? '');
-    setContentStructure(selected.options.contentStructure ?? 'auto');
-    setContentBrief(selected.options.contentBrief ?? '');
     setDraftProjectId(selected.id);
     setDraft({ platform: selected.platform, title: selected.title, topic: selected.topic, audience: selected.audience, durationSeconds: selected.durationSeconds, script: selected.script, storyboardJson: selected.storyboardJson });
   }, [selectedId]);
@@ -184,7 +172,7 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     } catch (error) { notify(readableError(error)); } finally { setBusy(''); }
   };
   const videoOptions = (project: VideoProject) => ({
-    ...project.options, workflow, sourcePath, websiteUrl, logoPath, contentStructure, contentBrief,
+    ...project.options, workflow, sourcePath, websiteUrl, logoPath,
     sourceLanguage, targetLanguage, targetCode,
     skillInputSignature: sourcePath === project.options.sourcePath && workflow === project.options.workflow
       ? project.options.skillInputSignature
@@ -330,16 +318,6 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     replace(current);
     setStep('deliver'); notify('脚本成片工作流已完成并导出制作包'); return current;
   });
-  const fillDraft = () => void run('fill-draft', async () => {
-    if (!selected) throw new Error('请先选择项目');
-    if (platform === 'general') throw new Error('通用视频没有对应的发布平台');
-    if (!selected.assets.video || !isRenderFresh(selected)) throw new Error('请先生成当前版本的有效成片');
-    if (!qualityReport?.ok) throw new Error('请先完成质量检查并处理硬错误');
-    if (!window.confirm(`把「${selected.title || selected.topic || '未命名视频'}」填入${PLATFORMS.find(item => item.value === platform)?.label}草稿？\n\n会上传成片并填写标题、简介，不会点击发布。`)) return;
-    const filled = await window.sydney.fillVideoDraft(selected.id);
-    notify(`已填入${PLATFORMS.find(item => item.value === platform)?.label}草稿，请检查后手动发布`);
-    return selected;
-  });
 
   return <section className="native-content video-panel video-workbench-panel video-studio">
     <header className="video-studio-header">
@@ -390,11 +368,6 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
             <label><span>目标时长（秒）</span><input type="number" min={5} value={Number(draft.durationSeconds ?? selected.durationSeconds)} onChange={event => patchDraft({ durationSeconds: Number(event.target.value) })} /></label>
             <label><span>目标受众</span><input value={String(draft.audience ?? '')} onChange={event => patchDraft({ audience: event.target.value })} placeholder={workflow === 'product-demo' ? '第一次了解这个产品的人' : '例如：第一次接触这个主题的人'} /></label>
             <label className="native-field-wide"><span>{workflow === 'product-demo' ? '补充要求（可选）' : '主题 / 素材说明 / 语言需求'}</span><textarea value={String(draft.topic ?? '')} onChange={event => patchDraft({ topic: event.target.value })} placeholder={workflow === 'product-demo' ? '例如：突出团队协作和移动端体验；不要写价格' : ''} /></label>
-            {workflow === 'script-to-video' && <>
-              <label><span>内容结构</span><select value={contentStructure} onChange={event => setContentStructure(event.target.value as VideoContentStructure)} disabled={Boolean(busy)}>{CONTENT_STRUCTURES.map(item => <option key={item.value} value={item.value}>{item.label} · {item.hint}</option>)}</select></label>
-              <label className="video-brief-hint"><span>本项目创作要求（可选）</span><small>会同时传给脚本和分镜，不是画面视觉模板。</small></label>
-              <label className="native-field-wide"><span>创作要求</span><textarea value={contentBrief} onChange={event => setContentBrief(event.target.value)} placeholder="例如：面向第一次买菜的中老年人，少用术语；只讲 3 个最重要的判断；结尾给出明天能执行的动作。" /></label>
-            </>}
             {workflow === 'product-demo' ? <>
               <label className="native-field-wide"><span>产品官网 URL</span><input value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} placeholder="https://example.com" /></label>
               <label className="native-field-wide"><span>品牌 Logo</span><input value={logoPath} onChange={event => setLogoPath(event.target.value)} placeholder="选择 PNG、JPG、WebP 或 SVG" /></label>
@@ -416,14 +389,10 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
           <div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={workflow === 'product-demo' ? analyzeProduct : () => generate('topics')}>{busy === 'topics' ? '生成中…' : workflow === 'product-demo' ? '抓取官网并生成方向' : '生成方向与选题建议'}</button><button className="button button-quiet" onClick={() => setStep('script')}>直接进入脚本 →</button></div>
         </section>}
         {step === 'script' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>脚本工作区</h3><p>可以让模型写，也可以直接粘贴已有脚本；保存后再生成分镜。</p></div></header><textarea className="flow-draft" value={String(draft.script ?? selected.script)} onChange={event => patchDraft({ script: event.target.value })} placeholder="在这里写口播、旁白或视频脚本…" /><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => generate('script')}>{busy === 'script' ? '生成中…' : 'AI 生成脚本'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>保存脚本</button></div></section>}
-        {step === 'storyboard' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>分镜工作区</h3><p>逐镜调整画面运动和声音落点；音效默认关闭，避免抢旁白。</p></div></header>{shots.length ? <div className="flow-table-wrap"><table className="flow-table video-storyboard-table" aria-label="可编辑分镜表"><thead><tr><th>镜号</th><th>作用</th><th>预计秒数</th><th>运镜</th><th>音效</th><th>音效音量</th><th>延迟（秒）</th><th>画面大字</th><th>口播</th><th>画面说明</th><th>配图提示词</th></tr></thead><tbody>{shots.map((shot, position) => <tr key={`${shot.index}-${position}`}>
+        {step === 'storyboard' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>分镜工作区</h3><p>逐镜修改作用、时长、画面大字、口播、画面说明和配图提示词；保存后配音、配图和成片会按新内容重新校验。</p></div></header>{shots.length ? <div className="flow-table-wrap"><table className="flow-table video-storyboard-table" aria-label="可编辑分镜表"><thead><tr><th>镜号</th><th>作用</th><th>预计秒数</th><th>画面大字</th><th>口播</th><th>画面说明</th><th>配图提示词</th></tr></thead><tbody>{shots.map((shot, position) => <tr key={`${shot.index}-${position}`}>
           <td>{shot.index}</td>
           <td><select className="flow-table-control" value={shot.role ?? ''} onChange={event => editShot(position, { role: event.target.value as VideoShotRole | '' })}><option value="">未分类</option>{VIDEO_SHOT_ROLES.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}</select></td>
           <td><input className="flow-table-control video-shot-seconds" type="number" min={1} max={60} value={shot.seconds} onChange={event => editShot(position, { seconds: Math.min(60, Math.max(1, Number(event.target.value) || 1)) })} /></td>
-          <td><select className="flow-table-control" value={shot.motion ?? 'auto'} onChange={event => editShot(position, { motion: event.target.value as VideoShot['motion'] })}>{VIDEO_MOTION_PRESETS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></td>
-          <td><div className="video-shot-sfx"><select className="flow-table-control" value={shot.soundEffect ?? 'none'} onChange={event => editShot(position, { soundEffect: event.target.value as VideoShot['soundEffect'] })}>{VIDEO_SOUND_EFFECTS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" className="button button-quiet" disabled={Boolean(busy)} onClick={() => void window.sydney.chooseVideoSoundEffect(selected.id).then(file => { if (file) editShot(position, { soundEffectPath: file }); }).catch(error => notify(readableError(error)))}>{shot.soundEffectPath ? '更换文件' : '本地音效'}</button>{shot.soundEffectPath && <button type="button" className="button button-quiet" onClick={() => editShot(position, { soundEffectPath: '' })}>移除</button>}</div></td>
-          <td><input className="flow-table-control video-shot-seconds" type="number" min={0} max={100} value={shot.soundEffectVolume ?? 24} onChange={event => editShot(position, { soundEffectVolume: Math.min(100, Math.max(0, Number(event.target.value) || 0)) })} /></td>
-          <td><input className="flow-table-control video-shot-seconds" type="number" min={0} max={30} step={0.1} value={shot.soundEffectAt ?? 0} onChange={event => editShot(position, { soundEffectAt: Math.min(30, Math.max(0, Number(event.target.value) || 0)) })} /></td>
           <td><input className="flow-table-control" value={shot.caption} onChange={event => editShot(position, { caption: event.target.value })} placeholder="画面大字" /></td>
           <td><textarea className="flow-table-control" rows={3} value={shot.narration} onChange={event => editShot(position, { narration: event.target.value })} placeholder="这一镜的口播" /></td>
           <td><textarea className="flow-table-control" rows={3} value={shot.visual} onChange={event => editShot(position, { visual: event.target.value })} placeholder="拍什么、用什么素材" /></td>
@@ -441,10 +410,11 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
           </div>
           <div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={() => productionWithSavedDraft('voice', project => window.sydney.generateVideoVoice(project.id, false))}>{busy === 'voice' ? '处理中…' : '生成 / 补齐配音'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>{busy === 'save' ? '保存中…' : '保存声音设置'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => setStep('visuals')}>进入画面 →</button></div>
         </section>}
-        {step === 'visuals' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>画面素材</h3><p>{workflow === 'product-demo' ? '官网截图与 Logo 保持原样展示，画面统一使用白底。' : '不套视觉模板；可为每镜设置运镜方式，先检查关键帧预览。'}</p></div></header><div className="workbench-status-grid"><div><strong>{workflow === 'product-demo' ? selected.options.productScreenshots.length : `${selected.assets.images.length}/${shots.length}`}</strong><span>{workflow === 'product-demo' ? '官网截图' : '配图覆盖'}</span></div><div><strong>{assetBundle?.preview.length ?? 0}</strong><span>关键帧预览</span></div><div><strong>白底</strong><span>画面基底</span></div></div><div className="flow-inline-actions">{workflow === 'product-demo' ? <button className="button button-primary" disabled={Boolean(busy)} onClick={captureProductAssets}>{busy === 'capture' ? '抓取中…' : '重新抓取官网素材'}</button> : <button className="button button-primary" disabled={Boolean(busy)} onClick={() => productionWithSavedDraft('images', project => window.sydney.generateVideoImages(project.id, false))}>{busy === 'images' ? '生成中…' : '生成缺失配图'}</button>}<button className="button button-secondary" disabled={Boolean(busy) || !shots.length} onClick={() => productionWithSavedDraft('preview', project => window.sydney.renderVideoPreview(project.id))}>{busy === 'preview' ? '预览中…' : '生成关键帧预览'}</button></div>{assetBundle?.preview.length ? <div className="video-frame-grid video-workbench-preview-grid">{assetBundle.preview.map((thumbnail, index) => <figure key={`${index}-${thumbnail.slice(-16)}`}><img src={thumbnail} alt={`第 ${index + 1} 个关键帧`} /><figcaption>关键帧 {index + 1}</figcaption></figure>)}</div> : <p className="flow-empty">还没有关键帧预览，先生成预览再检查版式。</p>}</section>}
+        {step === 'visuals' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>画面素材</h3><p>{workflow === 'product-demo' ? '官网截图会按镜头循环使用，Logo 和品牌色叠加到统一画面模板。' : '选择模板、生成逐镜配图，并先生成关键帧预览。'}</p></div></header><div className="workbench-status-grid"><div><strong>{workflow === 'product-demo' ? selected.options.productScreenshots.length : `${selected.assets.images.length}/${shots.length}`}</strong><span>{workflow === 'product-demo' ? '官网截图' : '配图覆盖'}</span></div><div><strong>{assetBundle?.preview.length ?? 0}</strong><span>关键帧预览</span></div><div><strong>{workflow === 'product-demo' ? selected.options.brandColors.length : selected.options.template}</strong><span>{workflow === 'product-demo' ? '品牌色候选' : '当前模板'}</span></div></div><div className="flow-inline-actions">{workflow === 'product-demo' ? <button className="button button-primary" disabled={Boolean(busy)} onClick={captureProductAssets}>{busy === 'capture' ? '抓取中…' : '重新抓取官网素材'}</button> : <button className="button button-primary" disabled={Boolean(busy)} onClick={() => productionWithSavedDraft('images', project => window.sydney.generateVideoImages(project.id, false))}>{busy === 'images' ? '生成中…' : '生成缺失配图'}</button>}<button className="button button-secondary" disabled={Boolean(busy) || !shots.length} onClick={() => productionWithSavedDraft('preview', project => window.sydney.renderVideoPreview(project.id))}>{busy === 'preview' ? '预览中…' : '生成关键帧预览'}</button></div>{assetBundle?.preview.length ? <div className="video-frame-grid video-workbench-preview-grid">{assetBundle.preview.map((thumbnail, index) => <figure key={`${index}-${thumbnail.slice(-16)}`}><img src={thumbnail} alt={`第 ${index + 1} 个关键帧`} /><figcaption>关键帧 {index + 1}</figcaption></figure>)}</div> : <p className="flow-empty">还没有关键帧预览，先生成预览再检查版式。</p>}</section>}
         {step === 'render' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>成片与质量检查</h3><p>渲染完成后自动检查平台规格、黑帧、静音、音画时间轴、安全区和封面；硬错误会阻止导出。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.video ? isRenderFresh(selected) ? '有效' : '已过期' : '未生成'}</strong><span>成片</span></div><div><strong>{selected.assets.video ? `${Math.round(selected.assets.video.seconds)} 秒` : videoFrameSpec(platform).label}</strong><span>{selected.assets.video ? videoFrameSpec(platform).label : '输出规格'}</span></div><div><strong>{qualityReport ? qualityReport.ok ? qualityWarnings ? `${qualityWarnings} 项警告` : '全部通过' : `${qualityErrors} 项错误` : assetBundle?.videoPath ? '待检查' : '未生成'}</strong><span>质量验收</span></div></div><div className="video-render-output"><span>输出文件</span><code>{assetBundle?.videoPath || '渲染后会显示 MP4 路径'}</code></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={workflow === 'script-to-video' || workflow === 'product-demo' ? renderAction : runSkillWorkflow}>{busy === 'render' || busy === 'workflow' ? '处理中…' : workflow === 'script-to-video' || workflow === 'product-demo' ? '渲染成片' : '运行 Skill 成片'}</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '检查成片'}</button>{selected.assets.video && <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('open-video', () => window.sydney.openVideoFile(selected.id).then(() => selected))}>打开成片</button>}</div>{qualityReport && <div className="video-quality-report"><div className={`video-quality-summary ${!qualityReport.ok ? 'is-error' : qualityWarnings ? 'is-warn' : 'is-ok'}`}><strong>{qualityReport.ok ? qualityWarnings ? `检查通过，有 ${qualityWarnings} 项警告` : '检查通过' : `存在 ${qualityErrors} 项必须处理的问题`}</strong><span>{qualityReport.width}×{qualityReport.height} · {qualityReport.seconds.toFixed(2)} 秒 · {qualityReport.hasAudio ? '含音频' : '无音频'} · 检查于 {new Date(qualityReport.inspectedAt).toLocaleString()}</span></div><ul>{qualityReport.checks.map(check => <li key={check.key} className={`is-${check.status}`}><strong>{check.label}</strong><span>{check.detail}</span></li>)}</ul></div>}</section>}
         {step === 'cover' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>封面工作区</h3><p>封面是可选交付物，可以用 AI 根据标题生成，也可以选择本地图片；生成后会自动带入制作包。</p></div></header>{assetBundle?.cover?.thumbnail ? <figure className="video-cover-preview"><img src={assetBundle.cover.thumbnail} alt="当前视频封面" /><figcaption>{assetBundle.cover.path}</figcaption></figure> : <p className="flow-empty">还没有封面。</p>}<div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !(selected.title || selected.topic).trim()} onClick={generateCover}>{busy === 'cover' ? '处理中…' : 'AI 生成封面'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={chooseCover}>{busy === 'cover' ? '处理中…' : '选择本地封面'}</button></div></section>}
-        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4、制作包，或把当前有效成片填入已登录平台的草稿页。只填写内容，不会自动发布。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video && isRenderFresh(selected) ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? isRenderFresh(selected) ? '✓' : '已过期' : '○'}</div><div className={selected.assets.video && qualityReport?.ok ? 'is-ok' : 'is-missing'}>质量 {qualityReport ? qualityReport.ok ? qualityWarnings ? `通过 · ${qualityWarnings} 项警告` : '通过' : `${qualityErrors} 项错误` : selected.assets.video ? '待检查' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected)} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '重新检查成片'}</button>{platform !== 'general' && <button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected) || !qualityReport?.ok} title="上传当前成片并填入标题和简介，不会点击发布" onClick={fillDraft}>{busy === 'fill-draft' ? '填入中…' : `填入${PLATFORMS.find(item => item.value === platform)?.label}草稿`}</button>}{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div>{platform !== 'general' && <VideoPublishPanel platform={platform} />}</section>}
+        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4、制作包，或在下方打开多平台发布工作台。发布入口会再次校验当前成片签名。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video && isRenderFresh(selected) ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? isRenderFresh(selected) ? '✓' : '已过期' : '○'}</div><div className={selected.assets.video && qualityReport?.ok ? 'is-ok' : 'is-missing'}>质量 {qualityReport ? qualityReport.ok ? qualityWarnings ? `通过 · ${qualityWarnings} 项警告` : '通过' : `${qualityErrors} 项错误` : selected.assets.video ? '待检查' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected)} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '重新检查成片'}</button>{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div></section>}
+        {selected && <div hidden={step !== 'deliver'}><PublisherTab project={selected} overlay={overlay || step !== 'deliver'} notify={notify} /></div>}
       </> : <EmptyState icon="video" title="创建第一个视频工作台项目">选择生产路径，输入主题或素材说明，然后开始。</EmptyState>}</main>
 
       <aside className="video-inspector-rail">

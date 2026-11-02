@@ -184,7 +184,7 @@ export default function App() {
       case 'evolve': return <EvolutionPanel notify={notifyAny} />;
       case 'links': return <LinksPanel notify={notifyAny} />;
       case 'wewrite': return <WeWritePanel notify={notifyAny} overlay={hideWeb} />;
-      case 'video': return <VideoWorkbenchPanel notify={notifyAny} />;
+      case 'video': return <VideoWorkbenchPanel notify={notifyAny} overlay={hideWeb} />;
       case 'xiaohongshu': return <XiaohongshuPanel notify={notifyAny} overlay={hideWeb} />;
       case 'xianyu': return <EmbeddedSitePanel siteKey="xianyu" label="闲鱼" overlay={hideWeb} covered={covered}
         privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />;

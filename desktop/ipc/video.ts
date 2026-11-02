@@ -33,7 +33,6 @@ import { ensureSoundEffect, soundEffectDuration } from '../services/video-sfx';
 import { videoFrameSpec } from '../services/video-frame-spec';
 import { evaluateVideoQuality } from '../services/video-quality';
 import { assetDirectory, generateImageFile, removeAssetDirectory, videoApiConfig } from './content-support';
-import { VideoPublishView } from '../services/video-publish-view';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
  * 独立的视频生产流水线。模型做选题、口播脚本与分镜（和可选的逐镜配图）；
@@ -55,10 +54,9 @@ function shotLabel(shot: VideoShot): string {
   return `第 ${shot.index} 镜${text ? ` · ${text.length > 16 ? `${text.slice(0, 16)}…` : text}` : ''}`;
 }
 
-export function registerVideoIpc(ctx: AppContext): { closeAll(): void; dispose(): void } {
+export function registerVideoIpc(ctx: AppContext): void {
   const { db } = ctx;
   const requests = new RequestLock('这条视频正在处理，请等待当前操作完成');
-  const publishView = new VideoPublishView(ctx);
 
   const update = (id: number, patch: Partial<VideoProject>): VideoProject => {
     const project = updateVideoProject(db, id, patch);
@@ -507,18 +505,6 @@ export function registerVideoIpc(ctx: AppContext): { closeAll(): void; dispose()
     if (!video || !fs.existsSync(video.path)) throw new Error('还没有可打开的成片，请先渲染');
     return shell.openPath(video.path);
   });
-  ipcMain.handle('video:publish:view:state', (_event, platform: VideoPlatform) => publishView.state(platform));
-  ipcMain.handle('video:publish:view:open', (_event, platform: VideoPlatform, bounds: unknown) => publishView.show(platform, bounds));
-  ipcMain.handle('video:publish:view:close', () => publishView.close());
-  ipcMain.handle('video:publish:view:bounds', (_event, bounds: unknown) => publishView.setBounds(bounds));
-  ipcMain.handle('video:publish:view:go', (_event, platform: VideoPlatform, action: 'back' | 'reload' | 'home') => publishView.go(platform, action));
-  ipcMain.handle('video:draft:fill', async (_event, id: number) => requests.run(id, async () => {
-    let project = getVideoProject(db, id);
-    if (!project.assets.video || !isRenderFresh(project)) throw new Error('当前成片已过期，请先重新渲染后再填入草稿');
-    project = await ensureVideoQuality(project);
-    assertQualityAllowsExport(project);
-    return publishView.fillDraft(project);
-  }));
   /** 直接把当前有效成片另存为 .mp4；保存位置由用户确认。 */
   ipcMain.handle('video:save-mp4', async (_event, id: number) => {
     assertIdle(id, '导出 MP4');
@@ -583,5 +569,4 @@ export function registerVideoIpc(ctx: AppContext): { closeAll(): void; dispose()
     ctx.videoTtsKeyStore.remove();
     return ttsStatus();
   });
-  return { closeAll: () => publishView.closeAll(), dispose: () => publishView.dispose() };
 }

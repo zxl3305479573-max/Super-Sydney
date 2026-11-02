@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
-import type { SydneyApi, VideoProgress, WindowChromeState } from './shared';
+import type { SydneyApi, VideoProgress, VideoPublishProgress, WindowChromeState } from './shared';
 
 const api: SydneyApi = {
   getState: () => ipcRenderer.invoke('state:get'),
@@ -101,12 +101,14 @@ const api: SydneyApi = {
   chooseVideoSoundEffect: id => ipcRenderer.invoke('video:sfx:choose', id),
   inspectVideoQuality: id => ipcRenderer.invoke('video:quality', id),
   openVideoFile: id => ipcRenderer.invoke('video:open-video', id),
-  getVideoPublishView: platform => ipcRenderer.invoke('video:publish:view:state', platform),
-  openVideoPublishView: (platform, bounds) => ipcRenderer.invoke('video:publish:view:open', platform, bounds),
-  closeVideoPublishView: () => ipcRenderer.invoke('video:publish:view:close'),
-  setVideoPublishViewBounds: bounds => ipcRenderer.invoke('video:publish:view:bounds', bounds),
-  videoPublishViewGo: (platform, action) => ipcRenderer.invoke('video:publish:view:go', platform, action),
-  fillVideoDraft: id => ipcRenderer.invoke('video:draft:fill', id),
+  getVideoPublisherView: platform => ipcRenderer.invoke('video-publish:view:state', platform),
+  openVideoPublisherView: platform => ipcRenderer.invoke('video-publish:view:open', platform),
+  closeVideoPublisherView: () => ipcRenderer.invoke('video-publish:view:close'),
+  setVideoPublisherViewBounds: bounds => ipcRenderer.invoke('video-publish:view:bounds', bounds),
+  navigateVideoPublisherView: (platform, target) => ipcRenderer.invoke('video-publish:view:navigate', platform, target),
+  videoPublisherViewGo: (platform, action) => ipcRenderer.invoke('video-publish:view:go', platform, action),
+  openVideoPublisherInBrowser: platform => ipcRenderer.invoke('video-publish:view:external', platform),
+  publishVideoToPlatforms: (id, platforms, mode) => ipcRenderer.invoke('video-publish:run', id, platforms, mode),
   getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
   getFfmpegStatus: () => ipcRenderer.invoke('video:ffmpeg:status'),
   saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
@@ -231,10 +233,15 @@ const api: SydneyApi = {
     ipcRenderer.on('video:progress', listener);
     return () => ipcRenderer.removeListener('video:progress', listener);
   },
-  onVideoPublishViewChanged: (platform, callback) => {
-    const listener = (_event: unknown, changed: unknown) => { if (changed === platform) callback(); };
-    ipcRenderer.on('video:publish:changed', listener);
-    return () => ipcRenderer.removeListener('video:publish:changed', listener);
+  onVideoPublisherViewChanged: callback => {
+    const listener = (_event: unknown, platform: Parameters<typeof callback>[0]) => callback(platform);
+    ipcRenderer.on('video-publish:view-changed', listener);
+    return () => ipcRenderer.removeListener('video-publish:view-changed', listener);
+  },
+  onVideoPublishProgress: callback => {
+    const listener = (_event: unknown, progress: VideoPublishProgress) => callback(progress);
+    ipcRenderer.on('video-publish:progress', listener);
+    return () => ipcRenderer.removeListener('video-publish:progress', listener);
   }
 };
 

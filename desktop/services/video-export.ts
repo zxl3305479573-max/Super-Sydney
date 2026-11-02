@@ -13,7 +13,7 @@ import { assertStableSkillInput } from './video-skill-inputs.ts';
  * 每次导出都新建独立目录，不覆盖已有内容。目录里放：
  * `制作包.md`（脚本 + 分镜表 + 说明）、`shotlist.csv`（给剪辑软件）、
  * `captions.srt`（字幕，配过音时按真实时长）、`video.mp4`（成片，渲染过且没过期才拷）、`cover.*`（封面，有才拷）。
- * 模块不代替任何平台发布——成片要人工确认后再发。
+ * 平台发布由独立的 video-publisher 控制器处理；这里只导出当前有效成片与制作资料。
  */
 export function csvCell(value: string): string {
   return `"${value.replace(/\r\n?/g, '\n').replace(/"/g, '""')}"`;

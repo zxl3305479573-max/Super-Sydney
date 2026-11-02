@@ -299,6 +299,46 @@ export type ArticleStatsImportResult = { file: string; added: number; updated: n
  * 设计见 docs/superpowers/specs/2026-10-14-video-production-design.md。
  */
 export type VideoPlatform = 'douyin' | 'shipinhao' | 'xiaohongshu' | 'bilibili' | 'general';
+export type VideoPublishPlatform = Exclude<VideoPlatform, 'general'>;
+export type VideoPublishMode = 'draft' | 'publish';
+export const VIDEO_PUBLISH_PLATFORMS: ReadonlyArray<{ value: VideoPublishPlatform; label: string }> = [
+  { value: 'douyin', label: '抖音' },
+  { value: 'shipinhao', label: '微信视频号' },
+  { value: 'xiaohongshu', label: '小红书' },
+  { value: 'bilibili', label: 'B 站' }
+];
+export type VideoPublishItemStatus =
+  | 'pending' | 'uploading' | 'filling' | 'publishing'
+  | 'draft' | 'published' | 'needs-review' | 'failed';
+export type VideoPublishProgress = {
+  jobId: string;
+  projectId: number;
+  platform: VideoPublishPlatform;
+  status: VideoPublishItemStatus;
+  message: string;
+  at: string;
+};
+export type VideoPublishResultItem = VideoPublishProgress & {
+  title: string;
+  bodyChars: number;
+  videoPath: string;
+  url: string;
+};
+export type VideoPublishResult = {
+  jobId: string;
+  projectId: number;
+  mode: VideoPublishMode;
+  items: VideoPublishResultItem[];
+};
+export type VideoPublisherViewState = {
+  platform: VideoPublishPlatform;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  visible: boolean;
+  error: string;
+};
 export type VideoStage = 'topics' | 'script' | 'storyboard';
 export type VideoProjectStatus = 'idea' | 'script' | 'storyboard' | 'exported';
 /** 镜头在讲解里的作用：开场钩子、讲问题、讲概念、步骤、证据、结论、行动建议。 */
@@ -477,21 +517,6 @@ export type VideoProject = {
 };
 /** shotImages / preview 是缩略图 data URL，按镜头顺序；没有的镜头为空串。 */
 export type VideoAssetBundle = { cover: ContentAssetView | null; shotImages: string[]; preview: string[]; videoPath: string };
-export type VideoPublishViewState = {
-  platform: Exclude<VideoPlatform, 'general'>;
-  url: string;
-  title: string;
-  loading: boolean;
-  canGoBack: boolean;
-  visible: boolean;
-  error: string;
-};
-export type VideoDraftFillResult = {
-  platform: Exclude<VideoPlatform, 'general'>;
-  title: string;
-  bodyChars: number;
-  videoPath: string;
-};
 export type VideoTtsProvider = 'system' | 'openai';
 /** 全局配音设置：userData/video-tts.json；OpenAI 兼容接口的 key 另存系统安全存储。 */
 export type VideoTtsSettings = {
@@ -1072,14 +1097,15 @@ export interface SydneyApi {
   chooseVideoBgm(id: number): Promise<VideoProject | null>;
   chooseVideoSoundEffect(id: number): Promise<string | null>;
   inspectVideoQuality(id: number): Promise<VideoQualityReport>;
+  getVideoPublisherView(platform: VideoPublishPlatform): Promise<VideoPublisherViewState>;
+  openVideoPublisherView(platform: VideoPublishPlatform): Promise<VideoPublisherViewState>;
+  closeVideoPublisherView(): Promise<void>;
+  setVideoPublisherViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  navigateVideoPublisherView(platform: VideoPublishPlatform, target: { kind: 'home' | 'creator' | 'upload' | 'url'; value?: string }): Promise<VideoPublisherViewState>;
+  videoPublisherViewGo(platform: VideoPublishPlatform, action: 'back' | 'reload'): Promise<VideoPublisherViewState>;
+  openVideoPublisherInBrowser(platform: VideoPublishPlatform): Promise<void>;
+  publishVideoToPlatforms(id: number, platforms: VideoPublishPlatform[], mode: VideoPublishMode): Promise<VideoPublishResult>;
   openVideoFile(id: number): Promise<string>;
-  getVideoPublishView(platform: Exclude<VideoPlatform, 'general'>): Promise<VideoPublishViewState>;
-  openVideoPublishView(platform: Exclude<VideoPlatform, 'general'>, bounds?: SiteViewBounds | null): Promise<VideoPublishViewState>;
-  closeVideoPublishView(): Promise<void>;
-  setVideoPublishViewBounds(bounds: SiteViewBounds | null): Promise<void>;
-  videoPublishViewGo(platform: Exclude<VideoPlatform, 'general'>, action: 'back' | 'reload' | 'home'): Promise<VideoPublishViewState>;
-  fillVideoDraft(id: number): Promise<VideoDraftFillResult>;
-  onVideoPublishViewChanged(platform: Exclude<VideoPlatform, 'general'>, callback: () => void): () => void;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
   /** ffmpeg / ffprobe 是否可用；不可用时 detail 是能照着做的安装提示。 */
   getFfmpegStatus(): Promise<{ ok: boolean; detail: string }>;
@@ -1088,6 +1114,8 @@ export interface SydneyApi {
   deleteVideoTtsKey(): Promise<VideoTtsStatus>;
   /** 订阅配音 / 配图 / 渲染的进度；返回取消订阅函数。 */
   onVideoProgress(callback: (progress: VideoProgress) => void): () => void;
+  onVideoPublisherViewChanged(callback: (platform: VideoPublishPlatform) => void): () => void;
+  onVideoPublishProgress(callback: (progress: VideoPublishProgress) => void): () => void;
   runVideoWorkflow(id: number): Promise<VideoSkillRunResult>;
   listXhsAccounts(): Promise<XhsAccount[]>;
   updateXhsAccount(id: number, patch: Partial<Pick<XhsAccount, 'name' | 'positioningJson' | 'ipId'>>): Promise<XhsAccount>;

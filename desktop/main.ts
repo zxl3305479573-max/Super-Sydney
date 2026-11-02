@@ -42,6 +42,8 @@ import { LastPages } from './services/last-pages';
 import { HeroSmsActivationStore } from './services/hero-sms-activations';
 import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
+import { VideoPublisherView } from './services/video-publisher-view';
+import { registerVideoPublisherIpc } from './ipc/video-publisher';
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -50,7 +52,7 @@ let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
 let siteView: SiteView | undefined;
 let xhsView: XhsView | undefined;
-let videoPublishView: { closeAll(): void; dispose(): void } | undefined;
+let videoPublisherView: VideoPublisherView | undefined;
 let embeddedViews: { closeAll(): void; dispose(): void } | undefined;
 
 /**
@@ -60,7 +62,7 @@ let embeddedViews: { closeAll(): void; dispose(): void } | undefined;
 function closeEmbeddedViews(): void {
   siteView?.close();
   xhsView?.close();
-  videoPublishView?.closeAll();
+  videoPublisherView?.close();
   embeddedViews?.closeAll();
 }
 
@@ -204,10 +206,12 @@ if (primaryInstance) app.whenReady().then(() => {
   siteView = new SiteView(ctx);
   registerCoreIpc(ctx, capture);
   registerContentIpc(ctx);
-  videoPublishView = registerVideoIpc(ctx);
+  registerVideoIpc(ctx);
   xhsView = new XhsView(ctx);
+  videoPublisherView = new VideoPublisherView(ctx);
   registerIpIpc(ctx);
   registerXhsIpc(ctx, xhsView);
+  registerVideoPublisherIpc(ctx, videoPublisherView);
   registerWeWriteIpc(ctx);
   registerModelIpc(ctx);
   registerArticleStatsIpc(ctx);
@@ -227,7 +231,7 @@ app.on('window-all-closed', () => {
   capture?.dispose();
   siteView?.dispose();
   xhsView?.dispose();
-  videoPublishView?.dispose();
+  videoPublisherView?.dispose();
   embeddedViews?.dispose();
   if (process.platform !== 'darwin') app.quit();
 });
