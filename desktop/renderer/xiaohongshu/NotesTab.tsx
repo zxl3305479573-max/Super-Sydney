@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
-  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsPipelineProgress, xhsStale
+  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsExportChecklist, xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
 import { EmptyState, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
@@ -170,6 +170,15 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const removeCandidate = (file: string) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.removeXhsCandidate(note.id, file)); } });
   const exportPackage = () => run('export', async () => { if (note) { await persist(); const saved = await window.sydney.exportXhsNote(note.id); apply(saved); notify(`发布包已导出：${saved.exportPath}`); } });
   const openPackage = () => run('open', async () => { if (note) { const error = await window.sydney.openXhsPackage(note.id); if (error) notify(error); } });
+  const fillDraft = () => run('draft', async () => {
+    if (!note) return;
+    if (!window.confirm(`把「${note.title || note.topic || '未命名笔记'}」填入当前账号的小红书发布页？\n\n会按发布顺序上传图片并填写标题、正文和标签，不会点击发布。`)) return;
+    await persist();
+    setStep('package');
+    ctx.goTo('browser');
+    const filled = await window.sydney.fillXhsDraft(note.id);
+    notify(`已上传 ${filled.imageCount} 张图片并填入标题、正文和标签。请检查后手动点击发布`);
+  });
   const copy = (kind: 'title' | 'body') => run('copy', async () => {
     if (!note) return;
     const tags = readTags(note).map(tag => `#${tag}`).join(' ');
@@ -180,6 +189,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
   const index = XHS_STEPS.findIndex(item => item.key === step);
   const next = XHS_STEPS[index + 1]?.key;
   const progress = note ? xhsPipelineProgress(note) : null;
+  const draftReady = note ? xhsExportChecklist(note).filter(item => !item.optional).every(item => item.ok) : false;
 
   return <div className="native-layout">
     <aside className="native-task-list">
@@ -214,6 +224,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
               {autoStage ? `${AUTO_STAGE_LABEL[autoStage]}…` : '自动生成'}
             </button>
             <button className="button button-secondary" disabled={locked || !dirty} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存'}</button>
+            <button className="button button-secondary" disabled={locked || !draftReady} title={draftReady ? '自动上传图片并填入小红书发布页，不会点击发布' : '正文、标题和至少一张图片齐了才能填入草稿'} onClick={() => void fillDraft()}>{busy === 'draft' ? '填入中…' : '填入小红书草稿'}</button>
             <button className="button button-quiet" disabled={locked} onClick={() => void remove()}>删除</button>
           </div>
         </div>
@@ -243,7 +254,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
             onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onIpCover={input => void ipCover(input)} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
             onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
-          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onPublishPage={ctx.openPublish} />}
+          {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onFillDraft={() => void fillDraft()} onPublishPage={ctx.openPublish} />}
 
         </section>
       </> : <EmptyState icon="note" title="还没有选中笔记">按 选题 → 正文 → 标题 → 视觉 → 发布前检测 → 发布包 推进。标题放在正文之后：要基于写成的正文做搜索词覆盖与收藏动机。</EmptyState>}

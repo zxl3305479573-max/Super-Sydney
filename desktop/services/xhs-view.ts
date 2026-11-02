@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { session, WebContentsView, type BrowserWindow } from 'electron';
+import { session, WebContentsView, type BrowserWindow, type WebContents } from 'electron';
 import { openUrl } from './browser';
 import type { AppContext } from '../app-context';
-import type { SiteViewBounds, XhsPageRead, XhsViewState } from '../shared';
+import type { SiteViewBounds, XhsDraftFillResult, XhsPageRead, XhsViewState } from '../shared';
 import { clampSiteBounds } from './site-config';
 import { XHS_PUBLISH_URL } from './xhs-catalog';
 import { isXhsHost, normalizePageRead, XHS_PAGE_EXTRACT_SCRIPT, type RawPageExtract } from './xhs-page-parse';
@@ -18,6 +18,76 @@ const LEGACY_PARTITION = 'sydney-xhs';
 const XHS_HOME = 'https://www.xiaohongshu.com/explore';
 /** 两次读取之间至少隔这么久：读取是用户点出来的，但连点也不该连续请求页面。 */
 const READ_INTERVAL_MS = 3000;
+const DRAFT_PAGE_TIMEOUT_MS = 20_000;
+const DRAFT_UPLOAD_TIMEOUT_MS = 120_000;
+
+const XHS_IMAGE_PUBLISH_TAB_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const tab = Array.from(document.querySelectorAll('.creator-tab'))
+    .find(element => visible(element) && (element.textContent || '').includes('上传图文'));
+  if (!tab) return false;
+  if (!tab.classList.contains('active')) tab.click();
+  return true;
+})()`;
+
+const XHS_IMAGE_UPLOAD_READY_SCRIPT = `(() => Array.from(document.querySelectorAll('input.upload-input[type="file"]'))
+  .some(element => (element.getAttribute('accept') || '').includes('.jpg') || (element.getAttribute('accept') || '').includes('image/')))()`;
+
+const XHS_DRAFT_FORM_READY_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
+  const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+    .find(element => visible(element) && !element.closest('input'));
+  return Boolean(title && editor);
+})()`;
+
+function focusDraftFieldScript(field: 'title' | 'body'): string {
+  return `(() => {
+    const visible = element => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    };
+    const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
+    const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+      .find(element => visible(element) && !element.closest('input'));
+    if (${JSON.stringify(field)} === 'title') {
+      if (!title) return false;
+      title.focus();
+      title.select();
+      return true;
+    }
+    if (!editor) return false;
+    editor.focus();
+    const selection = window.getSelection();
+    if (!selection) return false;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  })()`;
+}
+
+const XHS_READ_DRAFT_FIELDS_SCRIPT = `(() => {
+  const visible = element => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  const title = Array.from(document.querySelectorAll('input.d-text[placeholder*="标题"], input.c-input_inner[placeholder*="标题"], input[placeholder*="填写标题"]')).find(visible);
+  const editor = Array.from(document.querySelectorAll('.tiptap.ProseMirror[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"]'))
+    .find(element => visible(element) && !element.closest('input'));
+  return {
+    ok: Boolean(title && editor),
+    title: title?.value ?? '',
+    bodyChars: (editor?.innerText || editor?.textContent || '').length
+  };
+})()`;
 
 /** 每个账号一个会话分区：登录状态、cookie 互不相通，切账号不用退出重登。 */
 export function xhsPartitionName(accountId: number): string {
@@ -134,6 +204,45 @@ export class XhsView {
     this.lastRead = now;
     const raw = await contents.executeJavaScript(XHS_PAGE_EXTRACT_SCRIPT, true) as RawPageExtract;
     return normalizePageRead(raw ?? {});
+  }
+
+  /** 在当前账号的创作者中心填入图文草稿，不点击发布。 */
+  async fillDraft(input: { title: string; body: string; images: string[] }): Promise<XhsDraftFillResult> {
+    const id = this.accountId;
+    if (!id) throw new Error('还没有选定小红书账号');
+    this.wanted = true;
+    this.sync();
+    const current = this.ensureView();
+    const contents = current.view.webContents;
+    const images = [...new Set(input.images.map(file => path.resolve(file)))];
+    if (!images.length) throw new Error('请至少添加一张图片，再填入发布页');
+    if (images.length > 18) throw new Error('小红书图文笔记最多 18 张图片');
+    for (const file of images) if (!fs.existsSync(file)) throw new Error(`图片文件不存在：${path.basename(file)}`);
+
+    current.error = '';
+    current.started = true;
+    try {
+      await contents.loadURL(XHS_PUBLISH_URL);
+    } catch (error) {
+      if (!isAborted(error)) throw error;
+    }
+    await this.waitForScript(contents, XHS_IMAGE_PUBLISH_TAB_SCRIPT, DRAFT_PAGE_TIMEOUT_MS, '发布页没有出现「上传图文」入口，请先在当前账号的窗口里登录小红书');
+    await wait(400);
+    await this.waitForScript(contents, XHS_IMAGE_UPLOAD_READY_SCRIPT, DRAFT_PAGE_TIMEOUT_MS, '图文发布页没有出现图片上传控件');
+    await this.setFileInput(contents, images);
+    await this.waitForScript(contents, XHS_DRAFT_FORM_READY_SCRIPT, DRAFT_UPLOAD_TIMEOUT_MS, '图片上传后没有出现标题和正文编辑区；请检查图片是否上传成功');
+    this.assertCurrent(id);
+    if (!await contents.executeJavaScript(focusDraftFieldScript('title'), true)) throw new Error('没有找到标题输入框');
+    contents.insertText(input.title);
+    if (!await contents.executeJavaScript(focusDraftFieldScript('body'), true)) throw new Error('没有找到正文编辑器');
+    contents.insertText(input.body);
+    await wait(600);
+    const filled = await contents.executeJavaScript(XHS_READ_DRAFT_FIELDS_SCRIPT, true) as { ok?: boolean; title?: string; bodyChars?: number };
+    if (!filled?.ok) throw new Error('没有成功填入发布页');
+    if (filled.title !== input.title || !filled.bodyChars) throw new Error('发布页没有接受填入的标题或正文，请刷新后重试');
+    await wait(2500);
+    this.assertCurrent(id);
+    return { accountId: id, imageCount: images.length, title: filled.title, bodyChars: filled.bodyChars };
   }
 
   /** 账号被删除：关掉它的窗口并清空它的会话数据（cookie、缓存、本地存储）。 */
@@ -255,6 +364,46 @@ export class XhsView {
       this.notify();
     }
   }
+
+  private async waitForScript(contents: WebContents, script: string, timeoutMs: number, message: string): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (contents.isDestroyed()) throw new Error('小红书窗口已关闭');
+      try {
+        if (await contents.executeJavaScript(script, true)) return;
+      } catch {
+        // 页面仍在导航或渲染，继续等待到超时并给出可读提示。
+      }
+      await wait(500);
+    }
+    throw new Error(message);
+  }
+
+  private async setFileInput(contents: WebContents, files: string[]): Promise<void> {
+    const cdp = contents.debugger;
+    let attached = false;
+    try {
+      if (!cdp.isAttached()) {
+        cdp.attach('1.3');
+        attached = true;
+      }
+      const document = await cdp.sendCommand('DOM.getDocument', { depth: -1, pierce: true }) as { root: { nodeId: number } };
+      const found = await cdp.sendCommand('DOM.querySelector', {
+        nodeId: document.root.nodeId,
+        selector: 'input.upload-input[type="file"][accept*=".jpg"]'
+      }) as { nodeId: number };
+      if (!found.nodeId) throw new Error('没有找到图片上传控件');
+      await cdp.sendCommand('DOM.setFileInputFiles', { nodeId: found.nodeId, files });
+    } finally {
+      if (attached) {
+        try { cdp.detach(); } catch { /* 页面已跳转 */ }
+      }
+    }
+  }
+
+  private assertCurrent(id: number): void {
+    if (this.accountId !== id) throw new Error('小红书账号已切换，已取消上一个账号的操作');
+  }
 }
 
 /**
@@ -277,4 +426,8 @@ function migrateLegacyPartition(ctx: AppContext): void {
 function isAborted(error: unknown): boolean {
   const record = error as { code?: unknown; errno?: unknown } | null;
   return record?.code === 'ERR_ABORTED' || record?.errno === -3;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }

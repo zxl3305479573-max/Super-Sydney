@@ -477,6 +477,21 @@ export type VideoProject = {
 };
 /** shotImages / preview 是缩略图 data URL，按镜头顺序；没有的镜头为空串。 */
 export type VideoAssetBundle = { cover: ContentAssetView | null; shotImages: string[]; preview: string[]; videoPath: string };
+export type VideoPublishViewState = {
+  platform: Exclude<VideoPlatform, 'general'>;
+  url: string;
+  title: string;
+  loading: boolean;
+  canGoBack: boolean;
+  visible: boolean;
+  error: string;
+};
+export type VideoDraftFillResult = {
+  platform: Exclude<VideoPlatform, 'general'>;
+  title: string;
+  bodyChars: number;
+  videoPath: string;
+};
 export type VideoTtsProvider = 'system' | 'openai';
 /** 全局配音设置：userData/video-tts.json；OpenAI 兼容接口的 key 另存系统安全存储。 */
 export type VideoTtsSettings = {
@@ -882,6 +897,7 @@ export type HeroSmsOverview = {
 };
 export type XhsProfileRead = { name: string; redId: string; bio: string; fans: number; follows: number; likesAndCollects: number };
 export type XhsPageRead = { url: string; kind: 'search' | 'profile' | 'feed' | 'other'; notes: XhsHotNote[]; profile: XhsProfileRead | null };
+export type XhsDraftFillResult = { accountId: number; imageCount: number; title: string; bodyChars: number };
 export type AppState = { settings: Settings; stats: { total: number; pending: number; duration: number }; events: WorkEvent[]; codexCapture: CodexCaptureStatus; claudeCapture: ClaudeCaptureStatus; screenCapture: ScreenCaptureStatus; captureStatus: CaptureStatus };
 
 /** 成长 · 链接收藏里的一条。tags 是用户自己打的分类，openedAt 为空表示存下以后还没打开过。 */
@@ -1057,6 +1073,13 @@ export interface SydneyApi {
   chooseVideoSoundEffect(id: number): Promise<string | null>;
   inspectVideoQuality(id: number): Promise<VideoQualityReport>;
   openVideoFile(id: number): Promise<string>;
+  getVideoPublishView(platform: Exclude<VideoPlatform, 'general'>): Promise<VideoPublishViewState>;
+  openVideoPublishView(platform: Exclude<VideoPlatform, 'general'>, bounds?: SiteViewBounds | null): Promise<VideoPublishViewState>;
+  closeVideoPublishView(): Promise<void>;
+  setVideoPublishViewBounds(bounds: SiteViewBounds | null): Promise<void>;
+  videoPublishViewGo(platform: Exclude<VideoPlatform, 'general'>, action: 'back' | 'reload' | 'home'): Promise<VideoPublishViewState>;
+  fillVideoDraft(id: number): Promise<VideoDraftFillResult>;
+  onVideoPublishViewChanged(platform: Exclude<VideoPlatform, 'general'>, callback: () => void): () => void;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
   /** ffmpeg / ffprobe 是否可用；不可用时 detail 是能照着做的安装提示。 */
   getFfmpegStatus(): Promise<{ ok: boolean; detail: string }>;
@@ -1145,6 +1168,8 @@ export interface SydneyApi {
   xhsViewGo(action: 'back' | 'reload'): Promise<XhsViewState>;
   /** 读取窗口里当前已渲染的页面（搜索结果 / 主页 / 发现页）；遇到登录或验证页会报错。 */
   readXhsView(): Promise<XhsPageRead>;
+  /** 在当前账号的创作者中心上传图片并填入标题、正文与标签；不会点击发布。 */
+  fillXhsDraft(id: number): Promise<XhsDraftFillResult>;
   onXhsViewChanged(callback: () => void): () => void;
   /** 一次性把公众号现有的内容 / 图片接口配置（含 key）复制过来；之后两边各改各的。 */
   /** 用小红书的内容模型配置发一次最小请求。 */

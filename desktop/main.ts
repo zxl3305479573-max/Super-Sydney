@@ -50,6 +50,7 @@ let windowRef: BrowserWindow | null = null;
 let capture: CaptureRuntime | undefined;
 let siteView: SiteView | undefined;
 let xhsView: XhsView | undefined;
+let videoPublishView: { closeAll(): void; dispose(): void } | undefined;
 let embeddedViews: { closeAll(): void; dispose(): void } | undefined;
 
 /**
@@ -59,6 +60,7 @@ let embeddedViews: { closeAll(): void; dispose(): void } | undefined;
 function closeEmbeddedViews(): void {
   siteView?.close();
   xhsView?.close();
+  videoPublishView?.closeAll();
   embeddedViews?.closeAll();
 }
 
@@ -202,7 +204,7 @@ if (primaryInstance) app.whenReady().then(() => {
   siteView = new SiteView(ctx);
   registerCoreIpc(ctx, capture);
   registerContentIpc(ctx);
-  registerVideoIpc(ctx);
+  videoPublishView = registerVideoIpc(ctx);
   xhsView = new XhsView(ctx);
   registerIpIpc(ctx);
   registerXhsIpc(ctx, xhsView);
@@ -225,6 +227,7 @@ app.on('window-all-closed', () => {
   capture?.dispose();
   siteView?.dispose();
   xhsView?.dispose();
+  videoPublishView?.dispose();
   embeddedViews?.dispose();
   if (process.platform !== 'darwin') app.quit();
 });

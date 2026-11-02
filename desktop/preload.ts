@@ -101,6 +101,12 @@ const api: SydneyApi = {
   chooseVideoSoundEffect: id => ipcRenderer.invoke('video:sfx:choose', id),
   inspectVideoQuality: id => ipcRenderer.invoke('video:quality', id),
   openVideoFile: id => ipcRenderer.invoke('video:open-video', id),
+  getVideoPublishView: platform => ipcRenderer.invoke('video:publish:view:state', platform),
+  openVideoPublishView: (platform, bounds) => ipcRenderer.invoke('video:publish:view:open', platform, bounds),
+  closeVideoPublishView: () => ipcRenderer.invoke('video:publish:view:close'),
+  setVideoPublishViewBounds: bounds => ipcRenderer.invoke('video:publish:view:bounds', bounds),
+  videoPublishViewGo: (platform, action) => ipcRenderer.invoke('video:publish:view:go', platform, action),
+  fillVideoDraft: id => ipcRenderer.invoke('video:draft:fill', id),
   getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
   getFfmpegStatus: () => ipcRenderer.invoke('video:ffmpeg:status'),
   saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
@@ -150,6 +156,7 @@ const api: SydneyApi = {
   navigateXhsView: target => ipcRenderer.invoke('xhs:view:navigate', target),
   xhsViewGo: action => ipcRenderer.invoke('xhs:view:go', action),
   readXhsView: () => ipcRenderer.invoke('xhs:view:read'),
+  fillXhsDraft: id => ipcRenderer.invoke('xhs:draft:fill', id),
   getRedfoxKeyStatus: () => ipcRenderer.invoke('xhs:redfox-key:status'),
   saveRedfoxKey: value => ipcRenderer.invoke('xhs:redfox-key:save', value),
   deleteRedfoxKey: () => ipcRenderer.invoke('xhs:redfox-key:delete'),
@@ -223,6 +230,11 @@ const api: SydneyApi = {
     const listener = (_event: unknown, progress: VideoProgress) => callback(progress);
     ipcRenderer.on('video:progress', listener);
     return () => ipcRenderer.removeListener('video:progress', listener);
+  },
+  onVideoPublishViewChanged: (platform, callback) => {
+    const listener = (_event: unknown, changed: unknown) => { if (changed === platform) callback(); };
+    ipcRenderer.on('video:publish:changed', listener);
+    return () => ipcRenderer.removeListener('video:publish:changed', listener);
   }
 };
 

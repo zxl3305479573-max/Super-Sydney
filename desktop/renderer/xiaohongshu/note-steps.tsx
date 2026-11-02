@@ -294,8 +294,8 @@ export function ChecksStep({ note, locked, busy, stale, onRun, onRevise }: Commo
   </div>;
 }
 
-export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOpen, onCopy, onPublishPage }: Common & {
-  assets: XhsNoteAssets | null; onEdit: () => void; onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void; onPublishPage: () => void;
+export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOpen, onCopy, onFillDraft, onPublishPage }: Common & {
+  assets: XhsNoteAssets | null; onEdit: () => void; onExport: () => void; onOpen: () => void; onCopy: (kind: 'title' | 'body') => void; onFillDraft: () => void; onPublishPage: () => void;
 }) {
   const checklist = xhsExportChecklist(note);
   const ready = checklist.filter(item => !item.optional).every(item => item.ok);
@@ -306,6 +306,7 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
     </li>)}</ul>
     <div className="flow-inline-actions">
       <button className="button button-primary" disabled={locked || !ready} onClick={onExport}>{busy === 'export' ? '导出中…' : note.exportPath ? '重新导出发布包' : '导出发布包'}</button>
+      <button className="button button-primary" disabled={locked || !ready} title="打开当前账号的创作者中心，自动上传图片并填入标题、正文与标签；不会点击发布" onClick={onFillDraft}>{busy === 'draft' ? '正在填入…' : '填入小红书草稿'}</button>
       {note.exportPath && <button className="button button-secondary" disabled={locked} onClick={onOpen}>打开发布包目录</button>}
       <button className="button button-quiet" disabled={!note.title} onClick={() => onCopy('title')}>复制标题</button>
       <button className="button button-quiet" disabled={!note.body} onClick={() => onCopy('body')}>复制正文 + 标签</button>

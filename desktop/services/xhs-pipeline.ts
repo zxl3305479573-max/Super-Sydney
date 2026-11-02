@@ -46,6 +46,17 @@ export function readTags(note: Pick<XhsNote, 'tagsJson'>): string[] {
   const value = parse<unknown>(note.tagsJson, []);
   return Array.isArray(value) ? value.map(item => String(item).trim()).filter(Boolean) : [];
 }
+
+/** 小红书发布页的正文：原正文加标签，并按平台输入上限截断。 */
+export function xhsDraftContent(note: Pick<XhsNote, 'title' | 'body' | 'tagsJson'>): { title: string; body: string } {
+  const tags = readTags(note).map(tag => `#${tag}`).join(' ');
+  const suffix = tags ? `\n\n${tags}` : '';
+  const body = `${[...note.body.trim()].slice(0, Math.max(0, XHS_BODY_LIMIT - [...suffix].length)).join('').trimEnd()}${suffix}`;
+  return {
+    title: [...note.title.trim()].slice(0, XHS_TITLE_LIMIT).join(''),
+    body
+  };
+}
 export function readBasis(note: Pick<XhsNote, 'basisJson'>): XhsBasis {
   const value = parse<unknown>(note.basisJson, {});
   return value && typeof value === 'object' && !Array.isArray(value) ? value as XhsBasis : {};
@@ -60,6 +71,12 @@ export function readImages(note: Pick<XhsNote, 'imagesJson'>): XhsImageItem[] {
     const source = ['card', 'info', 'local'].includes(String(record.source)) ? record.source as XhsImageItem['source'] : 'local';
     return path ? [{ path, source, caption: String(record.caption ?? '') }] : [];
   });
+}
+
+/** 发布顺序：独立封面在前，随后是图组；同一路径只上传一次。 */
+export function xhsPackageImagePaths(note: Pick<XhsNote, 'coverPath' | 'imagesJson'>): string[] {
+  const paths = [note.coverPath.trim(), ...readImages(note).map(item => item.path.trim())].filter(Boolean);
+  return [...new Set(paths)];
 }
 /**
  * 候选图库：存下来的候选 + 当前封面与图组（老笔记没有候选图库，正在用的图也要出现在库里），按路径去重。

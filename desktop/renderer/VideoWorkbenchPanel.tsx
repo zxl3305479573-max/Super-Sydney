@@ -8,6 +8,7 @@ import { videoFrameSpec } from '../services/video-frame-spec';
 import { isQualityFresh, isRenderFresh, parseVideoShots, serializeVideoShots } from '../services/video-pipeline';
 import { VIDEO_SHOT_ROLES } from '../services/video-production';
 import { EmptyState, Stepper, TaskList, readableError, type StepState } from './ui';
+import VideoPublishPanel from './VideoPublishPanel';
 
 type WorkStep = 'brief' | 'script' | 'storyboard' | 'voice' | 'visuals' | 'render' | 'cover' | 'deliver';
 type WorkflowCard = { value: VideoWorkflow; label: string; description: string; engine: string; detail: string };
@@ -55,11 +56,12 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [workflow, setWorkflow] = useState<VideoWorkflow>('script-to-video');
-  const [platform, setPlatform] = useState<VideoPlatform>('douyin');
+  const [createPlatform, setCreatePlatform] = useState<VideoPlatform>('douyin');
   const [topicSeed, setTopicSeed] = useState('');
   const [step, setStep] = useState<WorkStep>('brief');
   const [busy, setBusy] = useState('');
   const [draft, setDraft] = useState<Partial<VideoProject>>({});
+  const [draftProjectId, setDraftProjectId] = useState<number | null>(null);
   const [storyboardDraft, setStoryboardDraft] = useState<string | null>(null);
   const [progress, setProgress] = useState<VideoProgress | null>(null);
   const [assetBundle, setAssetBundle] = useState<VideoAssetBundle | null>(null);
@@ -80,6 +82,9 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
   const [bgmFadeOut, setBgmFadeOut] = useState(2);
 
   const selected = projects.find(project => project.id === selectedId) ?? null;
+  const platform = selected
+    ? (draftProjectId === selected.id ? (draft.platform ?? selected.platform) : selected.platform) as VideoPlatform
+    : createPlatform;
   const shots = useMemo(
     () => parseVideoShots(storyboardDraft ?? selected?.storyboardJson ?? ''),
     [selected?.storyboardJson, storyboardDraft]
@@ -136,8 +141,8 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     setLogoPath(selected.options.logoPath ?? '');
     setContentStructure(selected.options.contentStructure ?? 'auto');
     setContentBrief(selected.options.contentBrief ?? '');
-    setPlatform(selected.platform);
-    setDraft({ title: selected.title, topic: selected.topic, audience: selected.audience, durationSeconds: selected.durationSeconds, script: selected.script, storyboardJson: selected.storyboardJson });
+    setDraftProjectId(selected.id);
+    setDraft({ platform: selected.platform, title: selected.title, topic: selected.topic, audience: selected.audience, durationSeconds: selected.durationSeconds, script: selected.script, storyboardJson: selected.storyboardJson });
   }, [selectedId]);
   useEffect(() => {
     setStoryboardDraft(null);
@@ -194,9 +199,9 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     return next;
   };
   const create = () => void run('create', async () => {
-    const project = await window.sydney.createVideoProject(platform, topicSeed);
+    const project = await window.sydney.createVideoProject(createPlatform, topicSeed);
     const saved = await window.sydney.updateVideoProject(project.id, { options: videoOptions(project) });
-    setProjects(items => [saved, ...items]); setSelectedId(saved.id); setStep('brief'); setTopicSeed('');
+    setProjects(items => [saved, ...items]); setSelectedId(saved.id); setDraftProjectId(saved.id); setDraft({ platform: saved.platform, title: saved.title, topic: saved.topic, audience: saved.audience, durationSeconds: saved.durationSeconds, script: saved.script, storyboardJson: saved.storyboardJson }); setStep('brief'); setTopicSeed('');
     notify('已创建视频工作台项目'); return saved;
   });
   const save = () => void run('save', async () => {
@@ -325,6 +330,16 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     replace(current);
     setStep('deliver'); notify('脚本成片工作流已完成并导出制作包'); return current;
   });
+  const fillDraft = () => void run('fill-draft', async () => {
+    if (!selected) throw new Error('请先选择项目');
+    if (platform === 'general') throw new Error('通用视频没有对应的发布平台');
+    if (!selected.assets.video || !isRenderFresh(selected)) throw new Error('请先生成当前版本的有效成片');
+    if (!qualityReport?.ok) throw new Error('请先完成质量检查并处理硬错误');
+    if (!window.confirm(`把「${selected.title || selected.topic || '未命名视频'}」填入${PLATFORMS.find(item => item.value === platform)?.label}草稿？\n\n会上传成片并填写标题、简介，不会点击发布。`)) return;
+    const filled = await window.sydney.fillVideoDraft(selected.id);
+    notify(`已填入${PLATFORMS.find(item => item.value === platform)?.label}草稿，请检查后手动发布`);
+    return selected;
+  });
 
   return <section className="native-content video-panel video-workbench-panel video-studio">
     <header className="video-studio-header">
@@ -346,7 +361,7 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
         <b>{String(index + 1).padStart(2, '0')}</b><strong>{item.label}</strong><span>{item.description}</span><small>{item.engine}</small><em>{item.detail}</em>
       </button>)}</div>
       <div className={`video-workbench-create-row video-intake-form ${workflow === 'product-demo' ? 'is-product-demo' : ''}`}>
-        <label><span>输出平台</span><select value={platform} onChange={event => setPlatform(event.target.value as VideoPlatform)} disabled={Boolean(busy)}>{PLATFORMS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+        <label><span>输出平台</span><select value={platform} onChange={event => selected ? patchDraft({ platform: event.target.value as VideoPlatform }) : setCreatePlatform(event.target.value as VideoPlatform)} disabled={Boolean(busy)}>{PLATFORMS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
         {workflow === 'product-demo' ? <>
           <label className="video-create-field"><span>产品官网 URL</span><input value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} disabled={Boolean(busy)} placeholder="https://example.com" /></label>
           <label className="video-create-field"><span>品牌 Logo</span><input value={logoPath} onChange={event => setLogoPath(event.target.value)} disabled={Boolean(busy)} placeholder="选择 PNG、JPG、WebP 或 SVG" /></label>
@@ -357,7 +372,7 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
     </section>
 
     <div className="video-studio-layout">
-      <aside className="native-task-list video-project-rail"><div className="video-rail-head"><div><span className="video-section-label">PROJECTS</span><h2>项目库</h2></div><span>{projects.length}</span></div>{projects.length ? projects.map(project => <button type="button" key={project.id} className={`native-task video-project-card ${project.id === selectedId ? 'is-selected' : ''}`} onClick={() => { setSelectedId(project.id); setStep('brief'); }}><i>{project.id === selectedId ? '●' : '○'}</i><strong>{project.title || project.topic || '未命名项目'}</strong><span>{WORKFLOWS.find(item => item.value === project.options.workflow)?.label ?? '脚本 → 成片'} · {project.platform}</span><small>{project.status === 'exported' ? '已交付' : project.status === 'storyboard' ? '已有分镜' : project.status === 'script' ? '已有脚本' : '待开始'}</small></button>) : <EmptyState compact icon="video" title="还没有项目">在上方选一条制作路线，再点「新建工作台项目」。</EmptyState>}<div className="video-rail-note"><span>工作方式</span><strong>逐镜生产</strong><small>生成的配音、画面和渲染结果会按内容哈希复用，修改一镜只重做一镜。</small></div></aside>
+      <aside className="native-task-list video-project-rail"><div className="video-rail-head"><div><span className="video-section-label">PROJECTS</span><h2>项目库</h2></div><span>{projects.length}</span></div>{projects.length ? projects.map(project => <button type="button" key={project.id} className={`native-task video-project-card ${project.id === selectedId ? 'is-selected' : ''}`} onClick={() => { setSelectedId(project.id); setDraftProjectId(project.id); setDraft({ platform: project.platform, title: project.title, topic: project.topic, audience: project.audience, durationSeconds: project.durationSeconds, script: project.script, storyboardJson: project.storyboardJson }); setStep('brief'); }}><i>{project.id === selectedId ? '●' : '○'}</i><strong>{project.title || project.topic || '未命名项目'}</strong><span>{WORKFLOWS.find(item => item.value === project.options.workflow)?.label ?? '脚本 → 成片'} · {project.platform}</span><small>{project.status === 'exported' ? '已交付' : project.status === 'storyboard' ? '已有分镜' : project.status === 'script' ? '已有脚本' : '待开始'}</small></button>) : <EmptyState compact icon="video" title="还没有项目">在上方选一条制作路线，再点「新建工作台项目」。</EmptyState>}<div className="video-rail-note"><span>工作方式</span><strong>逐镜生产</strong><small>生成的配音、画面和渲染结果会按内容哈希复用，修改一镜只重做一镜。</small></div></aside>
 
       <main className="native-editor video-editor-deck">{selected ? <>
         <div className="native-editor-head video-editor-header"><div><p className="video-studio-kicker">{profile.label} / {profile.engine}</p><h2>{selected.title || selected.topic || '未命名项目'}</h2><p>{profile.description}</p></div><div className="native-editor-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={runSkillWorkflow}>{busy === 'workflow' ? '工作流执行中…' : workflow === 'product-demo' ? '官网 + Logo 一键成片' : '运行当前 Skill 工作流'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={save}>{busy === 'save' ? '保存中…' : '保存项目'}</button></div></div>
@@ -429,7 +444,7 @@ export default function VideoWorkbenchPanel({ notify }: { notify: (message: stri
         {step === 'visuals' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>画面素材</h3><p>{workflow === 'product-demo' ? '官网截图与 Logo 保持原样展示，画面统一使用白底。' : '不套视觉模板；可为每镜设置运镜方式，先检查关键帧预览。'}</p></div></header><div className="workbench-status-grid"><div><strong>{workflow === 'product-demo' ? selected.options.productScreenshots.length : `${selected.assets.images.length}/${shots.length}`}</strong><span>{workflow === 'product-demo' ? '官网截图' : '配图覆盖'}</span></div><div><strong>{assetBundle?.preview.length ?? 0}</strong><span>关键帧预览</span></div><div><strong>白底</strong><span>画面基底</span></div></div><div className="flow-inline-actions">{workflow === 'product-demo' ? <button className="button button-primary" disabled={Boolean(busy)} onClick={captureProductAssets}>{busy === 'capture' ? '抓取中…' : '重新抓取官网素材'}</button> : <button className="button button-primary" disabled={Boolean(busy)} onClick={() => productionWithSavedDraft('images', project => window.sydney.generateVideoImages(project.id, false))}>{busy === 'images' ? '生成中…' : '生成缺失配图'}</button>}<button className="button button-secondary" disabled={Boolean(busy) || !shots.length} onClick={() => productionWithSavedDraft('preview', project => window.sydney.renderVideoPreview(project.id))}>{busy === 'preview' ? '预览中…' : '生成关键帧预览'}</button></div>{assetBundle?.preview.length ? <div className="video-frame-grid video-workbench-preview-grid">{assetBundle.preview.map((thumbnail, index) => <figure key={`${index}-${thumbnail.slice(-16)}`}><img src={thumbnail} alt={`第 ${index + 1} 个关键帧`} /><figcaption>关键帧 {index + 1}</figcaption></figure>)}</div> : <p className="flow-empty">还没有关键帧预览，先生成预览再检查版式。</p>}</section>}
         {step === 'render' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>成片与质量检查</h3><p>渲染完成后自动检查平台规格、黑帧、静音、音画时间轴、安全区和封面；硬错误会阻止导出。</p></div></header><div className="workbench-status-grid"><div><strong>{selected.assets.video ? isRenderFresh(selected) ? '有效' : '已过期' : '未生成'}</strong><span>成片</span></div><div><strong>{selected.assets.video ? `${Math.round(selected.assets.video.seconds)} 秒` : videoFrameSpec(platform).label}</strong><span>{selected.assets.video ? videoFrameSpec(platform).label : '输出规格'}</span></div><div><strong>{qualityReport ? qualityReport.ok ? qualityWarnings ? `${qualityWarnings} 项警告` : '全部通过' : `${qualityErrors} 项错误` : assetBundle?.videoPath ? '待检查' : '未生成'}</strong><span>质量验收</span></div></div><div className="video-render-output"><span>输出文件</span><code>{assetBundle?.videoPath || '渲染后会显示 MP4 路径'}</code></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy)} onClick={workflow === 'script-to-video' || workflow === 'product-demo' ? renderAction : runSkillWorkflow}>{busy === 'render' || busy === 'workflow' ? '处理中…' : workflow === 'script-to-video' || workflow === 'product-demo' ? '渲染成片' : '运行 Skill 成片'}</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '检查成片'}</button>{selected.assets.video && <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('open-video', () => window.sydney.openVideoFile(selected.id).then(() => selected))}>打开成片</button>}</div>{qualityReport && <div className="video-quality-report"><div className={`video-quality-summary ${!qualityReport.ok ? 'is-error' : qualityWarnings ? 'is-warn' : 'is-ok'}`}><strong>{qualityReport.ok ? qualityWarnings ? `检查通过，有 ${qualityWarnings} 项警告` : '检查通过' : `存在 ${qualityErrors} 项必须处理的问题`}</strong><span>{qualityReport.width}×{qualityReport.height} · {qualityReport.seconds.toFixed(2)} 秒 · {qualityReport.hasAudio ? '含音频' : '无音频'} · 检查于 {new Date(qualityReport.inspectedAt).toLocaleString()}</span></div><ul>{qualityReport.checks.map(check => <li key={check.key} className={`is-${check.status}`}><strong>{check.label}</strong><span>{check.detail}</span></li>)}</ul></div>}</section>}
         {step === 'cover' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>封面工作区</h3><p>封面是可选交付物，可以用 AI 根据标题生成，也可以选择本地图片；生成后会自动带入制作包。</p></div></header>{assetBundle?.cover?.thumbnail ? <figure className="video-cover-preview"><img src={assetBundle.cover.thumbnail} alt="当前视频封面" /><figcaption>{assetBundle.cover.path}</figcaption></figure> : <p className="flow-empty">还没有封面。</p>}<div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !(selected.title || selected.topic).trim()} onClick={generateCover}>{busy === 'cover' ? '处理中…' : 'AI 生成封面'}</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={chooseCover}>{busy === 'cover' ? '处理中…' : '选择本地封面'}</button></div></section>}
-        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4 或制作包；有硬错误时会先要求修复，警告会随制作包留档。工作台不会自动上传到抖音等平台。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video && isRenderFresh(selected) ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? isRenderFresh(selected) ? '✓' : '已过期' : '○'}</div><div className={selected.assets.video && qualityReport?.ok ? 'is-ok' : 'is-missing'}>质量 {qualityReport ? qualityReport.ok ? qualityWarnings ? `通过 · ${qualityWarnings} 项警告` : '通过' : `${qualityErrors} 项错误` : selected.assets.video ? '待检查' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected)} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '重新检查成片'}</button>{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div></section>}
+        {step === 'deliver' && <section className="flow-panel"><header className="flow-panel-head"><div><h3>交付</h3><p>导出 MP4、制作包，或把当前有效成片填入已登录平台的草稿页。只填写内容，不会自动发布。</p></div></header><div className="flow-checklist"><div className={selected.script.trim() ? 'is-ok' : 'is-missing'}>脚本 {selected.script.trim() ? '✓' : '○'}</div><div className={shots.length ? 'is-ok' : 'is-missing'}>分镜 {shots.length ? '✓' : '○'}</div><div className={selected.assets.video && isRenderFresh(selected) ? 'is-ok' : 'is-missing'}>成片 {selected.assets.video ? isRenderFresh(selected) ? '✓' : '已过期' : '○'}</div><div className={selected.assets.video && qualityReport?.ok ? 'is-ok' : 'is-missing'}>质量 {qualityReport ? qualityReport.ok ? qualityWarnings ? `通过 · ${qualityWarnings} 项警告` : '通过' : `${qualityErrors} 项错误` : selected.assets.video ? '待检查' : '○'}</div></div><div className="flow-inline-actions"><button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected)} onClick={() => production('save-mp4', async () => { await window.sydney.saveVideoMp4(selected.id); notify('已导出 MP4'); return selected; })}>另存 MP4</button><button className="button button-secondary" disabled={Boolean(busy)} onClick={() => production('export', async () => { const next = await window.sydney.exportVideoProject(selected.id); notify('制作包已导出'); return next; })}>导出制作包</button><button className="button button-secondary" disabled={Boolean(busy) || !selected.assets.video} onClick={inspectQuality}>{busy === 'quality' ? '检查中…' : '重新检查成片'}</button>{platform !== 'general' && <button className="button button-primary" disabled={Boolean(busy) || !selected.assets.video || !isRenderFresh(selected) || !qualityReport?.ok} title="上传当前成片并填入标题和简介，不会点击发布" onClick={fillDraft}>{busy === 'fill-draft' ? '填入中…' : `填入${PLATFORMS.find(item => item.value === platform)?.label}草稿`}</button>}{selected.exportPath && <button className="button button-quiet" onClick={() => void window.sydney.openVideoPackage(selected.id)}>打开制作包</button>}</div>{platform !== 'general' && <VideoPublishPanel platform={platform} />}</section>}
       </> : <EmptyState icon="video" title="创建第一个视频工作台项目">选择生产路径，输入主题或素材说明，然后开始。</EmptyState>}</main>
 
       <aside className="video-inspector-rail">
