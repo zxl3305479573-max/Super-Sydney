@@ -5,8 +5,6 @@ copyright: Copyright © 2026 Sydney
 directories:
   output: release
 
-electronDist: node_modules/electron/dist
-
 files:
   - out/**/*
   - package.json
