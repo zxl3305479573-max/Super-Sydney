@@ -3,12 +3,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { resolveVideoBgmStyle, type VideoProject, type VideoShot, type VideoSkillRunResult } from '../shared.ts';
-import { buildExternalBgmArgs } from './video-compose.ts';
+import { buildExternalBgmArgs, buildPlatformFitFfmpegArgs } from './video-compose.ts';
 import { captureProductWebsite } from './video-product-capture.ts';
 import { compactProductResearch, normalizeWebsiteUrl } from './video-product-research.ts';
-import { parseVideoShots, serializeVideoShots } from './video-pipeline.ts';
+import { parseVideoShots, serializeVideoShots, storyboardFromSrt } from './video-pipeline.ts';
 import { videoFrameSpec } from './video-frame-spec.ts';
 import { ensureAutoBgm } from './video-bgm.ts';
+import { inspectMp4Faststart } from './mp4-faststart.ts';
 import { probeVideo, resolveFfmpeg, runFfmpeg } from './video-render.ts';
 import { skillInputFingerprint } from './video-skill-inputs.ts';
 
@@ -129,24 +130,33 @@ async function fitForPlatform(
   report: Report,
   trimToTarget: boolean
 ): Promise<void> {
-  const ffmpegSkill = path.join(skillsRoot(), 'ffmpeg-skill', 'scripts', 'fit.py');
   const frame = videoFrameSpec(project.platform);
   const tools = await resolveFfmpeg();
   const probe = await probeVideo(tools, source);
-  const args = [
-    ffmpegSkill, source, '-o', output,
-    '--aspect', frame.aspect, '--fit', 'blur', '--width', String(frame.width), '--height', String(frame.height),
-    '--fps', '30', '--overwrite', '--json-brief'
-  ];
-  if (trimToTarget && probe.seconds > project.durationSeconds * 1.04) {
-    args.push('--duration', String(project.durationSeconds), '--method', 'trim');
-  }
-  await run(pythonCommand(), args, process.cwd(), report);
+  const maxSeconds = trimToTarget && project.durationSeconds > 0 && probe.seconds > project.durationSeconds * 1.04
+    ? project.durationSeconds
+    : undefined;
+  report(`正在用内置 FFmpeg 适配平台画布（${frame.label}）…`);
+  await runFfmpeg(tools, buildPlatformFitFfmpegArgs({
+    source,
+    output,
+    frame,
+    sourceWidth: probe.width,
+    sourceHeight: probe.height,
+    hasAudio: probe.hasAudio,
+    maxSeconds
+  }));
   if (!fs.existsSync(output) || fs.statSync(output).size < 1024) throw new Error('平台规格适配没有生成有效 MP4');
 }
 
 async function addBgm(project: VideoProject, source: string, output: string, dataDir: string, report: Report): Promise<void> {
   if (project.options.bgmMode === 'none') {
+    if (inspectMp4Faststart(source) === false) {
+      const tools = await resolveFfmpeg();
+      report('正在将成片重封装为流式 MP4（+faststart）…');
+      await runFfmpeg(tools, ['-y', '-hide_banner', '-loglevel', 'error', '-i', source, '-c', 'copy', '-movflags', '+faststart', output]);
+      return;
+    }
     fs.copyFileSync(source, output);
     return;
   }
@@ -400,7 +410,12 @@ async function finalizeWorkflow(
     throw new Error('外部 Skill 成片校验失败：输出缺少有效画面或音频');
   }
   const script = artifact.script.trim() || importedText(project, `外部 Skill 成片：${path.basename(sourcePath)}`);
-  const storyboard = oneShotStoryboard(project, script, artifact.visual, probe.seconds);
+  const srtShots = artifact.subtitle && fs.existsSync(artifact.subtitle)
+    ? storyboardFromSrt(fs.readFileSync(artifact.subtitle, 'utf8'), artifact.visual, probe.seconds)
+    : [];
+  const storyboard = srtShots.length
+    ? serializeVideoShots(srtShots)
+    : oneShotStoryboard(project, script, artifact.visual, probe.seconds);
   updateProject({
     title: project.title.trim() || project.topic.trim() || path.basename(sourcePath, path.extname(sourcePath)),
     script,

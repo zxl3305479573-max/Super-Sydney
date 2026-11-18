@@ -5,6 +5,7 @@ import VideoWorkbenchPanel from './VideoWorkbenchPanel';
 import EmbeddedSitePanel from './EmbeddedSitePanel';
 import HeroSmsPanel from './HeroSmsPanel';
 import XiaohongshuPanel from './XiaohongshuPanel';
+import OpsHubPanel from './OpsHubPanel';
 import SitePanel from './SitePanel';
 import EvolutionPanel from './EvolutionPanel';
 import LinksPanel from './LinksPanel';
@@ -18,7 +19,7 @@ import { ToastStack, useToasts, type ToastOptions, type ToastTone } from './Toas
 import { useTheme } from './theme';
 import brandMark from '../assets/brand-mark.png?asset';
 
-type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
+type View = 'today' | 'review' | 'evolve' | 'links' | 'wewrite' | 'video' | 'xiaohongshu' | 'ops' | 'xianyu' | 'site16688' | 'heroSms' | 'site' | 'settings';
 
 const empty: AppState = {
   settings: { captureEnabled: false, capturePaused: false, codexCaptureEnabled: false, codexIncludeCli: false, claudeCaptureEnabled: false, claudeExtraRoots: [], llmEnabled: false, allowedApps: [], blockedApps: [], captureIntervalSeconds: 30, captureAllPending: false, vaultPath: '', screenCaptureEnabled: false, screenCaptureIntervalSeconds: 60, screenRetentionHours: 24, inputWatchEnabled: false, inputWatchPaths: [] },
@@ -28,11 +29,11 @@ const empty: AppState = {
 const NAV: Array<{ group: string; items: Array<{ view: View; label: string; icon: IconName }> }> = [
   { group: '工作记录', items: [{ view: 'today', label: '今日工作', icon: 'today' }, { view: 'review', label: '待确认', icon: 'inbox' }] },
   { group: '成长', items: [{ view: 'evolve', label: '自我进化', icon: 'spark' }, { view: 'links', label: '链接收藏', icon: 'link' }] },
-  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频工作台', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }] },
+  { group: '内容', items: [{ view: 'wewrite', label: '公众号', icon: 'pen' }, { view: 'video', label: '视频工作台', icon: 'video' }, { view: 'xiaohongshu', label: '小红书', icon: 'note' }, { view: 'ops', label: '运营中控', icon: 'pulse' }] },
   { group: '变现', items: [{ view: 'xianyu', label: '闲鱼', icon: 'tag' }, { view: 'site16688', label: '16688', icon: 'chart' }, { view: 'heroSms', label: '接码', icon: 'phone' }, { view: 'site', label: 'AI 代充', icon: 'card' }] }
 ];
 
-const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>, { title: string; subtitle: string }> = {
+const HEADERS: Record<Exclude<View, 'wewrite' | 'video' | 'xiaohongshu' | 'ops'>, { title: string; subtitle: string }> = {
   today: { title: '今日工作', subtitle: '' },
   review: { title: '待确认', subtitle: '逐条确认或批量处理采集到的事件，确认后的内容才会沉淀到知识库。' },
   evolve: { title: '自我进化', subtitle: '从 AI 协作里找出重复劳动与返工，沉淀成项目规则和经验卡片。' },
@@ -54,7 +55,7 @@ function crumbsOf(view: View): string[] {
   return [];
 }
 
-const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'xianyu', 'site16688', 'heroSms', 'site', 'settings'];
+const VIEWS: View[] = ['today', 'review', 'evolve', 'links', 'wewrite', 'video', 'xiaohongshu', 'ops', 'xianyu', 'site16688', 'heroSms', 'site', 'settings'];
 const VIEW_KEY = 'sydney.view';
 const SIDEBAR_KEY = 'sydney.sidebar';
 /** 窗口比这窄时侧边栏收成抽屉，从标题栏左上角的按钮打开。 */
@@ -171,8 +172,8 @@ export default function App() {
   const live = state.settings.captureEnabled && !state.settings.capturePaused;
   const pendingCount = state.events.filter(event => event.status === 'pending').length;
   const detailEvent = state.events.find(event => event.id === detailId) ?? null;
-  const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu';
-  const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu'>];
+  const fullWidth = view === 'wewrite' || view === 'video' || view === 'xiaohongshu' || view === 'ops';
+  const header = fullWidth ? null : HEADERS[view as Exclude<View, 'wewrite' | 'video' | 'xiaohongshu' | 'ops'>];
 
   const covered = manualOpen || detailId !== null || appUpdate.open || (narrow && drawerOpen);
   /**
@@ -188,6 +189,7 @@ export default function App() {
       case 'wewrite': return <WeWritePanel notify={notifyAny} overlay={hideWeb} />;
       case 'video': return <VideoWorkbenchPanel notify={notifyAny} overlay={hideWeb} />;
       case 'xiaohongshu': return <XiaohongshuPanel notify={notifyAny} overlay={hideWeb} />;
+      case 'ops': return <OpsHubPanel notify={notifyAny} onNavigate={navigate} />;
       case 'xianyu': return <EmbeddedSitePanel siteKey="xianyu" label="闲鱼" overlay={hideWeb} covered={covered}
         privacy="页面由闲鱼提供，登录请在页面里扫码完成；应用不读它的 cookie，也不往页面里注入脚本。" />;
       case 'site16688': return <EmbeddedSitePanel siteKey="site16688" label="16688" overlay={hideWeb} covered={covered}

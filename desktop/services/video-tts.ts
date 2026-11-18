@@ -16,6 +16,28 @@ import type { VoiceProfile } from './video-production.ts';
 
 const FILE = 'video-tts.json';
 
+/**
+ * 发配音请求用的 fetch。主进程启动时注入 Electron 的 net.fetch 走系统代理，
+ * 避免国内网络直连境外语音网关超时；单测与纯 Node 环境保持默认 fetch。
+ */
+let ttsFetch: typeof fetch = (...args) => fetch(...args);
+export function useVideoTtsFetch(impl: typeof fetch): void {
+  ttsFetch = impl;
+}
+
+function ttsNetworkErrorText(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === 'TimeoutError') return '配音接口超时（超过 120 秒没有返回）';
+    if (error.name === 'AbortError') return '配音已取消';
+    const cause = (error as Error & { cause?: { code?: string; message?: string } }).cause;
+    if (error.message === 'fetch failed' && cause) {
+      return `连不上配音接口（${cause.code || cause.message}）：请检查网络或系统代理`;
+    }
+    return error.message;
+  }
+  return String(error);
+}
+
 export const VIDEO_TTS_DEFAULTS: VideoTtsSettings = {
   provider: 'system',
   baseUrl: 'https://api.openai.com/v1',
@@ -82,16 +104,21 @@ export function writeVideoTtsSettings(dataDir: string, patch: Partial<VideoTtsSe
 /** OpenAI 兼容的语音合成：一次一镜，返回 MP3 字节。 */
 export async function requestSpeech(
   profile: Extract<VoiceProfile, { provider: 'openai' }>, apiKey: string, text: string,
-  fetchImpl: typeof fetch = fetch, signal?: AbortSignal
+  fetchImpl: typeof fetch = ttsFetch, signal?: AbortSignal
 ): Promise<Buffer> {
-  if (!apiKey.trim()) throw new Error('还没有配置配音接口的 API Key，请在「配音与字幕 → 配音设置」里填写');
+  if (!apiKey.trim()) throw new Error('还没有配置配音接口的 API Key，请在「声音字幕 → 配音设置」里填写');
   const timeout = AbortSignal.timeout(120_000);
-  const response = await fetchImpl(`${profile.baseUrl}/audio/speech`, {
-    method: 'POST',
-    signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: profile.model, input: text, voice: profile.voice, response_format: 'mp3', speed: profile.speed })
-  });
+  let response: Response;
+  try {
+    response = await fetchImpl(`${profile.baseUrl}/audio/speech`, {
+      method: 'POST',
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: profile.model, input: text, voice: profile.voice, response_format: 'mp3', speed: profile.speed })
+    });
+  } catch (error) {
+    throw new Error(ttsNetworkErrorText(error));
+  }
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 160);
     throw new Error(`配音接口请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`);

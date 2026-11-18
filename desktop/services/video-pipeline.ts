@@ -249,6 +249,64 @@ export function buildSrt(lines: VideoCaptionLine[]): string {
   return lines.map((line, position) => `${position + 1}\n${srtTimecode(line.start)} --> ${srtTimecode(line.end)}\n${line.text}\n`).join('\n');
 }
 
+function parseSrtTimestamp(raw: string): number | null {
+  const match = raw.trim().match(/^(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})$/);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4].padEnd(3, '0')) / 1000;
+}
+
+/**
+ * 从 SRT 字幕聚合出结构化多镜分镜（用于素材剪辑与多语言本地化路线）：
+ * 按约 12–20 秒一段聚合成最多 10 个章节镜头，让下游 B 站章节时间轴与分镜表都能拿到真实段落而非单镜占位。
+ */
+export function storyboardFromSrt(srtText: string, visualLabel: string, totalSeconds: number): VideoShot[] {
+  const cues: Array<{ start: number; end: number; text: string }> = [];
+  for (const block of srtText.replace(/\r\n?/g, '\n').split(/\n{2,}/)) {
+    const lines = block.split('\n').map(line => line.trim()).filter(Boolean);
+    const arrowIndex = lines.findIndex(line => line.includes('-->'));
+    if (arrowIndex < 0) continue;
+    const [rawStart, rawEnd] = lines[arrowIndex].split('-->');
+    const start = parseSrtTimestamp(rawStart ?? '');
+    const end = parseSrtTimestamp(rawEnd ?? '');
+    const text = lines.slice(arrowIndex + 1).join(' ').replace(/\s+/g, ' ').trim();
+    if (start !== null && end !== null && end > start && text) {
+      cues.push({ start, end, text });
+    }
+  }
+  if (!cues.length) return [];
+  const targetSpan = Math.max(8, Math.min(25, Math.max(totalSeconds, cues.at(-1)!.end) / 6));
+  const groups: Array<{ start: number; end: number; texts: string[] }> = [];
+  for (const cue of cues) {
+    const last = groups[groups.length - 1];
+    if (last && cue.end - last.start <= targetSpan && groups.length <= 10) {
+      last.end = cue.end;
+      last.texts.push(cue.text);
+    } else if (groups.length >= 10 && last) {
+      last.end = cue.end;
+      last.texts.push(cue.text);
+    } else {
+      groups.push({ start: cue.start, end: cue.end, texts: [cue.text] });
+    }
+  }
+  const total = Math.max(totalSeconds, groups.at(-1)!.end);
+  return groups.map((group, index) => {
+    const nextStart = index < groups.length - 1 ? groups[index + 1].start : total;
+    const span = Math.max(1, Math.round(nextStart - (index === 0 ? 0 : group.start)));
+    const narration = group.texts.join(' ');
+    const firstClause = group.texts[0].split(/[，,。！？!?；;：:]/)[0]?.trim() || group.texts[0];
+    const caption = Array.from(firstClause).slice(0, 12).join('');
+    const role: VideoShotRole = index === 0 ? 'hook' : index === groups.length - 1 ? 'takeaway' : 'step';
+    return {
+      index: index + 1,
+      seconds: clampSeconds(span, 5),
+      visual: visualLabel,
+      narration,
+      caption,
+      role
+    };
+  });
+}
+
 /**
  * 分镜口播是否覆盖了脚本：脚本按句拆开，看每句是否出现在拼起来的口播里。
  * 模型拆分镜时最常见的问题是漏句或改写，字幕和配音都从口播来，漏了就真的没了。
@@ -308,7 +366,7 @@ export function previewSignature(project: VideoProject): string {
 }
 
 /** 画面模板或其素材来源变化时递增，让旧预览和成片自动过期。 */
-export const FRAME_TEMPLATE_VERSION = 10;
+export const FRAME_TEMPLATE_VERSION = 11;
 
 function frameSignatureInput(project: VideoProject, shots: VideoShot[]) {
   const { workflow, template, imageMode, footer, logoPath, productScreenshots, brandColors, productAssetSignature } = project.options;

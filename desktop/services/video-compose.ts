@@ -19,12 +19,32 @@ export const FRAME_WIDTH = VERTICAL_FRAME.width;
 export const FRAME_HEIGHT = VERTICAL_FRAME.height;
 export const VIDEO_FPS = 30;
 
-type Palette = { bg: string; ink: string; accent: string; panel: string; track: string; muted: string };
+type Palette = {
+  bg: string;
+  ink: string;
+  accent: string;
+  panel: string;
+  track: string;
+  muted: string;
+  border: string;
+  mark: string;
+  solidInk: string;
+};
 
-const PALETTES: Record<VideoTemplate, Palette> = {
-  warm: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' },
-  clean: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' },
-  night: { bg: '#FFFFFF', ink: '#202629', accent: '#246B63', panel: '#F5F7F6', track: '#DCE3E1', muted: '#63706E' }
+export const PALETTES: Record<VideoTemplate, Palette> = {
+  warm: {
+    bg: '#FAF7F0', ink: '#25211C', accent: '#23685B', panel: '#EFE9DD', track: '#DCD4C5',
+    muted: '#6D645A', border: '#E1D9C8', mark: '#F5DF98', solidInk: '#FFFDF8'
+  },
+  clean: {
+    bg: '#FFFFFF', ink: '#1E2528', accent: '#1F6A60', panel: '#F4F7F6', track: '#DAE3E1',
+    muted: '#5F6E6C', border: '#E1E9E7', mark: '#CCEBE3', solidInk: '#FFFFFF'
+  },
+  // 深色模板底色亮度约 14.5%（> blackdetect 的 10% 阈值），既有深邃反差又不会误触发黑帧拦截。
+  night: {
+    bg: '#1E2636', ink: '#F2F6FC', accent: '#4FD1B5', panel: '#273247', track: '#36445E',
+    muted: '#9BA9C2', border: '#384763', mark: '#2B5B56', solidInk: '#0F1824'
+  }
 };
 
 /* ── 镜头内动效 ──────────────────────────────────────────────────
@@ -63,7 +83,6 @@ export type FrameMotion = {
   titleIn?: number;
   leadIn?: number;
   bodyIn?: number;
-  accent?: number;
 };
 
 export type FramePlanOptions = {
@@ -87,13 +106,29 @@ export function framePlanOptions(
 
 /** 动效参数 → <html> 的 style 属性；截图时逐帧改写它。 */
 export function motionStyle(motion: FrameMotion): string {
-  const extra = motion.pan !== undefined || motion.reveal !== undefined || motion.pop !== undefined
-    ? `;--pan:${motion.pan ?? 0};--reveal:${motion.reveal ?? 1};--pop:${motion.pop ?? 1};--title-in:${motion.titleIn ?? 1};--lead-in:${motion.leadIn ?? 1};--body-in:${motion.bodyIn ?? 1};--accent:${motion.accent ?? 1}` : '';
+  const hasExtra = (motion.pan !== undefined && motion.pan !== 0)
+    || (motion.reveal !== undefined && motion.reveal !== 1)
+    || (motion.pop !== undefined && motion.pop !== 1)
+    || (motion.titleIn !== undefined && motion.titleIn !== 1)
+    || (motion.leadIn !== undefined && motion.leadIn !== 1)
+    || (motion.bodyIn !== undefined && motion.bodyIn !== 1);
+  const extra = hasExtra
+    ? `;--pan:${motion.pan ?? 0};--reveal:${motion.reveal ?? 1};--pop:${motion.pop ?? 1};--title-in:${motion.titleIn ?? 1};--lead-in:${motion.leadIn ?? 1};--body-in:${motion.bodyIn ?? 1}` : '';
   return `--enter:${motion.enter};--key:${motion.key};--bar:${motion.bar};--zoom:${motion.zoom};--lit:${motion.lit}${extra}`;
 }
 
 function sameMotion(a: FrameMotion, b: FrameMotion): boolean {
-  return a.enter === b.enter && a.key === b.key && a.bar === b.bar && a.zoom === b.zoom && a.lit === b.lit && (a.pan ?? 0) === (b.pan ?? 0) && (a.reveal ?? 1) === (b.reveal ?? 1) && (a.pop ?? 1) === (b.pop ?? 1) && (a.titleIn ?? 1) === (b.titleIn ?? 1) && (a.leadIn ?? 1) === (b.leadIn ?? 1) && (a.bodyIn ?? 1) === (b.bodyIn ?? 1) && (a.accent ?? 1) === (b.accent ?? 1);
+  return a.enter === b.enter
+    && a.key === b.key
+    && a.bar === b.bar
+    && a.zoom === b.zoom
+    && a.lit === b.lit
+    && (a.pan ?? 0) === (b.pan ?? 0)
+    && (a.reveal ?? 1) === (b.reveal ?? 1)
+    && (a.pop ?? 1) === (b.pop ?? 1)
+    && (a.titleIn ?? 1) === (b.titleIn ?? 1)
+    && (a.leadIn ?? 1) === (b.leadIn ?? 1)
+    && (a.bodyIn ?? 1) === (b.bodyIn ?? 1);
 }
 
 /** 缓出（三次方）：开头快、收尾慢，停下来时不顿。取三位小数，相邻帧比较时不受浮点误差影响。 */
@@ -157,23 +192,35 @@ export function motionAt(timing: MotionTiming, t: number): FrameMotion {
   const length = Math.max(timing.shotEnd - timing.shotStart, 1e-3);
   const entrance = easeOut(entering / ENTER_SECONDS);
   const selected = timing.preset ?? 'auto';
-  const autoPresets: VideoMotionPreset[] = ['push-in', 'pan-right', 'reveal-up', 'pull-out', 'pan-left', 'pop'];
-  const preset = selected === 'auto' ? autoPresets[(timing.shotIndex ?? Math.floor(timing.shotStart)) % autoPresets.length] : selected;
+  // 默认自动模式保持克制：有配图/截图时缓慢推近 4%，纯文字卡片只做分层入场后稳定定格（使静帧可大幅合并）。
+  const preset: Exclude<VideoMotionPreset, 'auto'> = selected === 'auto'
+    ? (timing.pushIn ? 'push-in' : 'static')
+    : selected;
   const progress = Math.min(1, Math.max(0, local / length));
   const travel = easeOut(progress);
+  const pushSpan = selected === 'auto' ? PUSH_IN : 0.12;
   const usePush = preset === 'push-in' || (preset === 'pop' && timing.pushIn);
-  const push = usePush ? Math.round(0.12 * PUSH_STEPS * progress) / PUSH_STEPS : preset === 'reveal-up' ? Math.round(0.05 * PUSH_STEPS * progress) / PUSH_STEPS : 0;
+  const push = (selected === 'auto' && !timing.pushIn)
+    ? 0
+    : usePush
+      ? Math.round(pushSpan * PUSH_STEPS * progress) / PUSH_STEPS
+      : preset === 'reveal-up'
+        ? Math.round(0.05 * PUSH_STEPS * progress) / PUSH_STEPS
+        : 0;
   const panDirection = preset === 'pan-left' ? -1 : preset === 'pan-right' ? 1 : 0;
   const pan = Math.round((1 - travel) * panDirection * 20) / 20;
-  const staged = (delay: number) => easeOut((entering - delay) / 0.5);
-  const titleIn = preset === 'static' ? 1 : staged(0);
-  const leadIn = preset === 'static' ? 1 : staged(0.12);
-  const bodyIn = preset === 'static' ? 1 : staged(0.26);
-  const accent = (0.5 + 0.5 * Math.sin(Math.PI * Math.min(1, progress))) * (preset === 'static' ? 0 : 1);
+  const staged = (delay: number) => easeOut((entering - delay) / 0.45);
+  const staticCard = selected === 'static';
+  const titleIn = staticCard ? 1 : staged(0);
+  const leadIn = staticCard ? 1 : staged(0.1);
+  const bodyIn = staticCard ? 1 : staged(0.2);
+  const keyIn = timing.pushIn
+    ? easeOut((entering - KEY_DELAY) / (ENTER_SECONDS - KEY_DELAY))
+    : 1;
   return {
     enter: entrance,
-    key: usePush ? easeOut((entering - KEY_DELAY) / (ENTER_SECONDS - KEY_DELAY)) : bodyIn,
-    bar: travel,
+    key: keyIn,
+    bar: entrance,
     zoom: Math.round((preset === 'static' ? 1 : preset === 'pull-out' ? 1.12 - 0.12 * progress : 1 + push) * 100000) / 100000,
     lit: timing.litTimes.filter(at => at <= t + 1e-9).length,
     pan,
@@ -181,8 +228,7 @@ export function motionAt(timing: MotionTiming, t: number): FrameMotion {
     pop: preset === 'pop' ? bodyIn : 1,
     titleIn,
     leadIn,
-    bodyIn,
-    accent
+    bodyIn
   };
 }
 
@@ -192,7 +238,7 @@ export function settledMotion(subtitle: string, options: FramePlanOptions): Fram
     enter: 1, key: 1, bar: 1,
     zoom: options.pushIn ? 1 + PUSH_IN / 2 : 1,
     lit: options.karaoke ? Math.ceil(Array.from(subtitle).length / 2) : 0,
-    pan: 0, reveal: 1, pop: 1, titleIn: 1, leadIn: 1, bodyIn: 1, accent: 1
+    pan: 0, reveal: 1, pop: 1, titleIn: 1, leadIn: 1, bodyIn: 1
   };
 }
 
@@ -269,6 +315,11 @@ export function cardFontSize(text: string, textWidth = CARD_TEXT_WIDTH): number 
   return 64;
 }
 
+/** 支持用【重点】包裹大字里的关键词做底部荧光高亮；普通文本与 escapeHtml 完全一致。 */
+export function formatHighlight(value: string): string {
+  return escapeHtml(value).replace(/【(.+?)】/g, '<mark>$1</mark>');
+}
+
 /** 字幕逐字包一层，每个字带序号 --i；样式表按 --lit 决定它是已读的强调色还是未读的正文色。 */
 function karaokeMarkup(subtitle: string): string {
   return Array.from(subtitle).map((char, index) => `<span style="--i:${index}">${escapeHtml(char)}</span>`).join('');
@@ -282,8 +333,10 @@ export function buildFrameHtml(input: FrameInput): string {
   const color = PALETTES[input.template] ?? PALETTES.warm;
   const accent = chooseProductAccent(input.brandColors ?? [], color.accent);
   const logo = input.productMode ? input.logoUrl ?? '' : '';
-  const title = escapeHtml(input.title.trim());
+  const title = formatHighlight(input.title.trim());
   const key = input.keyText.trim();
+  const bareKey = key.replace(/[【】]/g, '');
+  const bareTitle = input.title.trim().replace(/[【】]/g, '');
   const solid = SOLID_ROLES.has(input.role);
   const lead = input.lead.trim() ? `<span>${escapeHtml(input.lead.trim())}</span>` : '';
   // 已讲完的镜头点亮，当前镜头那一格随 --bar 从左往右填满。
@@ -299,25 +352,25 @@ export function buildFrameHtml(input: FrameInput): string {
   const cardTextWidth = Math.max(560, visualWidth - (landscape ? 128 : 144));
   const footerTop = frame.height - safe.bottom - 40;
   const visual = input.imageUrl
-    ? `<div class="visual${input.productMode ? ' product' : ''}"><img src="${escapeHtml(input.imageUrl)}" alt=""></div>${key ? `<div class="key">${escapeHtml(key)}</div>` : ''}`
-    : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(key || input.title, cardTextWidth)}px">${escapeHtml(key || input.title.trim())}</p></div>`;
+    ? `<div class="visual${input.productMode ? ' product' : ''}"><img src="${escapeHtml(input.imageUrl)}" alt=""></div>${key ? `<div class="key">${formatHighlight(key)}</div>` : ''}`
+    : `<div class="card${solid ? ' solid' : ''}">${lead}<p style="font-size:${cardFontSize(bareKey || bareTitle, cardTextWidth)}px">${formatHighlight(key || input.title.trim())}</p></div>`;
   const layout = landscape
     ? `
 .title{position:absolute;left:${contentLeft}px;right:300px;top:${contentTop}px;height:110px;display:flex;align-items:flex-end;font-size:58px;line-height:1.25;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance;opacity:var(--title-in,1);transform:translateX(calc((1 - var(--title-in,1)) * -48px))}
 .progress{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:200px;height:10px;display:flex;gap:10px}
-.visual{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;border-radius:28px;overflow:hidden;background:${color.panel};transform:translateY(calc((1 - var(--body-in,1)) * 52px)) scale(calc(.94 + .06 * var(--body-in,1)));transform-origin:center}
+.visual{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;border-radius:28px;overflow:hidden;background:${color.panel};border:1.5px solid ${color.border};transform:translateY(calc((1 - var(--body-in,1)) * 52px)) scale(calc(.94 + .06 * var(--body-in,1)));transform-origin:center}
 .visual img{display:block;width:112%;height:112%;margin:-6%;object-fit:cover;opacity:var(--enter);transform:translateX(calc(var(--pan, 0) * 2%)) scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
 .visual{clip-path:inset(calc((1 - var(--reveal, 1)) * 12%) 0 0 0)}
-.visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
+.visual.product{background:#fff;border:1.5px solid ${color.border};padding:24px}
 .visual.product img{width:100%;height:100%;margin:0;object-fit:contain;background:#fff}
 .key{position:absolute;left:${contentLeft}px;right:${contentRight + 650}px;top:940px;height:68px;font-size:50px;line-height:68px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:translateY(calc((1 - var(--reveal, 1)) * 32px)) scale(calc(.92 + .08 * var(--pop, 1)))}
-.card{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;padding:64px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
+.card{position:absolute;left:${contentLeft}px;top:250px;width:${visualWidth}px;height:680px;padding:64px;border-radius:28px;background:${color.panel};border:1.5px solid ${color.border};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
 .card{transform:translateX(calc(var(--pan,0) * 5%)) scale(var(--zoom));transform-origin:center}
-.card span{font-size:38px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 30px))}
+.card span{padding:10px 28px;border-radius:999px;background:${color.bg};border:1.5px solid ${color.border};font-size:34px;font-weight:700;letter-spacing:3px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 30px))}
 .card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:var(--body-in,1);transform:translateY(calc((1 - var(--body-in,1)) * 48px)) scale(calc(.88 + .12 * var(--pop, 1)))}
-.card.solid{background:${accent}}
-.card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
-.card.solid p{color:${color.panel}}
+.card.solid{background:${accent};border-color:${accent}}
+.card.solid span{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.28);color:${color.solidInk};opacity:min(.92,calc(var(--enter) * 1.3))}
+.card.solid p{color:${color.solidInk}}
 .subtitle{position:absolute;left:1210px;right:${contentRight}px;top:250px;height:610px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:56px;line-height:1.38;font-weight:800}
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
@@ -326,19 +379,19 @@ ${logo ? `.brand-logo{position:absolute;right:${safe.right + 24}px;top:${safe.to
     : `
 .title{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop}px;height:150px;display:flex;align-items:flex-end;font-size:60px;line-height:1.35;font-weight:800;letter-spacing:2px;overflow:hidden;text-wrap:balance;opacity:var(--title-in,1);transform:translateY(calc((1 - var(--title-in,1)) * 52px))}
 .progress{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 180}px;height:10px;display:flex;gap:10px}
-.visual{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;border-radius:28px;overflow:hidden;background:${color.panel};transform:translateY(calc((1 - var(--body-in,1)) * 64px)) scale(calc(.92 + .08 * var(--body-in,1)));transform-origin:center}
+.visual{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;border-radius:28px;overflow:hidden;background:${color.panel};border:1.5px solid ${color.border};transform:translateY(calc((1 - var(--body-in,1)) * 64px)) scale(calc(.92 + .08 * var(--body-in,1)));transform-origin:center}
 .visual img{display:block;width:112%;height:112%;margin:-6%;object-fit:cover;opacity:var(--enter);transform:translateX(calc(var(--pan, 0) * 2%)) scale(var(--zoom));transform-origin:${pushOrigin(`${input.title}#${input.shotNumber}`)}}
 .visual{clip-path:inset(calc((1 - var(--reveal, 1)) * 12%) 0 0 0)}
-.visual.product{background:#fff;border:1px solid ${color.track};padding:24px}
+.visual.product{background:#fff;border:1.5px solid ${color.border};padding:24px}
 .visual.product img{width:100%;height:100%;margin:0;object-fit:contain;background:#fff}
 .key{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 820}px;height:70px;font-size:60px;line-height:70px;font-weight:800;color:${accent};text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:min(1,calc(var(--key) * 1.6));transform:translateY(calc((1 - var(--reveal, 1)) * 32px)) scale(calc(.92 + .08 * var(--pop, 1)))}
-.card{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;padding:64px;border-radius:28px;background:${color.panel};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
+.card{position:absolute;left:${contentLeft}px;top:${contentTop + 220}px;width:${contentWidth}px;height:600px;padding:64px;border-radius:28px;background:${color.panel};border:1.5px solid ${color.border};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px}
 .card{transform:translateX(calc(var(--pan,0) * 5%)) scale(var(--zoom));transform-origin:center}
-.card span{font-size:44px;font-weight:700;letter-spacing:4px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 34px))}
+.card span{padding:12px 32px;border-radius:999px;background:${color.bg};border:1.5px solid ${color.border};font-size:38px;font-weight:700;letter-spacing:3px;color:${color.muted};opacity:var(--lead-in,1);transform:translateY(calc((1 - var(--lead-in,1)) * 34px))}
 .card p{line-height:1.3;font-weight:800;text-align:center;color:${accent};overflow-wrap:anywhere;text-wrap:balance;opacity:var(--body-in,1);transform:translateY(calc((1 - var(--body-in,1)) * 52px)) scale(calc(.88 + .12 * var(--pop, 1)))}
-.card.solid{background:${accent}}
-.card.solid span{color:${color.panel};opacity:min(.8,calc(var(--enter) * 1.3))}
-.card.solid p{color:${color.panel}}
+.card.solid{background:${accent};border-color:${accent}}
+.card.solid span{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.28);color:${color.solidInk};opacity:min(.92,calc(var(--enter) * 1.3))}
+.card.solid p{color:${color.solidInk}}
 .subtitle{position:absolute;left:${contentLeft}px;right:${contentRight}px;top:${contentTop + 950}px;height:200px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:64px;line-height:1.35;font-weight:800}
 .subtitle p{text-wrap:balance}
 .subtitle span{color:color-mix(in srgb,${accent} calc(clamp(0,var(--lit) - var(--i),1) * 100%),${color.ink})}
@@ -348,6 +401,8 @@ ${logo ? `.brand-logo{position:absolute;right:${safe.right + 30}px;top:${safe.to
 <html lang="zh-CN" style="${motionStyle(input.motion)}"><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:${frame.width}px;height:${frame.height}px;overflow:hidden;background:${color.bg};color:${color.ink};font-family:"Microsoft YaHei","PingFang SC","Noto Sans SC","Source Han Sans SC",sans-serif}
+mark{background:linear-gradient(transparent 58%,${color.mark} 58%,${color.mark} 92%,transparent 92%);color:inherit;padding:0 4px}
+.card.solid mark{background:rgba(255,255,255,.22);border-radius:8px;padding:0 8px}
 .progress i{position:relative;flex:1;border-radius:5px;overflow:hidden;background:${color.track}}
 .progress i.on{background:${accent}}
 .progress i.now::after{content:"";position:absolute;left:0;top:0;bottom:0;width:calc(var(--bar) * 100%);background:${accent}}
@@ -483,6 +538,11 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
   });
   graph.push(`${input.narration.map((_, position) => `[n${position}]`).join('')}concat=n=${input.narration.length}:v=0:a=1[nar]`);
   let audioBase = 'nar';
+  if (input.bgm?.ducking) {
+    // 提前在混音效前拆出纯旁白侧链：既保证音效不压低 BGM，也避免同一 [nar] 标签被重复消费导致 ffmpeg 报错。
+    graph.push('[nar]asplit=2[narmix][narside]');
+    audioBase = 'narmix';
+  }
   const activeEffects = (input.soundEffects ?? []).filter(effect => effect.path && effect.at < input.total);
   for (const [index, effect] of activeEffects.entries()) {
     const start = Math.max(0, effect.at);
@@ -508,7 +568,6 @@ export function buildFfmpegArgs(input: ComposeInput, listPath: string): string[]
     ].filter(Boolean).join(',');
     graph.push(`[${inputIndex}:a]aresample=44100,${AUDIO_FORMAT},volume=${input.bgm.volume.toFixed(3)},atrim=end=${total}${fades ? `,${fades}` : ''}[bg]`);
     if (input.bgm.ducking) {
-      graph.push('[nar]asplit=2[narout][narside]');
       graph.push('[bg][narside]sidechaincompress=threshold=0.025:ratio=8:attack=20:release=320:makeup=1[bgducked]');
       graph.push(`[${audioBase}][bgducked]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]`);
     } else {
@@ -578,4 +637,51 @@ export function buildExternalBgmArgs(input: ExternalBgmInput): string[] {
     '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-ar', '44100',
     '-movflags', '+faststart', '-t', duration, input.output
   ];
+}
+
+export type PlatformFitInput = {
+  source: string;
+  output: string;
+  frame: VideoFrameSpec;
+  sourceWidth: number;
+  sourceHeight: number;
+  hasAudio: boolean;
+  maxSeconds?: number;
+};
+
+/**
+ * 原生 FFmpeg 平台画布适配（替代外部 Python fit.py 脚本）：
+ * 比例一致时直接 lanczos 缩放，比例不同时用高斯模糊暗化原画面铺底 + 原比例居中叠放，统一 30fps 与 +faststart。
+ */
+export function buildPlatformFitFfmpegArgs(input: PlatformFitInput): string[] {
+  const { width, height } = input.frame;
+  const srcRatio = input.sourceHeight > 0 ? input.sourceWidth / input.sourceHeight : 0;
+  const dstRatio = width / height;
+  const sameAspect = srcRatio > 0 && Math.abs(srcRatio - dstRatio) <= 0.015;
+  const videoFilter = sameAspect
+    ? `[0:v]fps=${VIDEO_FPS},scale=${width}:${height}:flags=lanczos,setsar=1,format=yuv420p[vout]`
+    : [
+        `[0:v]fps=${VIDEO_FPS},split=2[vbg][vfg]`,
+        `[vbg]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},boxblur=32:2,eq=brightness=-0.06[bg]`,
+        `[vfg]scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos[fg]`,
+        `[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,format=yuv420p[vout]`
+      ].join(';');
+
+  const args = [
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', input.source,
+    '-filter_complex', videoFilter,
+    '-map', '[vout]'
+  ];
+  if (input.hasAudio) {
+    args.push('-map', '0:a:0', '-c:a', 'aac', '-b:a', '160k', '-ar', '44100');
+  } else {
+    args.push('-an');
+  }
+  args.push('-c:v', 'libx264', '-preset', 'medium', '-crf', '20', '-r', String(VIDEO_FPS), '-pix_fmt', 'yuv420p');
+  if (input.maxSeconds && input.maxSeconds > 0) {
+    args.push('-t', input.maxSeconds.toFixed(3));
+  }
+  args.push('-movflags', '+faststart', input.output);
+  return args;
 }

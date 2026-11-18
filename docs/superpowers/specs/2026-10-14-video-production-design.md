@@ -128,3 +128,11 @@
 5. 视频帧背景统一为白色，旧 `warm / clean / night` 配置仅为数据兼容，不再产生米色或深色画面。视频模块不读取个人 IP 素材。
 - 渲染时 BGM 循环到视频长度，默认 0.6 秒淡入、最后 2 秒淡出，并可用旁白作为 sidechain 触发自动闪避；口播结束时 BGM 平滑恢复，配音轨本身不做衰减。
 - BGM 来源、自动模板版本、解析后的曲风、本地文件路径、音量、闪避开关和淡入淡出都进入成片签名，修改任意一项都会把旧成片标成需要重新渲染。
+
+
+## 视频工作台 2.0 与下游分发合流（2026-11-18）
+
+1. **模块化双页签工作台**：`VideoWorkbenchPanel.tsx` 拆分为顶层 `Tabs`（「视频制作」双栏工作台 + 「多平台分发」全宽承载 `PublisherTab`），通过 `useVisited` + `KeepAlive` 保活；新建栏使用独立草稿状态，切换新建路线不再篡改已选项目。
+2. **恢复三套真实画面配色与静帧极速合并**：`video-compose.ts` 恢复 `warm`（暖米）、`clean`（素白）、`night`（深邃 `#1E2636`，亮度约 14.5% > `blackdetect` 10% 阈值，避免暗底误判黑帧），支持画面大字 `【重点】` 高亮（`<mark>`），`FRAME_TEMPLATE_VERSION` 升至 `11`；移除未使用的连续浮点 `accent` 变量，纯文字镜恢复每条字幕 1 张静帧合并。视频画面帧本身继续不读取个人 IP 素材；**主封面**步骤新增 `video-local-cover.ts` 本地 HTML 模板（0 成本出竖版 `1080×1920` / 横版 `1920×1080`），可选叠加 `ipLibrary.selections().video` 的 IP 角色。
+3. **FFmpeg 混音与内置画布适配修复**：开启旁白闪避时先对 `[nar]` 执行 `asplit=2[narmix][narside]`，消除 `[nar]` 重复消费与悬空 `[narout]` 导致的合成失败；`video-skill-adapters.ts` 的 `fitForPlatform` 改用内置 `buildPlatformFitFfmpegArgs`（高斯模糊背景 + 居中缩放，脱离外部 Python 脚本），无 BGM 分支自动检测并补 `-movflags +faststart`，ASR 转录按 SRT 自动切分多镜章节供 B 站时间轴使用。
+4. **网络、流媒体与分发接缝**：`video-tts.ts` 注入 Electron `net.fetch` 走系统代理；主进程注册 `sydney-video://project/{id}` 流式协议供 `<video>` 原生试看；`parseRenderAssets` 保留 `'faststart'` 质检项；更换主封面自动清理 `cover-variants/` 缓存；小红书发布视图自动同步小红书模块已有 `web_session`。

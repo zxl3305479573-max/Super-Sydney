@@ -9,3 +9,5 @@ release/
 __pycache__/
 .pi/tmp/
 /tmp-*/
+/.tmp-*/
+/.dist-*.log

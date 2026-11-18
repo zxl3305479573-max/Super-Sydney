@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { XhsAccount, XhsHotNote, XhsHotspotResult, XhsNote, XhsNoteStat, XhsNoteStatus, XhsNoteType, XhsReport, XhsStatMetrics } from '../shared.ts';
+import type { XhsAccount, XhsHotNote, XhsHotspotResult, XhsNote, XhsNoteIntent, XhsNoteStat, XhsNoteStatus, XhsNoteType, XhsReport, XhsStatMetrics } from '../shared.ts';
 import { HOTSPOT_CACHE_TTL_MS } from './xhs-hotspot.ts';
-import { XHS_NOTE_TYPES } from './xhs-catalog.ts';
+import { XHS_NOTE_INTENTS, XHS_NOTE_TYPES } from './xhs-catalog.ts';
 import type { XhsStatInput } from './xhs-stats.ts';
 import { emptyXhsMetrics } from './xhs-stats.ts';
 import { normalizeTitle } from './article-stats.ts';
@@ -11,6 +11,7 @@ import { normalizeTitle } from './article-stats.ts';
 export const XHS_NOTE_STATUSES: XhsNoteStatus[] = ['idea', 'body', 'title', 'visual', 'packaged'];
 const statusSet = new Set<XhsNoteStatus>(XHS_NOTE_STATUSES);
 const typeSet = new Set<XhsNoteType>(XHS_NOTE_TYPES.map(item => item.value));
+const intentSet = new Set<XhsNoteIntent>(XHS_NOTE_INTENTS.map(item => item.value));
 const DEFAULT_ACCOUNT_NAME = '我的小红书号';
 
 function columns(db: DatabaseSync, table: string): Set<string> {
@@ -57,6 +58,7 @@ export function migrateXhsTables(db: DatabaseSync): void {
     ip_id: "TEXT NOT NULL DEFAULT ''"
   });
   addColumns(db, 'xhs_notes', {
+    intent: "TEXT NOT NULL DEFAULT 'organic'",
     material: "TEXT NOT NULL DEFAULT ''",
     writer_json: "TEXT NOT NULL DEFAULT ''",
     cards_json: "TEXT NOT NULL DEFAULT ''",
@@ -136,10 +138,14 @@ export function deleteXhsAccount(db: DatabaseSync, id: number): void {
 export function xhsNoteFromRow(row: Record<string, unknown>): XhsNote {
   const status = String(row.status ?? 'idea') as XhsNoteStatus;
   const noteType = String(row.note_type ?? 'tutorial') as XhsNoteType;
+  const rawIntent = String(row.intent ?? 'organic') as XhsNoteIntent;
+  const intent: XhsNoteIntent = intentSet.has(rawIntent) ? rawIntent : 'organic';
   const text = (key: string) => String(row[key] ?? '');
   return {
     id: Number(row.id), accountId: Number(row.account_id),
-    topic: text('topic'), noteType: typeSet.has(noteType) ? noteType : 'tutorial', material: text('material'),
+    topic: text('topic'), noteType: typeSet.has(noteType) ? noteType : 'tutorial',
+    ...(intent !== 'organic' ? { intent } : {}),
+    material: text('material'),
     title: text('title'), body: text('body'), tagsJson: text('tags_json'), sourceJson: text('source_json'),
     status: statusSet.has(status) ? status : 'idea',
     writerJson: text('writer_json'), titleCandidatesJson: text('title_candidates_json'), checksJson: text('checks_json'),
@@ -174,7 +180,7 @@ export function createXhsNote(db: DatabaseSync, accountId: number, topic: unknow
 }
 
 const NOTE_COLUMNS: Record<string, string> = {
-  topic: 'topic', noteType: 'note_type', material: 'material', title: 'title', body: 'body', tagsJson: 'tags_json', status: 'status',
+  topic: 'topic', noteType: 'note_type', intent: 'intent', material: 'material', title: 'title', body: 'body', tagsJson: 'tags_json', status: 'status',
   writerJson: 'writer_json', titleCandidatesJson: 'title_candidates_json', checksJson: 'checks_json', cardsJson: 'cards_json',
   coverPath: 'cover_path', imagesJson: 'images_json', candidatesJson: 'candidates_json', basisJson: 'basis_json', exportPath: 'export_path'
 };
@@ -184,6 +190,7 @@ export function updateXhsNote(db: DatabaseSync, id: number, patch: Partial<XhsNo
   getXhsNote(db, id);
   if (patch.status !== undefined && !statusSet.has(patch.status)) throw new Error('未知的笔记状态');
   if (patch.noteType !== undefined && !typeSet.has(patch.noteType)) throw new Error('未知的笔记类型');
+  if (patch.intent !== undefined && patch.intent !== '' as never && !intentSet.has(patch.intent)) throw new Error('未知的商业角色');
   const entries = Object.entries(patch).filter(([key]) => NOTE_COLUMNS[key]);
   if (entries.length) {
     const sets = entries.map(([key]) => `${NOTE_COLUMNS[key]}=?`);

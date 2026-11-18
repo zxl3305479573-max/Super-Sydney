@@ -1,10 +1,11 @@
 import type {
-  XhsAccount, XhsBasis, XhsCardPlan, XhsCheckItem, XhsCheckReport, XhsCandidate, XhsFunnelLayer, XhsGenerateStage, XhsImageItem, XhsNote, XhsNoteStatus,
+  XhsAccount, XhsBasis, XhsCardItem, XhsCardLayout, XhsCardPage, XhsCardPlan, XhsCardStat, XhsCheckItem, XhsCheckReport, XhsCandidate, XhsFunnelLayer, XhsGenerateStage, XhsImageItem, XhsMascotMode, XhsNote, XhsNoteStatus,
   XhsPositioning, XhsPositioningTurn, XhsRouterAdvice, XhsStepKey, XhsTitleCandidate, XhsTitleWorkshop, XhsWriterMeta
 } from '../shared.ts';
 import {
-  XHS_BODY_LIMIT, XHS_CHECKS, XHS_FUNNEL_LAYERS, XHS_NOTE_TYPES, XHS_RISK_EXCEPTIONS, XHS_RISK_WORDS, XHS_TAG_RANGE, XHS_TITLE_LIMIT, xhsCardStyle
+  XHS_AI_CLICHES, XHS_BODY_LIMIT, XHS_CARD_LAYOUTS, XHS_CHECKS, XHS_FUNNEL_LAYERS, XHS_NOTE_INTENTS, XHS_NOTE_TYPES, XHS_RISK_EXCEPTIONS, XHS_RISK_WORDS, XHS_TAG_RANGE, XHS_TITLE_LIMIT, xhsCardStyle
 } from './xhs-catalog.ts';
+import { formatCardItemLine } from './xhs-cards.ts';
 
 /**
  * 小红书笔记流水线的纯规则：内容指纹、步骤状态、失效规则、本地检测、导出门槛、向导规则。
@@ -111,10 +112,12 @@ export function addCandidates(note: Pick<XhsNote, 'imagesJson' | 'coverPath'> & 
 export function readWriterMeta(note: Pick<XhsNote, 'writerJson'>): XhsWriterMeta | null {
   const value = parse<Partial<XhsWriterMeta> | null>(note.writerJson, null);
   if (!value || typeof value !== 'object') return null;
+  const takeaway = String(value.coreTakeaway ?? '').trim();
   return {
     opening: Array.isArray(value.opening) ? value.opening.map(String) : [],
     outline: Array.isArray(value.outline) ? value.outline.map(String) : [],
-    interaction: String(value.interaction ?? '')
+    interaction: String(value.interaction ?? ''),
+    ...(takeaway ? { coreTakeaway: takeaway } : {})
   };
 }
 export function readTitleWorkshop(note: Pick<XhsNote, 'titleCandidatesJson'>): XhsTitleWorkshop | null {
@@ -125,17 +128,53 @@ export function readCheckReport(note: Pick<XhsNote, 'checksJson'>): XhsCheckRepo
   const value = parse<XhsCheckReport | null>(note.checksJson, null);
   return value && Array.isArray(value.items) ? value : null;
 }
+const CARD_LAYOUT_KEYS = new Set<string>(XHS_CARD_LAYOUTS.map(item => item.key));
+const MASCOT_MODES = new Set<string>(['all', 'bookends', 'none']);
+
 export function readCardPlan(note: Pick<XhsNote, 'cardsJson'>): XhsCardPlan | null {
   const value = parse<XhsCardPlan | null>(note.cardsJson, null);
   if (!value || !Array.isArray(value.pages)) return null;
+  const keyFacts = Array.isArray(value.keyFacts) ? value.keyFacts.map(item => String(item).trim()).filter(Boolean) : [];
   return {
     style: xhsCardStyle(String(value.style ?? '')).key,
-    pages: value.pages.flatMap(page => {
+    pages: value.pages.flatMap((page): XhsCardPage[] => {
       if (!page || typeof page !== 'object') return [];
       const heading = String(page.heading ?? '').trim();
-      const points = Array.isArray(page.points) ? page.points.map(item => String(item).trim()).filter(Boolean) : [];
-      return heading || points.length ? [{ heading, points, emphasis: String(page.emphasis ?? '').trim() }] : [];
-    })
+      const rawItems: XhsCardItem[] = Array.isArray(page.items) ? page.items.flatMap(entry => {
+        if (!entry || typeof entry !== 'object') return [];
+        const record = entry as Record<string, unknown>;
+        const title = String(record.title ?? '').trim();
+        const detail = String(record.detail ?? '').trim();
+        const badge = String(record.badge ?? '').trim();
+        return title || detail ? [{ title, detail, ...(badge ? { badge } : {}) }] : [];
+      }) : [];
+      const rawPoints = Array.isArray(page.points) ? page.points.map(item => String(item).trim()).filter(Boolean) : [];
+      const points = rawPoints.length ? rawPoints : rawItems.map(formatCardItemLine).filter(Boolean);
+      const stats: XhsCardStat[] = Array.isArray(page.stats) ? page.stats.flatMap(entry => {
+        if (!entry || typeof entry !== 'object') return [];
+        const record = entry as Record<string, unknown>;
+        const val = String(record.value ?? '').trim();
+        const label = String(record.label ?? '').trim();
+        return val || label ? [{ value: val, label }] : [];
+      }).slice(0, 3) : [];
+      if (!heading && !points.length && !rawItems.length && !stats.length) return [];
+      const layout = CARD_LAYOUT_KEYS.has(String(page.layout ?? '')) ? String(page.layout) as XhsCardLayout : undefined;
+      const kicker = String(page.kicker ?? '').trim();
+      const lead = String(page.lead ?? '').trim();
+      return [{
+        heading,
+        points,
+        emphasis: String(page.emphasis ?? '').trim(),
+        ...(layout ? { layout } : {}),
+        ...(kicker ? { kicker } : {}),
+        ...(lead ? { lead } : {}),
+        ...(rawItems.length ? { items: rawItems } : {}),
+        ...(stats.length ? { stats } : {})
+      }];
+    }),
+    ...(keyFacts.length ? { keyFacts } : {}),
+    ...(MASCOT_MODES.has(String(value.mascotMode ?? '')) && value.mascotMode !== 'all' ? { mascotMode: value.mascotMode as XhsMascotMode } : {}),
+    ...(value.useIpPalette === true ? { useIpPalette: true } : {})
   };
 }
 export function readPositioning(account: Pick<XhsAccount, 'positioningJson'>): XhsPositioning | null {
@@ -154,10 +193,10 @@ export function currentBasis(note: XhsNote): Required<XhsBasis> {
   const tags = readTags(note).join('|');
   const images = readImages(note).map(item => item.path).join('|');
   return {
-    body: note.noteType,
+    body: note.intent && note.intent !== 'organic' ? `${note.noteType}:${note.intent}` : note.noteType,
     title: fingerprint(note.body),
     cover: fingerprint(note.title),
-    cards: fingerprint(note.body),
+    cards: fingerprint(note.material.trim() ? `${note.body}\n${note.material}` : note.body),
     checks: fingerprint(`${note.title}\n${note.body}\n${tags}`),
     package: fingerprint(`${note.title}\n${note.body}\n${tags}\n${note.coverPath}\n${images}`)
   };
@@ -309,10 +348,11 @@ export function assertXhsExportable(note: XhsNote): void {
  * 选定标题时顺手盖上「标题依据当前正文」的指纹——人选的标题就是对当前正文的确认。
  */
 export function prepareXhsEdit(note: XhsNote, patch: Partial<XhsNote>): Partial<XhsNote> {
-  const allowed: Array<keyof XhsNote> = ['topic', 'noteType', 'material', 'title', 'body', 'tagsJson', 'writerJson', 'cardsJson'];
+  const allowed: Array<keyof XhsNote> = ['topic', 'noteType', 'intent', 'material', 'title', 'body', 'tagsJson', 'writerJson', 'cardsJson'];
   const result: Partial<XhsNote> = {};
   for (const key of allowed) if (patch[key] !== undefined) (result as Record<string, unknown>)[key] = patch[key];
   if (result.noteType !== undefined && !XHS_NOTE_TYPES.some(item => item.value === result.noteType)) throw new Error('未知的笔记类型');
+  if (result.intent !== undefined && !XHS_NOTE_INTENTS.some(item => item.value === result.intent)) throw new Error('未知的商业角色');
   if (result.tagsJson !== undefined) result.tagsJson = JSON.stringify(normalizeTags(parse<unknown>(String(result.tagsJson), [])));
   if (result.cardsJson !== undefined && String(result.cardsJson).trim()) {
     const plan = readCardPlan({ cardsJson: String(result.cardsJson) });
@@ -350,6 +390,14 @@ export function findRiskWords(value: string): Array<{ word: string; reason: stri
   let text = value;
   for (const exception of XHS_RISK_EXCEPTIONS) text = text.split(exception).join('');
   return XHS_RISK_WORDS.filter(item => text.includes(item.word));
+}
+
+/** 扫描典型 AI 腔与空洞营销套话，供编辑区实时提醒与去 AI 味精修参考。 */
+export function findAiCliches(value: string): string[] {
+  return XHS_AI_CLICHES.flatMap(entry => {
+    const match = value.match(entry.pattern);
+    return match ? [`「${match[0]}」· ${entry.label}`] : [];
+  });
 }
 
 const CONTACT_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
@@ -413,15 +461,22 @@ export function routeByRules(input: { hasPositioning: boolean; dominantLayer: Xh
   return chainAdvice('B', '', '定位已经有了，按日常产出节奏走：找热点 → 写正文 → 起标题 → 做视觉 → 发布。', 'rule');
 }
 
-export function chainAdvice(chain: 'A' | 'B' | 'C', layer: XhsFunnelLayer | '', reason: string, source: 'rule' | 'model'): XhsRouterAdvice {
+export function chainAdvice(chain: 'A' | 'B' | 'C' | 'D', layer: XhsFunnelLayer | '', reason: string, source: 'rule' | 'model'): XhsRouterAdvice {
   if (chain === 'A') {
     return { chain, layer, reason, source, title: '链路 A · 从零起号', steps: [
-      { tab: 'positioning', label: '账号定位' }, { tab: 'hotspot', label: '热点选题' }, { tab: 'notes', label: '正文 → 标题 → 视觉 → 发布包' }
+      { tab: 'positioning', label: '账号定位（含变现路径盘点）' }, { tab: 'hotspot', label: '热点选题' }, { tab: 'notes', label: '正文 → 标题 → 视觉 → 发布包' }
     ] };
   }
   if (chain === 'B') {
     return { chain, layer, reason, source, title: '链路 B · 日常产出', steps: [
-      { tab: 'hotspot', label: '热点选题' }, { tab: 'notes', label: '正文 → 标题 → 视觉 → 发布包' }
+      { tab: 'hotspot', label: '热点选题（优先高藏赞比种草题）' }, { tab: 'notes', label: '正文 → 标题 → 视觉 → 发布包' }
+    ] };
+  }
+  if (chain === 'D') {
+    return { chain, layer: '', reason, source, title: '链路 D · 商业转化与放量', steps: [
+      { tab: 'positioning', label: '核对变现路径与禁入类目红线' },
+      { tab: 'notes', label: '按「商单样片 / 买手挂车 / 副业服务」角色产出代表作' },
+      { tab: 'analytics', label: '复盘筛选高点击高收藏种子笔记（可追投聚光搜索，未跑通勿投薯条）' }
     ] };
   }
   const target = XHS_FUNNEL_LAYERS.find(item => item.key === layer);

@@ -97,6 +97,9 @@ const api: SydneyApi = {
   generateVideoStage: (id, stage) => ipcRenderer.invoke('video:generate', id, stage),
   generateVideoCover: id => ipcRenderer.invoke('video:cover:generate', id),
   chooseVideoCover: id => ipcRenderer.invoke('video:cover:choose', id),
+  renderVideoLocalCover: (id, input) => ipcRenderer.invoke('video:cover:render-local', id, input),
+  chooseVideoSource: workflow => ipcRenderer.invoke('video:source:choose', workflow),
+  readVideoShotAudio: (id, shotPosition) => ipcRenderer.invoke('video:voice:preview', id, shotPosition),
   getVideoAssets: id => ipcRenderer.invoke('video:assets', id),
   exportVideoProject: id => ipcRenderer.invoke('video:export', id),
   openVideoPackage: id => ipcRenderer.invoke('video:open-package', id),
@@ -118,6 +121,10 @@ const api: SydneyApi = {
   videoPublisherViewGo: (platform, action) => ipcRenderer.invoke('video-publish:view:go', platform, action),
   openVideoPublisherInBrowser: platform => ipcRenderer.invoke('video-publish:view:external', platform),
   publishVideoToPlatforms: (id, platforms, mode) => ipcRenderer.invoke('video-publish:run', id, platforms, mode),
+  getVideoPublishPack: id => ipcRenderer.invoke('video-publish:pack:get', id),
+  saveVideoPublishPack: (id, patch) => ipcRenderer.invoke('video-publish:pack:save', id, patch),
+  generateVideoPublishPack: id => ipcRenderer.invoke('video-publish:pack:generate', id),
+  generateVideoCoverVariants: id => ipcRenderer.invoke('video-publish:pack:variants', id),
   getVideoTtsStatus: () => ipcRenderer.invoke('video:tts:status'),
   getFfmpegStatus: () => ipcRenderer.invoke('video:ffmpeg:status'),
   saveVideoTtsSettings: patch => ipcRenderer.invoke('video:tts:save', patch),
@@ -139,6 +146,7 @@ const api: SydneyApi = {
   generateXhsNote: (id, stage, options) => ipcRenderer.invoke('xhs:notes:generate', id, stage, options),
   confirmXhsBasis: (id, key) => ipcRenderer.invoke('xhs:notes:confirm', id, key),
   generateXhsCover: (id, brief) => ipcRenderer.invoke('xhs:cover:generate', id, brief),
+  draftXhsCoverBrief: (id, preset, hint) => ipcRenderer.invoke('xhs:cover:brief', id, preset, hint),
   chooseXhsCover: id => ipcRenderer.invoke('xhs:cover:choose', id),
   renderXhsIpCover: (id, input) => ipcRenderer.invoke('xhs:ip-cover:render', id, input),
   renderXhsCards: id => ipcRenderer.invoke('xhs:cards:render', id),
@@ -232,6 +240,22 @@ const api: SydneyApi = {
     ipcRenderer.on('site:changed', listener);
     return () => ipcRenderer.removeListener('site:changed', listener);
   },
+  onOpsChanged: callback => {
+    const listener = () => callback();
+    ipcRenderer.on('ops:changed', listener);
+    return () => ipcRenderer.removeListener('ops:changed', listener);
+  },
+  getOpsOverview: () => ipcRenderer.invoke('ops:overview'),
+  upsertOpsEpisode: input => ipcRenderer.invoke('ops:episode:upsert', input),
+  deleteOpsEpisode: id => ipcRenderer.invoke('ops:episode:delete', id),
+  updateOpsTask: (episodeId, platform, state, patch) => ipcRenderer.invoke('ops:task:update', episodeId, platform, state, patch),
+  getOpsEpisodeReview: (episodeId, ageDays) => ipcRenderer.invoke('ops:review:get', episodeId, ageDays),
+  syncOpsPlatforms: platforms => ipcRenderer.invoke('ops:sync:run', platforms),
+  getFeishuConfig: () => ipcRenderer.invoke('ops:feishu:get'),
+  saveFeishuConfig: draft => ipcRenderer.invoke('ops:feishu:save', draft),
+  testFeishuWebhook: () => ipcRenderer.invoke('ops:feishu:test'),
+  sendFeishuDailyReport: () => ipcRenderer.invoke('ops:feishu:notify-daily'),
+  sendFeishuEpisodeReview: (episodeId, ageDays) => ipcRenderer.invoke('ops:feishu:notify-review', episodeId, ageDays),
   onWindowChromeChanged: callback => {
     const listener = (_event: unknown, state: WindowChromeState) => callback(state);
     ipcRenderer.on('window:chrome-changed', listener);

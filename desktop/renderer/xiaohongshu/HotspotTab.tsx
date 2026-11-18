@@ -28,6 +28,7 @@ export function HotspotTab({ ctx, viewNotes, onClearViewNotes }: { ctx: XhsConte
   const [days, setDays] = useState(7);
   const [pageSize, setPageSize] = useState(20);
   const [source, setSource] = useState<XhsHotspotSource>('auto');
+  const [sortBy, setSortBy] = useState<'default' | 'saveRatio' | 'interactive'>('default');
   const [result, setResult] = useState<XhsHotspotResult | null>(null);
   const [ideas, setIdeas] = useState<XhsTopicIdea[]>([]);
   const { busy, run, locked } = useBusy(notify);
@@ -72,8 +73,20 @@ export function HotspotTab({ ctx, viewNotes, onClearViewNotes }: { ctx: XhsConte
         {result.tips && <p className="xhs-hint">{result.tips}</p>}
         {result.relatedSearches.length > 0 && <div className="xhs-chip-row"><span className="xhs-chip-label">相关搜索</span>{result.relatedSearches.slice(0, 10).map(item => <button key={item.keyword} className="chip" onClick={() => void search(item.keyword)}>{item.keyword}<small>{item.count}</small></button>)}</div>}
         {result.hotTopics.length > 0 && <div className="xhs-chip-row"><span className="xhs-chip-label">热门话题</span>{result.hotTopics.slice(0, 8).map(item => <span key={item.topic} className="chip chip-soft">#{item.topic}</span>)}</div>}
+        {result.notes.length > 1 && result.source === 'redfox' && <div className="xhs-chip-row">
+          <span className="xhs-chip-label">排序筛选</span>
+          {([
+            { key: 'default', label: '综合默认' },
+            { key: 'saveRatio', label: '高藏赞比优先（找高价值种草题）' },
+            { key: 'interactive', label: '总互动最高' }
+          ] as const).map(option => <button key={option.key} type="button" className={`chip ${sortBy === option.key ? 'chip-accent' : ''}`} onClick={() => setSortBy(option.key)}>{option.label}</button>)}
+        </div>}
         {result.notes.length
-          ? <ul className="xhs-hot-list">{result.notes.map(note => <HotNoteRow key={note.id} note={note} adopted={adopted.has(note.id)} onAdopt={() => void adopt(note)} onOpen={() => openLink(note.link, notify)} />)}</ul>
+          ? <ul className="xhs-hot-list">{[...result.notes].sort((a, b) => {
+            if (sortBy === 'saveRatio') return (b.collected / Math.max(b.liked, 1)) - (a.collected / Math.max(a.liked, 1));
+            if (sortBy === 'interactive') return b.interactive - a.interactive;
+            return 0;
+          }).map(note => <HotNoteRow key={note.id} note={note} adopted={adopted.has(note.id)} onAdopt={() => void adopt(note)} onOpen={() => openLink(note.link, notify)} />)}</ul>
           : <EmptyState icon="search" title="没有查到热门笔记">换个关键词，或把时间范围放宽一些。</EmptyState>}
         {result.latest.length > 0 && result.notes.length < 5 && <>
           <h3 className="xhs-sub">近期热门参考</h3>

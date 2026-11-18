@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { VIDEO_TTS_DEFAULTS, normalizeVideoTtsSettings, readVideoTtsSettings, requestSpeech, writeVideoTtsSettings } from '../services/video-tts.ts';
+import { VIDEO_TTS_DEFAULTS, normalizeVideoTtsSettings, readVideoTtsSettings, requestSpeech, useVideoTtsFetch, writeVideoTtsSettings } from '../services/video-tts.ts';
 
 const profile = { provider: 'openai' as const, baseUrl: 'https://tts.example.com/v1', model: 'tts-model', voice: 'anna', speed: 1.1 };
 
@@ -56,4 +56,19 @@ test('speech requests fail loudly instead of saving an error page as audio', asy
   await assert.rejects(() => requestSpeech(profile, 'k', '文本', async () => new Response('{"error":"bad voice"}', { status: 400 })), /HTTP 400.*bad voice/);
   await assert.rejects(() => requestSpeech(profile, 'k', '文本', async () => new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } })), /不是音频/);
   await assert.rejects(() => requestSpeech(profile, 'k', '文本', async () => new Response(new Uint8Array(), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } })), /没有返回音频/);
+
+  // 注入代理兼容 fetch 时默认使用它，网络 fetch failed 会展开底层 cause 方便排查代理问题。
+  let injectedHit = false;
+  useVideoTtsFetch(async () => {
+    injectedHit = true;
+    const err = new Error('fetch failed') as Error & { cause?: { code: string } };
+    err.cause = { code: 'UND_ERR_CONNECT_TIMEOUT' };
+    throw err;
+  });
+  try {
+    await assert.rejects(() => requestSpeech(profile, 'k', '文本'), /UND_ERR_CONNECT_TIMEOUT.*代理/);
+    assert.equal(injectedHit, true);
+  } finally {
+    useVideoTtsFetch((...args) => fetch(...args));
+  }
 });

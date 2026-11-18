@@ -58,8 +58,10 @@ export function AnalyticsTab({ ctx }: { ctx: XhsContext }) {
         <div className="xhs-table-wrap"><table className="flow-table xhs-stat-table"><thead><tr><th>笔记</th>{XHS_FUNNEL_LAYERS.map(layer => <th key={layer.key} title={layer.metric}>{layer.label}</th>)}<th>卡点</th><th /></tr></thead><tbody>
           {view.rows.map(row => {
             const linked = notes.find(note => note.id === row.stat.noteId);
+            const boostSeed = !row.weakest && (row.ratios.click ?? 0) >= 1.15 && Math.max(row.ratios.save ?? 0, row.ratios.engagement ?? 0) >= 1.25;
+            const stopLoss = row.weakest === 'click' || row.weakest === 'engagement' || row.weakest === 'save';
             return <tr key={row.stat.id}>
-              <td><strong>{row.stat.title}</strong><small>{row.stat.publishDate || '日期未知'}{linked ? ' · 已关联笔记' : ''}</small></td>
+              <td><strong>{row.stat.title}</strong><small>{row.stat.publishDate || '日期未知'}{linked ? ' · 已关联笔记' : ''}{boostSeed ? ' · 转化已跑通（可做聚光搜索追投 / 挂车种子）' : stopLoss ? ' · 内容未跑通（切勿盲目投薯条）' : ''}</small></td>
               {XHS_FUNNEL_LAYERS.map(layer => {
                 const ratio = row.ratios[layer.key];
                 return <td key={layer.key} className={ratio === null ? '' : ratio < WEAK_RATIO ? 'is-weak' : ratio > 1.5 ? 'is-strong' : ''}>

@@ -300,7 +300,7 @@ export type ArticleStatsImportResult = { file: string; added: number; updated: n
  */
 export type VideoPlatform = 'douyin' | 'shipinhao' | 'xiaohongshu' | 'bilibili' | 'general';
 export type VideoPublishPlatform = Exclude<VideoPlatform, 'general'>;
-export type VideoPublishMode = 'draft' | 'publish';
+export type VideoPublishMode = 'draft' | 'draft-force' | 'publish';
 export const VIDEO_PUBLISH_PLATFORMS: ReadonlyArray<{ value: VideoPublishPlatform; label: string }> = [
   { value: 'douyin', label: '抖音' },
   { value: 'shipinhao', label: '微信视频号' },
@@ -323,6 +323,8 @@ export type VideoPublishResultItem = VideoPublishProgress & {
   bodyChars: number;
   videoPath: string;
   url: string;
+  coverUploaded?: boolean;
+  locked?: boolean;
 };
 export type VideoPublishResult = {
   jobId: string;
@@ -338,6 +340,51 @@ export type VideoPublisherViewState = {
   canGoBack: boolean;
   visible: boolean;
   error: string;
+};
+export type VideoCoverRatio = '9:16' | '3:4' | '4:3' | '16:9';
+export const COVER_RATIO_SPECS: Record<VideoCoverRatio, { width: number; height: number; label: string; fileSlug: string }> = {
+  '9:16': { width: 1080, height: 1920, label: '9:16 竖屏全画幅', fileSlug: 'cover-9x16.jpg' },
+  '3:4': { width: 1080, height: 1440, label: '3:4 竖版（小红书/抖音主页）', fileSlug: 'cover-3x4.jpg' },
+  '4:3': { width: 1440, height: 1080, label: '4:3 横版（视频号/B站兼容）', fileSlug: 'cover-4x3.jpg' },
+  '16:9': { width: 1920, height: 1080, label: '16:9 宽屏（B站标准封面）', fileSlug: 'cover-16x9.jpg' }
+};
+export const ALL_COVER_RATIOS: VideoCoverRatio[] = ['3:4', '4:3', '16:9', '9:16'];
+export type VideoCoverVariantView = {
+  ratio: VideoCoverRatio;
+  label: string;
+  path: string;
+  thumbnail: string;
+};
+export type VideoPlatformCopy = {
+  title: string;
+  body: string;
+  tags: string[];
+  coverRatio: VideoCoverRatio;
+  skip: boolean;
+};
+export type VideoPublishPack = {
+  projectId: number;
+  scheduledAt: string;
+  copies: Record<VideoPublishPlatform, VideoPlatformCopy>;
+  variants: Partial<Record<VideoCoverRatio, string>>;
+  updatedAt: string;
+};
+export type VideoPublishPackView = {
+  pack: VideoPublishPack;
+  coverVariants: VideoCoverVariantView[];
+  validation: VideoPublishValidation;
+  episode: OpsEpisodeWithTasks | null;
+};
+export type VideoPublishCheckIssue = {
+  platform: VideoPublishPlatform | 'global';
+  level: 'warn' | 'error';
+  code: string;
+  message: string;
+};
+export type VideoPublishValidation = {
+  ok: boolean;
+  faststart: boolean | null;
+  issues: VideoPublishCheckIssue[];
 };
 export type VideoStage = 'topics' | 'script' | 'storyboard';
 export type VideoProjectStatus = 'idea' | 'script' | 'storyboard' | 'exported';
@@ -532,11 +579,19 @@ export type VideoTtsSettings = {
   systemRate: number;
 };
 export type VideoTtsStatus = { settings: VideoTtsSettings; key: LlmKeyStatus; systemVoices: string[] };
+export type VideoLocalCoverStyle = 'clean' | 'warm' | 'night' | 'ip-light' | 'ip-dark';
+export type VideoLocalCoverInput = {
+  style: VideoLocalCoverStyle;
+  pose: string;
+  title: string;
+  sub: string;
+  tag: string;
+};
 export type VideoProgressTask = 'voice' | 'images' | 'preview' | 'render';
 /** labels：逐镜任务（配音、配图）里待处理的每一项叫什么，界面据此列出逐镜清单；渲染等整体任务不带。 */
 export type VideoProgress = { id: number; task: VideoProgressTask; done: number; total: number; message: string; labels?: string[] };
 export type VideoQualityCheck = {
-  key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio' | 'timeline' | 'black' | 'silence' | 'safe-area' | 'cover';
+  key: 'dimensions' | 'aspect' | 'fps' | 'duration' | 'audio' | 'timeline' | 'black' | 'silence' | 'safe-area' | 'cover' | 'faststart';
   label: string;
   status: 'ok' | 'warn' | 'error';
   detail: string;
@@ -659,27 +714,42 @@ export type IpRenderKit = {
   poses: Array<{ id: string; label: string; src: string }>;
 };
 
+export type XhsMonetizationPathKey = 'pugongying' | 'buyer' | 'personal_sale' | 'qianfan_shop' | 'expert_service' | 'local_lead';
+export type XhsPillarRole = 'traffic' | 'trust' | 'convert';
+export type XhsMonetizationPlan = {
+  primaryPath: XhsMonetizationPathKey;
+  reason: string;
+  starterMove: string;
+  warnings: string[];
+};
+
 export type XhsPositioning = {
   track: { name: string; reason: string; alternatives: string[] };
   /** 定位句：我是谁、给谁看、提供什么价值。 */
   statement: string;
   /** 人设三件套。 */
   persona: { name: string; bio: string; visual: string };
-  pillars: Array<{ name: string; description: string }>;
+  pillars: Array<{ name: string; description: string; role?: XhsPillarRole }>;
   /** 前 20 篇选题。 */
-  firstTopics: Array<{ title: string; pillar: string; noteType: XhsNoteType }>;
+  firstTopics: Array<{ title: string; pillar: string; noteType: XhsNoteType; role?: XhsPillarRole }>;
   coldStart: Array<{ phase: string; actions: string[] }>;
+  /** 变现规划（按手头资源选路径、起步动作与类目禁入提醒）；旧定位档案可缺省。 */
+  monetization?: XhsMonetizationPlan;
   generatedAt: string;
 };
 export type XhsPositioningTurn = { role: 'coach' | 'user'; text: string; questions?: string[] };
 
 export type XhsNoteStatus = 'idea' | 'body' | 'title' | 'visual' | 'packaged';
 export type XhsNoteType = 'review' | 'tutorial' | 'story' | 'list' | 'avoid' | 'share' | 'recap';
+export type XhsNoteIntent = 'organic' | 'sample' | 'affiliate' | 'service' | 'local';
+export type XhsMascotMode = 'all' | 'bookends' | 'none';
 export type XhsNote = {
   id: number;
   accountId: number;
   topic: string;
   noteType: XhsNoteType;
+  /** 本篇商业角色：日常拉新 / 蒲公英样片 / 买手挂车 / 专业副业服务 / 同城获客；默认 organic。 */
+  intent?: XhsNoteIntent;
   /** 用户自己的经验与素材：正文只能基于它写「亲身经历」，没有就按科普 / 整理口吻写。 */
   material: string;
   title: string;
@@ -711,8 +781,20 @@ export type XhsNote = {
 };
 export type XhsBasis = { body?: string; title?: string; cover?: string; cards?: string; checks?: string; package?: string };
 export type XhsStepKey = 'topic' | 'body' | 'title' | 'visual' | 'checks' | 'package';
-export type XhsGenerateStage = 'body' | 'revise' | 'titles' | 'checks' | 'cards';
-export type XhsWriterMeta = { opening: string[]; outline: string[]; interaction: string };
+export type XhsGenerateStage = 'body' | 'polish' | 'revise' | 'titles' | 'checks' | 'cards';
+export type XhsWriterMeta = { opening: string[]; outline: string[]; interaction: string; coreTakeaway?: string };
+export type XhsCoverPresetKey = 'editorial_photo' | 'magazine_poster' | 'handdrawn_board' | 'studio_3d' | 'minimal_flat';
+export type XhsInfoPresetKey = 'light_bento' | 'swiss_chart' | 'marker_sketchnote' | 'warm_guide' | 'dark_dashboard';
+export type XhsCoverGenerateInput = string | { brief?: string; preset?: XhsCoverPresetKey | string; customPrompt?: string };
+export type XhsInfoGenerateInput = 'single' | 'pages' | { mode: 'single' | 'pages'; preset?: XhsInfoPresetKey | string };
+export type XhsStructuredCoverPlan = {
+  subject: string;
+  composition: string;
+  paletteLighting: string;
+  titleHierarchy: string;
+  brief: string;
+  prompt: string;
+};
 export type XhsTitleCandidate = {
   title: string;
   method: string;
@@ -731,8 +813,41 @@ export type XhsTitleWorkshop = {
 };
 export type XhsCheckItem = { id: string; label: string; ok: boolean | null; level: 'error' | 'warn' | 'info'; detail: string; source: 'local' | 'model' };
 export type XhsCheckReport = { items: XhsCheckItem[]; checkedAt: string; modelError: string };
-export type XhsCardPage = { heading: string; points: string[]; emphasis: string };
-export type XhsCardPlan = { style: string; pages: XhsCardPage[] };
+export type XhsCardLayout = 'roadmap' | 'keypoints' | 'steps' | 'compare' | 'bento' | 'metrics' | 'checklist' | 'summary';
+export type XhsCardItem = {
+  /** 条目小标题 / 结论锚点（如「开店硬门槛」「❌ 盲目投薯条」）。 */
+  title: string;
+  /** 具体展开干货：保留数字、条件、操作路径、正反例子，支持【高亮】。 */
+  detail: string;
+  /** 可选角标胶囊（如「≥1000粉」「必看」「避坑」）。 */
+  badge?: string;
+};
+export type XhsCardStat = { value: string; label: string };
+export type XhsCardPage = {
+  heading: string;
+  points: string[];
+  emphasis: string;
+  /** 语义分镜母版：旧数据可缺省，渲染器自动按内容与位置推断。 */
+  layout?: XhsCardLayout;
+  /** 页眉章节/栏目短标。 */
+  kicker?: string;
+  /** 标题下的一句话核心判断/适用前提。 */
+  lead?: string;
+  /** 结构化干货块（小标题 + 展开细节 + 角标）。 */
+  items?: XhsCardItem[];
+  /** 数据看板版式顶部的核心数字指标。 */
+  stats?: XhsCardStat[];
+};
+export type XhsCardPlan = {
+  style: string;
+  pages: XhsCardPage[];
+  /** 先从原文/素材提取的核心硬核事实清单，防止拆页时丢失数字和关键条件。 */
+  keyFacts?: string[];
+  /** 账号选用 IP 时角色出现频率：默认 all（每页），可选 bookends（仅首尾页）或 none（不放角色）。 */
+  mascotMode?: XhsMascotMode;
+  /** 是否用当前账号 IP 的品牌强调色覆盖卡片主题强调色。 */
+  useIpPalette?: boolean;
+};
 export type XhsImageItem = { path: string; source: 'card' | 'info' | 'local'; caption: string };
 /** 候选图库里的一张图。batch 是同一次生成的批次号，界面按它分组；cover 是生成 / 选过的封面。 */
 export type XhsCandidate = { path: string; source: XhsImageItem['source'] | 'cover'; caption: string; batch: string; createdAt: string };
@@ -799,7 +914,7 @@ export type XhsTopicIdea = { title: string; pillar: string; noteType: XhsNoteTyp
 
 export type XhsFunnelLayer = 'exposure' | 'click' | 'depth' | 'engagement' | 'save' | 'follow';
 export type XhsRouterAdvice = {
-  chain: 'A' | 'B' | 'C';
+  chain: 'A' | 'B' | 'C' | 'D';
   layer: XhsFunnelLayer | '';
   title: string;
   reason: string;
@@ -835,6 +950,8 @@ export type XhsAuditResult = {
   bottleneck: string;
   actions: Array<{ priority: number; action: string; why: string }>;
   positioningAdvice: string;
+  /** 商业接单与站内转化就绪度评估（蒲公英样片、断更隐患、简介合作信号与私域违规风险）。 */
+  monetizationReadiness?: string;
 };
 export type XhsReport = { id: number; accountId: number; kind: 'audit' | 'analytics'; title: string; inputJson: string; resultJson: string; createdAt: string };
 
@@ -972,6 +1089,214 @@ export type AppUpdateState = {
   error: string;
 };
 
+/* ── 运营中控与飞书通知（借鉴麦田的分发状态机、后台只读回采与同龄复盘） ── */
+export type OpsPlatform = VideoPublishPlatform;
+export type OpsSourceType = 'video' | 'xhs' | 'wechat' | 'manual';
+export type OpsTaskState = 'planned' | 'draft' | 'scheduled' | 'published' | 'failed' | 'not_logged_in' | 'skipped';
+
+export const OPS_PLATFORM_LABELS: Record<OpsPlatform, string> = {
+  douyin: '抖音',
+  shipinhao: '微信视频号',
+  xiaohongshu: '小红书',
+  bilibili: 'B 站'
+};
+
+export const OPS_STATE_LABELS: Record<OpsTaskState, string> = {
+  planned: '计划中',
+  draft: '已填草稿·待点发布',
+  scheduled: '已定时',
+  published: '已发布',
+  failed: '异常',
+  not_logged_in: '未登录',
+  skipped: '跳过'
+};
+
+export function isOpsStateLocked(state: OpsTaskState | undefined | null): boolean {
+  return state === 'draft' || state === 'scheduled' || state === 'published';
+}
+
+export type OpsEpisode = {
+  id: number;
+  sourceType: OpsSourceType;
+  sourceId: number | null;
+  title: string;
+  scheduledAt: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type OpsPlatformTask = {
+  episodeId: number;
+  platform: OpsPlatform;
+  state: OpsTaskState;
+  detail: string;
+  postUrl: string;
+  filledTitle: string;
+  platformSchedule: string;
+  updatedAt: string;
+};
+
+export type OpsEpisodeWithTasks = OpsEpisode & {
+  tasks: OpsPlatformTask[];
+};
+
+export type OpsLogEntry = {
+  id: number;
+  ts: string;
+  episodeId: number | null;
+  platform: string;
+  action: string;
+  result: string;
+};
+
+export type OpsFollowerRecord = {
+  day: string;
+  platform: OpsPlatform;
+  total: number;
+  gain: number | null;
+  loss: number | null;
+  net: number | null;
+  source: 'live' | 'backfill';
+  collectedAt: string;
+};
+
+export type OpsMetricSnapshot = {
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  favorites: number | null;
+  shares: number | null;
+  extra?: Record<string, number | null>;
+};
+
+export type OpsMetricRecord = OpsMetricSnapshot & {
+  day: string;
+  episodeId: number;
+  platform: OpsPlatform;
+  collectedAt: string;
+};
+
+export type OpsSyncPlatformResult = {
+  platform: OpsPlatform;
+  loginOk: boolean;
+  followers: number | null;
+  backfilledDays: number;
+  matchedPosts: number;
+  linkedUrls: number;
+  scheduleWarnings: string[];
+  error: string;
+};
+
+export type OpsSyncResult = {
+  syncedAt: string;
+  results: OpsSyncPlatformResult[];
+  notified: boolean;
+};
+
+export type OpsPlatformBoardCard = {
+  platform: OpsPlatform;
+  label: string;
+  totalFollowers: number | null;
+  todayNet: number | null;
+  weekNet: number | null;
+  recentTrend: Array<{ day: string; total: number }>;
+  lastCollectedAt: string;
+  publishedCount: number;
+  draftCount: number;
+};
+
+export type OpsEpisodePlatformReview = {
+  platform: OpsPlatform;
+  label: string;
+  state: OpsTaskState;
+  postUrl: string;
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  favorites: number | null;
+  shares: number | null;
+  engageRate: number | null;
+  viewShare: number | null;
+  prevSameAgeViews: number | null;
+  viewsDeltaRatio: number | null;
+};
+
+export type OpsEpisodeReview = {
+  episode: OpsEpisode;
+  ageDays: number;
+  milestoneDay: number;
+  reviewDay: string;
+  totalViews: number;
+  totalInteractions: number;
+  overallEngageRate: number | null;
+  periodFollowerGain: number;
+  prevEpisodeTitle: string;
+  prevTotalViews: number | null;
+  totalViewsDeltaRatio: number | null;
+  comparisonNote: string;
+  platforms: OpsEpisodePlatformReview[];
+};
+
+export type OpsOverviewView = {
+  platforms: OpsPlatformBoardCard[];
+  totalFollowers: number;
+  todayNetFollowers: number;
+  weekNetFollowers: number;
+  latestEpisode: OpsEpisodeReview | null;
+  externalSummary: {
+    wechatArticles: number;
+    wechatTotalReads: number;
+    xhsNotes: number;
+    xhsTotalViews: number;
+    xhsTotalLikes: number;
+  };
+  episodes: OpsEpisodeWithTasks[];
+  recentLogs: OpsLogEntry[];
+};
+
+export type FeishuNotifySettings = {
+  notifyOnDraft: boolean;
+  notifyOnLoginExpired: boolean;
+  notifyDailyReport: boolean;
+  notifyMilestoneReview: boolean;
+};
+
+export type FeishuConfigView = {
+  webhook: LlmKeyStatus;
+  secret: LlmKeyStatus;
+  settings: FeishuNotifySettings;
+};
+
+export type FeishuConfigDraft = {
+  webhookUrl?: string;
+  signingSecret?: string;
+  settings?: Partial<FeishuNotifySettings>;
+};
+
+export type VideoPublishPackPatch = {
+  scheduledAt?: string;
+  copies?: Partial<Record<VideoPublishPlatform, Partial<VideoPlatformCopy>>>;
+  variants?: Partial<Record<VideoCoverRatio, string>>;
+};
+
+export type OpsEpisodeInput = {
+  id?: number;
+  sourceType?: OpsSourceType;
+  sourceId?: number | null;
+  title: string;
+  scheduledAt?: string;
+  notes?: string;
+  platforms?: OpsPlatform[];
+};
+
+export type OpsTaskPatch = {
+  detail?: string;
+  postUrl?: string;
+  filledTitle?: string;
+  platformSchedule?: string;
+};
+
 export interface SydneyApi {
   getAppUpdateState(): Promise<AppUpdateState>;
   checkAppUpdate(): Promise<AppUpdateState>;
@@ -1100,6 +1425,9 @@ export interface SydneyApi {
   generateVideoStage(id: number, stage: VideoStage): Promise<VideoProject>;
   generateVideoCover(id: number): Promise<VideoProject>;
   chooseVideoCover(id: number): Promise<VideoProject | null>;
+  renderVideoLocalCover(id: number, input: VideoLocalCoverInput): Promise<VideoProject>;
+  chooseVideoSource(workflow: VideoWorkflow): Promise<string | null>;
+  readVideoShotAudio(id: number, shotPosition: number): Promise<string | null>;
   getVideoAssets(id: number): Promise<VideoAssetBundle>;
   exportVideoProject(id: number): Promise<VideoProject>;
   openVideoPackage(id: number): Promise<string>;
@@ -1126,6 +1454,10 @@ export interface SydneyApi {
   videoPublisherViewGo(platform: VideoPublishPlatform, action: 'back' | 'reload'): Promise<VideoPublisherViewState>;
   openVideoPublisherInBrowser(platform: VideoPublishPlatform): Promise<void>;
   publishVideoToPlatforms(id: number, platforms: VideoPublishPlatform[], mode: VideoPublishMode): Promise<VideoPublishResult>;
+  getVideoPublishPack(id: number): Promise<VideoPublishPackView>;
+  saveVideoPublishPack(id: number, patch: VideoPublishPackPatch): Promise<VideoPublishPackView>;
+  generateVideoPublishPack(id: number): Promise<VideoPublishPackView>;
+  generateVideoCoverVariants(id: number): Promise<VideoPublishPackView>;
   openVideoFile(id: number): Promise<string>;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
   /** ffmpeg / ffprobe 是否可用；不可用时 detail 是能照着做的安装提示。 */
@@ -1157,10 +1489,12 @@ export interface SydneyApi {
   updateXhsNote(id: number, patch: Partial<XhsNote>): Promise<XhsNote>;
   deleteXhsNote(id: number): Promise<void>;
   /** 正文 / 按检测回改 / 标题工坊 / 发布前检测 / 图文卡片分页。 */
-  generateXhsNote(id: number, stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }): Promise<XhsNote>;
+  generateXhsNote(id: number, stage: XhsGenerateStage, options?: { pageCount?: number; style?: string; focus?: string }): Promise<XhsNote>;
   /** 上游改过之后，人工确认某个产物仍然可用（重新盖上当前指纹）。 */
   confirmXhsBasis(id: number, key: keyof XhsBasis): Promise<XhsNote>;
-  generateXhsCover(id: number, brief: string): Promise<XhsNote>;
+  generateXhsCover(id: number, brief: XhsCoverGenerateInput): Promise<XhsNote>;
+  /** 用内容模型把笔记选题与正文转化为结构化封面画面方案（主体道具、构图留白、光影色调与主副标题层级），只返回建议不直接扣生图费用。 */
+  draftXhsCoverBrief(id: number, preset: string, hint: string): Promise<XhsStructuredCoverPlan>;
   chooseXhsCover(id: number): Promise<XhsNote | null>;
   /** 用账号当前 IP 的封面模板本地排版出封面（不调图片接口），写成这篇笔记的封面。 */
   renderXhsIpCover(id: number, input: XhsIpCoverInput): Promise<XhsNote>;
@@ -1183,8 +1517,8 @@ export interface SydneyApi {
   onIpChanged(callback: () => void): () => void;
   /** 把图文卡片逐页渲染成 3:4 PNG，替换图组里旧的卡片图。 */
   renderXhsCards(id: number): Promise<XhsNote>;
-  /** 生图信息图：single 出 1 张总览图；pages 按卡片分页逐页出图（6–9 张）。 */
-  generateXhsInfoImages(id: number, mode: 'single' | 'pages'): Promise<XhsNote>;
+  /** 生图信息图：single 出 1 张总览图；pages 按卡片分页逐页出图（支持传入结构化视觉预设）。 */
+  generateXhsInfoImages(id: number, mode: XhsInfoGenerateInput): Promise<XhsNote>;
   cancelXhsImages(id: number): Promise<boolean>;
   addXhsLocalImages(id: number): Promise<XhsNote | null>;
   /** 图组排序 / 删除：只接受当前图组里已有的路径。 */
@@ -1265,6 +1599,18 @@ export interface SydneyApi {
   onChanged(callback: () => void): () => void;
   onWeWriteChanged(callback: () => void): () => void;
   onSiteModuleChanged(callback: () => void): () => void;
+  onOpsChanged(callback: () => void): () => void;
+  getOpsOverview(): Promise<OpsOverviewView>;
+  upsertOpsEpisode(input: OpsEpisodeInput): Promise<OpsEpisodeWithTasks>;
+  deleteOpsEpisode(id: number): Promise<void>;
+  updateOpsTask(episodeId: number, platform: OpsPlatform, state: OpsTaskState, patch: OpsTaskPatch): Promise<OpsEpisodeWithTasks>;
+  getOpsEpisodeReview(episodeId: number, ageDays: number | null): Promise<OpsEpisodeReview>;
+  syncOpsPlatforms(platforms: OpsPlatform[] | null): Promise<OpsSyncResult>;
+  getFeishuConfig(): Promise<FeishuConfigView>;
+  saveFeishuConfig(draft: FeishuConfigDraft): Promise<FeishuConfigView>;
+  testFeishuWebhook(): Promise<void>;
+  sendFeishuDailyReport(): Promise<void>;
+  sendFeishuEpisodeReview(episodeId: number, ageDays: number | null): Promise<void>;
   getWindowChrome(): Promise<WindowChromeState>;
   windowControl(action: WindowControl): Promise<void>;
   /** 界面换主题后通知主进程：窗口底色、右键菜单跟着换，下次启动按它建窗。 */

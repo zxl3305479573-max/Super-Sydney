@@ -4,8 +4,8 @@ import { dialog, ipcMain, shell } from 'electron';
 import { openUrl } from '../services/browser';
 import type { AppContext } from '../app-context';
 import type {
-  XhsAccount, XhsAnalyticsView, XhsAuditInput, XhsBasis, XhsGenerateStage, XhsHotNote, XhsHotspotQuery, XhsHotspotResult, XhsImageItem,
-  XhsNote, XhsNoteAssets, XhsReport, XhsRouterAdvice
+  XhsAccount, XhsAnalyticsView, XhsAuditInput, XhsBasis, XhsCoverGenerateInput, XhsGenerateStage, XhsHotNote, XhsHotspotQuery, XhsHotspotResult, XhsImageItem,
+  XhsInfoGenerateInput, XhsNote, XhsNoteAssets, XhsReport, XhsRouterAdvice
 } from '../shared';
 import { ImageJobs, imageErrorText, withIpInstruction } from '../services/image-generation';
 import { imageThumbnail } from '../services/native-image';
@@ -31,7 +31,7 @@ import {
 } from '../services/xhs-store';
 import type { XhsView } from '../services/xhs-view';
 import {
-  requestPositioningStep, requestRouteChoice, requestXhsAnalyticsInterpretation, requestXhsAudit, requestXhsBody, requestXhsCardPlan,
+  requestPositioningStep, requestRouteChoice, requestXhsAnalyticsInterpretation, requestXhsAudit, requestXhsBody, requestXhsCardPlan, requestXhsCoverBrief,
   requestXhsModelChecks, requestXhsTitles, requestXhsTopicIdeas, xhsCoverPrompt, xhsInfoImagePrompt, type XhsApiConfig
 } from '../services/xhs-workflow';
 import { requestGeneratedImage } from '../services/image-generation';
@@ -201,13 +201,14 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     return save(id, { basisJson: stampBasis(getXhsNote(db, id), key) });
   });
 
-  ipcMain.handle('xhs:notes:generate', async (_event, id: number, stage: XhsGenerateStage, options: { pageCount?: number; style?: string } = {}) => noteLock.run(id, async () => {
+  ipcMain.handle('xhs:notes:generate', async (_event, id: number, stage: XhsGenerateStage, options: { pageCount?: number; style?: string; focus?: string } = {}) => noteLock.run(id, async () => {
     const note = getXhsNote(db, id);
     const account = getXhsAccount(db, note.accountId);
     const positioning = readPositioning(account);
-    if (stage === 'body' || stage === 'revise') {
-      if (!note.topic.trim()) throw new Error('请先填写选题');
-      const result = await requestXhsBody(apiConfig(account), note, positioning, stage === 'body' ? 'write' : 'revise');
+    if (stage === 'body' || stage === 'polish' || stage === 'revise') {
+      if (!note.topic.trim() && !note.body.trim()) throw new Error('请先填写选题');
+      const mode = stage === 'body' ? 'write' : stage === 'polish' ? 'polish' : 'revise';
+      const result = await requestXhsBody(apiConfig(account), note, positioning, mode);
       const next: XhsNote = { ...note, body: result.body, tagsJson: JSON.stringify(result.tags), writerJson: JSON.stringify(result.meta) };
       return save(id, { body: next.body, tagsJson: next.tagsJson, writerJson: next.writerJson, basisJson: stampBasis(next, 'body') });
     }
@@ -227,10 +228,17 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
       return save(id, { checksJson: next.checksJson, basisJson: stampBasis(next, 'checks') });
     }
     if (stage === 'cards') {
-      if (!note.body.trim()) throw new Error('请先写好正文，再拆图文卡片');
+      const focus = String(options.focus ?? '').trim();
+      if (!note.body.trim() && !note.material.trim() && !focus) throw new Error('请先写好正文或填写经验素材，再拆图文卡片');
       const count = XHS_PAGE_COUNTS.includes(Number(options.pageCount)) ? Number(options.pageCount) : 6;
-      const plan = await requestXhsCardPlan(apiConfig(account), note, count, String(options.style ?? readCardPlan(note)?.style ?? ''));
-      return save(id, { cardsJson: JSON.stringify(plan) });
+      const previous = readCardPlan(note);
+      const plan = await requestXhsCardPlan(apiConfig(account), note, count, String(options.style ?? previous?.style ?? ''), undefined, focus);
+      const merged = {
+        ...plan,
+        ...(previous?.mascotMode ? { mascotMode: previous.mascotMode } : {}),
+        ...(previous?.useIpPalette ? { useIpPalette: previous.useIpPalette } : {})
+      };
+      return save(id, { cardsJson: JSON.stringify(merged) });
     }
     throw new Error('未知的生成步骤');
   }));
@@ -256,11 +264,20 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
     finally { imageJobs.end(id); }
   };
 
-  ipcMain.handle('xhs:cover:generate', async (_event, id: number, brief: string) => noteLock.run(id, async () => {
+  ipcMain.handle('xhs:cover:brief', async (_event, id: number, preset: string, hint: string) => noteLock.run(id, async () => {
+    const note = getXhsNote(db, id);
+    if (!note.title.trim() && !note.topic.trim()) throw new Error('请先填写选题或选定标题');
+    const account = getXhsAccount(db, note.accountId);
+    return requestXhsCoverBrief(apiConfig(account), note, readPositioning(account), String(preset ?? ''), String(hint ?? '').slice(0, 500));
+  }));
+
+  ipcMain.handle('xhs:cover:generate', async (_event, id: number, raw: XhsCoverGenerateInput) => noteLock.run(id, async () => {
     const note = getXhsNote(db, id);
     if (!note.title.trim()) throw new Error('请先选定标题：封面上要放标题');
     const account = getXhsAccount(db, note.accountId);
-    const prompt = xhsCoverPrompt(note, readPositioning(account), String(brief ?? '').slice(0, 500));
+    const parsed = typeof raw === 'object' && raw !== null ? raw : { brief: String(raw ?? '') };
+    const custom = String(parsed.customPrompt ?? '').trim().slice(0, 3000);
+    const prompt = custom || xhsCoverPrompt(note, readPositioning(account), String(parsed.brief ?? '').slice(0, 600), String(parsed.preset ?? ''));
     const target = path.join(assetDir(id), `cover-${Date.now()}.png`);
     await withImageJob(id, signal => generateThreeFour(target, prompt, signal, note.accountId));
     const next = { ...note, coverPath: target };
@@ -325,10 +342,13 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   }));
 
   /** 逐张生成，中途失败时保留已经生成的那几张再报错，不白花钱。 */
-  ipcMain.handle('xhs:info:generate', async (_event, id: number, mode: 'single' | 'pages') => noteLock.run(id, async () => {
+  ipcMain.handle('xhs:info:generate', async (_event, id: number, raw: XhsInfoGenerateInput) => noteLock.run(id, async () => {
     const note = getXhsNote(db, id);
     const plan = readCardPlan(note);
     if (!plan?.pages.length) throw new Error('信息图按卡片分页出图：请先在「图文卡片」里拆好分页');
+    const parsed = typeof raw === 'object' && raw !== null ? raw : { mode: raw };
+    const mode = parsed.mode === 'single' ? 'single' : 'pages';
+    const preset = String(parsed.preset ?? '');
     const indexes: Array<number | null> = mode === 'single' ? [null] : plan.pages.map((_, index) => index);
     const stamp = Date.now();
     const fresh: XhsImageItem[] = [];
@@ -337,7 +357,7 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
       for (const index of indexes) {
         const target = path.join(assetDir(id), `info-${stamp}-${index === null ? 'all' : String(index + 1).padStart(2, '0')}.png`);
         try {
-          await generateThreeFour(target, xhsInfoImagePrompt(note, plan.pages, index), signal, note.accountId);
+          await generateThreeFour(target, xhsInfoImagePrompt(note, plan.pages, index, preset), signal, note.accountId);
           fresh.push({ path: target, source: 'info', caption: index === null ? '总览信息图' : plan.pages[index].heading });
         } catch (error) {
           failure = imageErrorText(error);

@@ -106,7 +106,7 @@ test('motion is a pure function of time: entrance eases in, push-in creeps, char
   const settled = motionAt(timing, 10 + ENTER_SECONDS);
   assert.equal(settled.enter, 1);
   assert.ok(settled.key > 0.95);
-  assert.ok(settled.bar > 0 && settled.bar < 1);
+  assert.equal(settled.bar, 1);
   assert.equal(motionAt(timing, 10.75).lit, 2);
   assert.equal(motionAt(timing, 15).zoom, 1.12);
   let previous = 0;
@@ -154,17 +154,18 @@ test('frame plan covers every frame, renders motion frame by frame and merges th
   assert.deepEqual(plain.segments.map(segment => [segment.shot, segment.subtitle]), [[0, '第一句'], [0, '第二句'], [1, '']]);
   assert.equal(plain.frames, 180);
   assert.equal(plain.segments.flatMap(segment => segment.stills).reduce((sum, still) => sum + still.frames, 0), 180);
-  // 自动运镜持续覆盖镜头主体，不会在入场后退化成静态图。
-  assert.ok(framePlanStills(plain) > 120, `${framePlanStills(plain)} stills`);
+  // 纯文字默认自动运镜：只在入场阶段逐帧截图，之后合并成一张静帧撑到底，大幅缩短渲染耗时。
+  const entrance = Math.ceil((ENTER_SECONDS + 0.1) * VIDEO_FPS) + 4;
+  assert.ok(framePlanStills(plain) <= 2 * entrance + 2, `${framePlanStills(plain)} stills`);
   const lastStill = plain.segments[2].stills.at(-1)!;
   assert.equal(lastStill.motion.enter, 1);
-  assert.equal(lastStill.frames, 1);
+  assert.ok(lastStill.frames > 30);
   // 片头第一镜不做入场，第一帧就是完整画面；第二镜从空卡片开始入场。
   assert.equal(plain.segments[0].stills[0].motion.enter, 1);
   assert.equal(plain.segments[2].stills[0].motion.enter, 0);
   // 逐字高亮：每亮一个字多一张，字全部亮完。
   const karaoke = buildFramePlan(shots, timeline, { karaoke: true, pushIn: false });
-  assert.ok(framePlanStills(karaoke) >= framePlanStills(plain));
+  assert.ok(framePlanStills(karaoke) >= framePlanStills(plain) + 4);
   assert.equal(karaoke.segments[0].stills.at(-1)!.motion.lit, 3);
   assert.equal(karaoke.segments[1].stills.at(-1)!.motion.lit, 3);
   // 有静音检测结果时，第一个字等到出声才亮。
@@ -172,9 +173,9 @@ test('frame plan covers every frame, renders motion frame by frame and merges th
   const firstLit = measured.segments[0].stills.findIndex(still => still.motion.lit === 1);
   const framesBefore = measured.segments[0].stills.slice(0, firstLit).reduce((sum, still) => sum + still.frames, 0);
   assert.equal(framesBefore, 15);
-  // 有逐字字幕和镜头运动时，按真实时间轴逐帧更新。
+  // 配图缓慢推近：静帧按量化步长合并，远少于逐帧 180 张。
   const pushed = buildFramePlan(shots, timeline, { karaoke: true, pushIn: true });
-  assert.ok(framePlanStills(pushed) >= 180);
+  assert.ok(framePlanStills(pushed) > framePlanStills(karaoke) && framePlanStills(pushed) < 160);
   assert.deepEqual(buildFramePlan(shots, timeline, { karaoke: true, pushIn: true }), pushed);
   assert.deepEqual(framePlanOptions({ voiceMode: 'silent', imageMode: 'ai' }), { karaoke: false, pushIn: true });
 });
@@ -205,9 +206,9 @@ test('ffmpeg args pad shots, fade music, and duck it against narration without l
   assert.match(graph, /\[2:a\][^;]*apad=whole_dur=3\.100[^;]*\[n2\]/);
   assert.match(graph, /\[n0\]\[n1\]\[n2\]concat=n=3:v=0:a=1\[nar\]/);
   assert.match(graph, /\[3:a\][^;]*volume=0\.120[^;]*afade=t=in:st=0:d=0\.600,afade=t=out:st=5\.450:d=2\.000\[bg\]/);
-  assert.match(graph, /\[nar\]asplit=2\[narout\]\[narside\]/);
+  assert.match(graph, /\[nar\]asplit=2\[narmix\]\[narside\]/);
   assert.match(graph, /\[bg\]\[narside\]sidechaincompress=threshold=0\.025:ratio=8:attack=20:release=320:makeup=1\[bgducked\]/);
-  assert.match(graph, /\[nar\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
+  assert.match(graph, /\[narmix\]\[bgducked\]amix=inputs=2:duration=first:dropout_transition=0:normalize=0\[aout\]/);
   assert.equal(args[args.indexOf('-t') + 1], '7.450');
   assert.equal(args[args.length - 1], 'out.mp4');
 });
@@ -227,19 +228,49 @@ test('motion presets stay deterministic and audio effects are delayed and mixed'
   assert.deepEqual(args.filter((_, index) => args[index - 1] === '-i'), ['list', 'voice.wav', 'pop.wav']);
 });
 
-test('auto motion continuously moves the whole shot and staggers content layers', () => {
+test('auto motion gently pushes image shots, staggers entrance layers, and supports distinct templates + highlights', () => {
   const timing = { shotStart: 0, shotEnd: 5, pushIn: true, litTimes: [], preset: 'auto' as const, shotIndex: 2 };
   const start = motionAt(timing, 0.1);
   const middle = motionAt(timing, 2.5);
   const end = motionAt(timing, 4.9);
-  assert.ok(start.zoom <= middle.zoom && middle.zoom <= end.zoom);
+  assert.ok(start.zoom < middle.zoom && middle.zoom < end.zoom);
   assert.ok((start.bodyIn ?? 0) < (middle.bodyIn ?? 0) && (middle.bodyIn ?? 0) <= (end.bodyIn ?? 0));
   assert.ok((start.titleIn ?? 0) > (start.leadIn ?? 0) && (start.leadIn ?? 0) >= (start.bodyIn ?? 0));
-  assert.ok(framePlanStills(buildFramePlan(
-    [{ index: 1, seconds: 5, visual: 'v', narration: '内容持续展开。', caption: '逐层揭示' }],
-    buildTimeline([{ index: 1, seconds: 5, visual: 'v', narration: '内容持续展开。', caption: '逐层揭示' }], [5]),
-    { karaoke: false, pushIn: true }
-  )) > VIDEO_FPS * 4);
+  const warmHtml = buildFrameHtml({ ...frame, template: 'warm', keyText: '记住【三个半分钟】' });
+  const cleanHtml = buildFrameHtml({ ...frame, template: 'clean' });
+  const nightHtml = buildFrameHtml({ ...frame, template: 'night' });
+  assert.match(warmHtml, /<mark>三个半分钟<\/mark>/);
+  assert.match(warmHtml, /#FAF7F0/i);
+  assert.match(cleanHtml, /#FFFFFF/i);
+  assert.match(nightHtml, /#1E2636/i);
+
+  // 同时开启音效与 BGM 闪避时，filter_complex 每个中间音频标签只能产出一次、消费一次，零悬空端口。
+  const withSfxAndDuck = buildFfmpegArgs({
+    narration: [{ path: 'voice.wav', seconds: 4 }],
+    soundEffects: [{ path: 'pop.wav', at: 1, duration: 0.2, volume: 0.24 }],
+    bgm: { path: 'bgm.wav', volume: 0.12, ducking: true, fadeIn: 0.5, fadeOut: 1 },
+    total: 4,
+    output: 'out.mp4'
+  }, 'list');
+  const complex = withSfxAndDuck[withSfxAndDuck.indexOf('-filter_complex') + 1];
+  const produced = new Map<string, number>();
+  const consumed = new Map<string, number>();
+  for (const chain of complex.split(';')) {
+    const inputs = chain.match(/^((?:\[[a-z0-9]+\])+)/i)?.[1] ?? '';
+    for (const m of inputs.matchAll(/\[([a-z][a-z0-9]*)\]/gi)) {
+      consumed.set(m[1], (consumed.get(m[1]) ?? 0) + 1);
+    }
+    const outputs = chain.match(/((?:\[[a-z0-9]+\])+)$/i)?.[1] ?? '';
+    for (const m of outputs.matchAll(/\[([a-z][a-z0-9]*)\]/gi)) {
+      produced.set(m[1], (produced.get(m[1]) ?? 0) + 1);
+    }
+  }
+  for (const [label, count] of produced) {
+    assert.equal(count, 1, `标签 [${label}] 重复产出`);
+    if (label !== 'vout' && label !== 'aout') {
+      assert.equal(consumed.get(label), 1, `中间标签 [${label}] 必须恰好被消费 1 次`);
+    }
+  }
 });
 
 test('ffmpeg args honor the supplied landscape canvas', () => {

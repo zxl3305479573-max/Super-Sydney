@@ -99,3 +99,29 @@ test('app update IPC is exposed only through the main renderer contract', () => 
   assert.match(preload, /onAppUpdateChanged:\s*callback\s*=>\s*\{[\s\S]*?ipcRenderer\.on\('app-update:changed'/);
   assert.match(preload, /onAppUpdateChanged:[\s\S]*?return\s*\(\)\s*=>\s*ipcRenderer\.removeListener\('app-update:changed'/);
 });
+
+test('ops hub and publish pack IPC contract matches preload', () => {
+  const handlers = handlerArity();
+  const invokes = preloadArity();
+  const expected: Record<string, number> = {
+    'video-publish:pack:get': 1,
+    'video-publish:pack:save': 2,
+    'video-publish:pack:generate': 1,
+    'video-publish:pack:variants': 1,
+    'ops:overview': 0,
+    'ops:episode:upsert': 1,
+    'ops:episode:delete': 1,
+    'ops:task:update': 4,
+    'ops:review:get': 2,
+    'ops:sync:run': 1,
+    'ops:feishu:get': 0,
+    'ops:feishu:save': 1,
+    'ops:feishu:test': 0,
+    'ops:feishu:notify-daily': 0,
+    'ops:feishu:notify-review': 2
+  };
+  for (const [channel, arity] of Object.entries(expected)) {
+    assert.equal(handlers.get(channel), arity, `${channel} 主进程参数数量不符合契约`);
+    assert.equal(invokes.get(channel), arity, `${channel} preload 参数数量不符合契约`);
+  }
+});

@@ -226,11 +226,12 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
   const skill = raw.skill && typeof raw.skill === 'object' ? raw.skill as Record<string, unknown> : null;
   const quality = raw.quality && typeof raw.quality === 'object' ? raw.quality as Record<string, unknown> : null;
   const videoSeconds = Number(video?.seconds);
-  const qualityKeys = new Set<VideoQualityCheck['key']>(['dimensions', 'aspect', 'fps', 'duration', 'audio', 'timeline', 'black', 'silence', 'safe-area', 'cover']);
+  const qualityKeys = new Set<string>(['dimensions', 'aspect', 'fps', 'duration', 'audio', 'timeline', 'black', 'silence', 'safe-area', 'cover', 'faststart']);
   const qualityChecks: VideoQualityCheck[] = list(quality?.checks).flatMap(item => {
-    const key = text(item.key) as VideoQualityCheck['key'];
+    const rawKey = text(item.key);
+    const key = rawKey as VideoQualityCheck['key'];
     const status = text(item.status) as VideoQualityCheck['status'];
-    return qualityKeys.has(key) && ['ok', 'warn', 'error'].includes(status) && text(item.label) && text(item.detail)
+    return qualityKeys.has(rawKey) && ['ok', 'warn', 'error'].includes(status) && text(item.label) && text(item.detail)
       ? [{ key, label: text(item.label), status, detail: text(item.detail) }]
       : [];
   });

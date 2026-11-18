@@ -49,7 +49,13 @@ export function openLink(url: string, notify: (message: string) => void) {
   void window.sydney.openXhsLink(url).catch(error => notify(readableError(error)));
 }
 
+const COMMERCIAL_RE = /(测评|推荐|清单|对比|怎么选|避坑|避雷|好物|平价|多少钱|价格|选品|模板|副业|咨询|变现|开店|商单)/;
+
 export function HotNoteRow({ note, onAdopt, onOpen, adopted }: { note: XhsHotNote; onAdopt: () => void; onOpen: () => void; adopted: boolean }) {
+  const saveRatio = !note.unverified && note.liked >= 20 ? note.collected / note.liked : 0;
+  const commentRatio = !note.unverified && note.liked >= 20 ? note.comments / note.liked : 0;
+  const commercialSignal = !note.unverified && (COMMERCIAL_RE.test(`${note.title} ${note.desc} ${note.topics.join(' ')}`) || commentRatio >= 0.12);
+  const pureEmotion = !note.unverified && note.liked >= 500 && note.collected > 0 && saveRatio < 0.15 && !commercialSignal;
   return <li className="xhs-hot">
     <div className="xhs-hot-main">
       <button className="xhs-hot-title" title="在浏览器中打开" onClick={onOpen}>{note.title}</button>
@@ -57,6 +63,9 @@ export function HotNoteRow({ note, onAdopt, onOpen, adopted }: { note: XhsHotNot
         <span>{note.author.nickname}{note.author.fans ? `（${fuzzyCount(note.author.fans)}粉）` : ''}</span>
         {note.createTime && <span>{note.createTime.slice(0, 10)}</span>}
         {note.score && <span title="相关性 / 热度 / 时效">评分 {note.score.total.toFixed(1)}</span>}
+        {saveRatio >= 0.7 && <span className="chip chip-accent" title="收藏/点赞 ≥ 0.7，属于高保存价值干货或强种草选题">高收藏干货 ({saveRatio.toFixed(1)}x)</span>}
+        {commercialSignal && saveRatio >= 0.35 && <span className="chip chip-soft" title="含选品/交易决策词或高评论互动">强种草信号</span>}
+        {pureEmotion && <span className="chip" title="点赞高但收藏极低，偏情绪吃瓜流量，不易直接带货转化">泛情绪流量（慎做转化）</span>}
       </p>
       {note.desc && note.unverified && <p className="xhs-hot-desc">{note.desc}</p>}
       {note.topics.length > 0 && <div className="xhs-chip-row">{note.topics.slice(0, 4).map(topic => <span key={topic} className="chip chip-soft">#{topic}</span>)}</div>}

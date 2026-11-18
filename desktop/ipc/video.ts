@@ -5,11 +5,14 @@ import { app, dialog, ipcMain, shell } from 'electron';
 import type { AppContext } from '../app-context';
 import {
   resolveVideoBgmStyle,
-  type VideoAssetBundle, type VideoPlatform, type VideoProgress, type VideoProject, type VideoRenderAssets,
+  type VideoAssetBundle, type VideoLocalCoverInput, type VideoPlatform, type VideoProgress, type VideoProject, type VideoRenderAssets,
   type VideoStage, type VideoTtsSettings, type VideoTtsStatus, type VideoTopicSearchQuery, type VideoTopicSearchResult,
-  type VideoShot, type VideoSkillRunResult
+  type VideoShot, type VideoSkillRunResult, type VideoWorkflow
 } from '../shared';
+import { renderHtmlPages } from '../services/html-pages-render';
+import { renderVideoLocalCoverHtml } from '../services/video-local-cover';
 import { videoCoverPrompt } from '../services/video-image-prompts';
+import { ipReferenceImage, ipRenderKit } from './ip';
 import { imageThumbnail } from '../services/native-image';
 import { RequestLock } from '../services/request-lock';
 import {
@@ -32,6 +35,7 @@ import { ensureAutoBgm } from '../services/video-bgm';
 import { ensureSoundEffect, soundEffectDuration } from '../services/video-sfx';
 import { videoFrameSpec } from '../services/video-frame-spec';
 import { evaluateVideoQuality } from '../services/video-quality';
+import { inspectMp4Faststart } from '../services/mp4-faststart';
 import { assetDirectory, generateImageFile, removeAssetDirectory, videoApiConfig } from './content-support';
 
 /* ── 视频创作流水线 ──────────────────────────────────────────────
@@ -79,7 +83,8 @@ export function registerVideoIpc(ctx: AppContext): void {
       scanVideoContent(tools, video.path, probe.seconds, probe.hasAudio),
       project.coverPath.trim() ? probeImageSize(tools, project.coverPath) : Promise.resolve(undefined)
     ]);
-    const report = evaluateVideoQuality(project, probe, video.path, { content, cover });
+    const faststart = inspectMp4Faststart(video.path);
+    const report = evaluateVideoQuality(project, probe, video.path, { content, cover, faststart });
     return update(project.id, { assets: { ...project.assets, quality: report } });
   };
 
@@ -91,6 +96,16 @@ export function registerVideoIpc(ctx: AppContext): void {
   const assertQualityAllowsExport = (project: VideoProject): void => {
     const issues = qualityBlockingIssues(project);
     if (issues.length) throw new Error(`成片质量检查未通过：${issues.join('；')}`);
+  };
+
+  /** 主封面更新后，清空该视频旧的多比例衍生封面（cover-variants），避免分发工作台继续复用旧封面图。 */
+  const invalidateCoverVariants = (projectId: number): void => {
+    const root = assetDirectory(ctx, 'video-assets', projectId);
+    removeInside(root, path.join(root, 'cover-variants'));
+    try {
+      db.prepare("UPDATE ops_video_publish_packs SET variants_json='{}', updated_at=? WHERE project_id=?")
+        .run(new Date().toISOString(), projectId);
+    } catch { /* 尚未初始化发布包表时忽略 */ }
   };
 
   ipcMain.handle('video:list', () => listVideoProjects(db));
@@ -161,6 +176,7 @@ export function registerVideoIpc(ctx: AppContext): void {
   ipcMain.handle('video:delete', (_event, id: number) => {
     assertIdle(id, '删除');
     deleteVideoProject(db, id);
+    try { db.prepare('DELETE FROM ops_video_publish_packs WHERE project_id=?').run(id); } catch { /* 忽略 */ }
     removeAssetDirectory(ctx, 'video-assets', id);
     ctx.broadcast();
   });
@@ -198,25 +214,72 @@ export function registerVideoIpc(ctx: AppContext): void {
     assertIdle(id, '选择封面');
     const result = await dialog.showOpenDialog(ctx.window()!, { properties: ['openFile'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
+    invalidateCoverVariants(id);
     return update(id, { coverPath: result.filePaths[0] });
   });
   /**
-   * 生成竖版封面（9:16）。
-   * 使用全局图片服务生成视频封面，尺寸按视频平台规格选择。
+   * 生成主封面（竖屏 9:16 或横屏 16:9）：
+   * 使用全局图片服务生成视频封面；若视频模块选用了 IP，参考图一并传入。
    */
   ipcMain.handle('video:cover:generate', async (_event, id: number) => requests.run(id, async () => {
     const project = getVideoProject(db, id);
     if (!(project.title || project.topic).trim()) throw new Error('请先确定选题或填写标题，再生成封面');
-    const target = path.join(assetDirectory(ctx, 'video-assets', project.id), `cover-${Date.now()}.png`);
-    return update(id, {
-      coverPath: await generateImageFile(
-        target,
-        videoCoverPrompt(project, project.options.coverImagePromptTemplate),
-        project.platform === 'bilibili' || project.platform === 'general' ? '1536x1024' : '1024x1536',
-        undefined
-      )
-    });
+    const root = assetDirectory(ctx, 'video-assets', project.id);
+    const previous = project.coverPath;
+    const target = path.join(root, `cover-${Date.now()}.png`);
+    const videoIpId = ctx.ipLibrary.selections().video;
+    const ipRef = videoIpId ? ipReferenceImage(ctx.ipLibrary, videoIpId) : null;
+    const generated = await generateImageFile(
+      target,
+      videoCoverPrompt(project, project.options.coverImagePromptTemplate),
+      project.platform === 'bilibili' || project.platform === 'general' ? '1536x1024' : '1024x1536',
+      undefined,
+      ipRef
+    );
+    if (previous && previous !== generated) removeInside(root, previous);
+    invalidateCoverVariants(project.id);
+    return update(id, { coverPath: generated });
   }));
+  /** 本地确定性封面模板渲染（支持大字杂志风与可选 IP 角色，0 成本秒出）。 */
+  ipcMain.handle('video:cover:render-local', async (_event, id: number, input: VideoLocalCoverInput) => requests.run(id, async () => {
+    const project = getVideoProject(db, id);
+    const frame = videoFrameSpec(project.platform);
+    const videoIpId = ctx.ipLibrary.selections().video;
+    let kit = null;
+    if (videoIpId) {
+      try { kit = ipRenderKit(ctx.ipLibrary, videoIpId); } catch { kit = null; }
+    }
+    const html = renderVideoLocalCoverHtml(input, project.platform, kit);
+    const root = assetDirectory(ctx, 'video-assets', project.id);
+    const previous = project.coverPath;
+    const target = path.join(root, `cover-local-${Date.now()}.png`);
+    await renderHtmlPages([html], frame.width, frame.height, [target]);
+    if (previous && previous !== target) removeInside(root, previous);
+    invalidateCoverVariants(project.id);
+    return update(id, { coverPath: target });
+  }));
+  ipcMain.handle('video:source:choose', async (_event, workflow: VideoWorkflow) => {
+    const isBrowserConfig = workflow === 'browser-demo';
+    const result = await dialog.showOpenDialog(ctx.window()!, {
+      title: isBrowserConfig ? '选择网页演示录制配置 JSON' : '选择源视频文件',
+      properties: ['openFile'],
+      filters: isBrowserConfig
+        ? [{ name: 'JSON 配置', extensions: ['json'] }]
+        : [{ name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'webm', 'm4v', 'avi'] }]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+  ipcMain.handle('video:voice:preview', (_event, id: number, shotPosition: number): string | null => {
+    const project = getVideoProject(db, id);
+    const shots = parseVideoShots(project.storyboardJson);
+    const shot = shots[Number(shotPosition)];
+    if (!shot) return null;
+    const audio = shotAudio(project, shot);
+    if (!audio || !fs.existsSync(audio.path)) return null;
+    const ext = path.extname(audio.path).toLowerCase();
+    const mime = ext === '.mp3' ? 'audio/mpeg' : ext === '.m4a' ? 'audio/mp4' : 'audio/wav';
+    return `data:${mime};base64,${fs.readFileSync(audio.path).toString('base64')}`;
+  });
 
   /* ── 配音 ──────────────────────────────────────────────────────
    * 逐镜合成，镜头时长取真实音频（参考 MoneyPrinterTurbo / Pixelle-Video）。

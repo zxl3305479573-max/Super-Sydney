@@ -19,6 +19,7 @@ export type VideoImageProbe = {
 export type VideoQualityExtras = {
   content?: VideoContentScan | null;
   cover?: VideoImageProbe | null;
+  faststart?: boolean | null;
 };
 
 function fpsNumber(value: string): number {
@@ -194,7 +195,17 @@ export function evaluateVideoQuality(
           : '静音扫描不可用，需要人工试听'
     },
     safeAreaCheck(project),
-    coverCheck(project, extras.cover)
+    coverCheck(project, extras.cover),
+    {
+      key: 'faststart',
+      label: '流式封装 (faststart)',
+      status: extras.faststart === false ? 'error' : 'ok',
+      detail: extras.faststart === false
+        ? 'MP4 缺少 faststart（moov 在 mdat 之后），小红书与抖音上传易失败，请重新渲染或用 -movflags +faststart 封装'
+        : extras.faststart === true
+          ? 'moov 位于文件头部，支持各平台流式上传解析'
+          : '内置合成器默认启用 +faststart'
+    }
   ];
   return {
     signature: qualitySignature(project),

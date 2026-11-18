@@ -1,4 +1,6 @@
-import type { XhsFunnelLayer, XhsNoteType, XhsStepKey, XhsTab } from '../shared.ts';
+import type {
+  XhsCardLayout, XhsCoverPresetKey, XhsFunnelLayer, XhsInfoPresetKey, XhsMonetizationPathKey, XhsNoteIntent, XhsNoteType, XhsPillarRole, XhsStepKey, XhsTab
+} from '../shared.ts';
 
 /**
  * 小红书模块的「定义表」：笔记类型、标题方法、检测项、诊断维度、漏斗层级、卡片风格。
@@ -23,6 +25,55 @@ export const XHS_NOTE_TYPES: Array<{ value: XhsNoteType; label: string; structur
 
 export function xhsNoteTypeLabel(value: string): string {
   return XHS_NOTE_TYPES.find(item => item.value === value)?.label ?? '干货教程';
+}
+
+/** 单篇笔记的商业角色：指导正文结构侧重与发布前正规渠道合规提醒（不导微信、不私挂外链）。 */
+export const XHS_NOTE_INTENTS: Array<{
+  value: XhsNoteIntent;
+  label: string;
+  hint: string;
+  writingRule: string;
+  complianceNotice: string;
+}> = [
+  {
+    value: 'organic',
+    label: '日常拉新 / 立人设',
+    hint: '专注搜索词覆盖、收藏干货密度与涨粉，不挂商业推广',
+    writingRule: '',
+    complianceNotice: ''
+  },
+  {
+    value: 'sample',
+    label: '蒲公英商单 / 样片',
+    hint: '品牌合作或置顶样片：在真实使用场景里自然带出体验与客观小缺点',
+    writingRule: '本篇承担「蒲公英商单 / 品牌合作样片」角色：保持创作者独立人设与真实生活场景切入，自然融入产品解决的具体痛点与一个真实客观的小边界/适用提醒，切忌写成硬广说明书。',
+    complianceNotice: '【蒲公英合作合规提醒】正式商单笔记须在蒲公英平台（pgy.xiaohongshu.com）完成报备，按约定选择是否展示左下角品牌标记（仅自然流量展示）；切勿接水下私单或私贴站外链接。'
+  },
+  {
+    value: 'affiliate',
+    label: '买手橱窗 / 笔记挂车',
+    hint: '痛点场景 → 选品判断标准 → 细节实测，自然激发问链接与点商品卡',
+    writingRule: '本篇承担「买手选品种草 / 笔记挂车」角色：按“具体使用痛点 → 为什么挑这款（选品对比标准）→ 真实细节与适合谁”展开，不喊夸张促销口号，靠选品审美与信任促成站内商品卡转化。',
+    complianceNotice: '【买手带货合规提醒】请通过「创作者中心 → 买手合作」正规挂载站内商品卡或主页橱窗（无需走蒲公英商单报备）；切勿在正文或评论区私发淘宝/京东外链与微信号。'
+  },
+  {
+    value: 'service',
+    label: '专业咨询 / 个人售卖副业',
+    hint: '拆解真实问题诊断思路与解决过程，用专业深度立信（忌搬运空话）',
+    writingRule: '本篇承担「专业能力证明 / 个人售卖搞副业获客」角色：聚焦拆解一个具体问题的诊断逻辑、判断依据与解决步骤，用专业深度证明“你真的懂”，绝不堆砌搬运来的空洞方法论，也不写违规引流话术。',
+    complianceNotice: '【个人售卖 / 专业服务合规提醒】站内收款请走小红书「个人售卖 → 搞副业」或专业号服务组件在私信合规闭环；严禁在正文、简介或评论留微信号、手机号或“私信领资料”导私域。'
+  },
+  {
+    value: 'local',
+    label: '同城门店 / 到店获客',
+    hint: '突出城市服务半径、真实服务流程与前后效果，承接到店预约',
+    writingRule: '本篇承担「同城门店 / 本地工作室获客」角色：自然交代所在城市或服务场景、真实服务流程细节、适合什么情况的顾客，降低读者到店与预约顾虑，不留电话微信等站外联系方式。',
+    complianceNotice: '【同城获客合规提醒】发布时记得挂载门店 POI 定位或专业号站内预约入口；不要在正文或图片里直接印手机号与个人微信号。'
+  }
+];
+
+export function xhsNoteIntentSpec(value?: string) {
+  return XHS_NOTE_INTENTS.find(item => item.value === value) ?? XHS_NOTE_INTENTS[0];
 }
 
 /** 15 种标题方法：标题工坊按这些方法各出候选。 */
@@ -76,6 +127,19 @@ export const XHS_RISK_WORDS: Array<{ word: string; reason: string }> = [
 /** 含「最」但不是绝对化用语的常见词。 */
 export const XHS_RISK_EXCEPTIONS = ['最近', '最后', '最初', '最好还是', '最终', '最少', '最多'];
 
+/**
+ * 典型「AI 味 / 营销号空话」特征词：用于写作阶段反套话约束与编辑区实时预警，帮创作者写出真人呼吸感。
+ */
+export const XHS_AI_CLICHES: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /家人们谁懂|姐妹们谁懂|宝子们|集美们/, label: '过度网红招呼语（建议删掉直接进场景）' },
+  { pattern: /今天给大家分享|今天来聊聊|话不多说|下面一起来看看吧/, label: '报幕式废话开头（前 3 行直接点问题或结论）' },
+  { pattern: /干货满满|建议先马后看|不看后悔|吐血整理/, label: '自夸式空洞口号（靠具体数字和步骤自然促收藏）' },
+  { pattern: /总而言之|综上所述|由此可见|总的来说/, label: '公文总结套话（换成一句直接的行动提醒）' },
+  { pattern: /在当今.{0,8}(?:时代|社会)|快节奏的生活中/, label: '宏大背景铺垫（小红书读者不看背景作文）' },
+  { pattern: /赋能|抓手|颗粒度|组合拳|心智占领/, label: '互联网黑话（翻译成日常大白话）' },
+  { pattern: /冲就完了|闭眼入不亏/, label: '无依据煽动话术（改成适合谁、不适合谁）' }
+];
+
 /** 14 项发布前检测：前 9 项本地规则即可判断，后 5 项需要模型。 */
 export const XHS_CHECKS: Array<{ id: string; label: string; source: 'local' | 'model'; hint: string }> = [
   { id: 'title_length', label: '标题不超过 20 字', source: 'local', hint: '小红书标题上限 20 字，超出发不出去' },
@@ -120,20 +184,188 @@ export function xhsFunnelLabel(layer: string): string {
   return XHS_FUNNEL_LAYERS.find(item => item.key === layer)?.label ?? '';
 }
 
-/** 图文卡片风格（本地 HTML 模板）。颜色都是具体值，渲染出来的 PNG 不跟随应用主题。 */
-export const XHS_CARD_STYLES: Array<{ key: string; label: string; hint: string; bg: string; ink: string; accent: string; soft: string; font: string }> = [
-  { key: 'warm', label: '暖橙大字', hint: '暖白底、大字号、橙色强调，手机上一眼看清', bg: '#FFF8EF', ink: '#2B2118', accent: '#E8742A', soft: '#FDE6CF', font: '"PingFang SC","Microsoft YaHei",sans-serif' },
-  { key: 'cream', label: '奶油手账', hint: '米色底、圆角便签、柔和棕色', bg: '#FBF5EA', ink: '#4A3B2C', accent: '#B9835A', soft: '#F1E4CF', font: '"PingFang SC","Microsoft YaHei",sans-serif' },
-  { key: 'fresh', label: '清新薄荷', hint: '白底薄荷绿，干净利落', bg: '#F5FBF8', ink: '#16302A', accent: '#1E9E78', soft: '#D7F1E7', font: '"PingFang SC","Microsoft YaHei",sans-serif' },
-  { key: 'mono', label: '极简黑白', hint: '黑白灰 + 一点红，杂志感', bg: '#FFFFFF', ink: '#111111', accent: '#E0313B', soft: '#F1F1F1', font: '"PingFang SC","Microsoft YaHei",sans-serif' },
-  { key: 'tech', label: '轻盈科技', hint: '白底紫蓝与青柠绿，圆角卡片', bg: '#F7F8FF', ink: '#1C1F3A', accent: '#5B5BF0', soft: '#E4E6FF', font: '"PingFang SC","Microsoft YaHei",sans-serif' }
+export type XhsCardVariant = 'swiss' | 'memo' | 'bento' | 'editorial' | 'notion' | 'dark';
+
+export type XhsCardStyleSpec = {
+  key: string;
+  label: string;
+  hint: string;
+  variant: XhsCardVariant;
+  bg: string;
+  sheet: string;
+  surface: string;
+  ink: string;
+  muted: string;
+  line: string;
+  accent: string;
+  soft: string;
+  mark: string;
+  font: string;
+  headingFont: string;
+};
+
+const SANS_STACK = '"Segoe UI Variable Text","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei UI","Microsoft YaHei",sans-serif';
+const SERIF_STACK = '"Source Han Serif SC","Songti SC","STSong","Noto Serif CJK SC","SimSun",serif';
+
+/**
+ * 图文卡片风格（本地 HTML 模板 2.0）。
+ *
+ * 借鉴 XHS-TextCard（苏黎世网格 / 苹果备忘录）、ian-xhs-carousel（现代产品窗口 Bento）与 md2card：
+ * 每套主题不仅换配色，还决定主画框骨架（variant：网格实线 / 备忘录横线纸 / 桌面窗口 / 衬线书摘 / 暗夜黑金）。
+ * 保留 warm 作为首项默认键以兼容历史笔记数据，整体升级为内聚高密度版式。
+ */
+export const XHS_CARD_STYLES: XhsCardStyleSpec[] = [
+  {
+    key: 'warm', label: '暖调杂志', hint: '暖纸内聚画框 + 焦橙重点，清晰高密度', variant: 'swiss',
+    bg: '#F2EAE0', sheet: '#FFFDF9', surface: '#FBF5EC', ink: '#231B15', muted: '#69584B',
+    line: '#DFD2C3', accent: '#D95D24', soft: '#FCE7D8', mark: '#FFD8B5', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'swiss', label: '苏黎世网格', hint: '瑞士杂志实线分栏 + 朱红序号，秩序感极强', variant: 'swiss',
+    bg: '#E8E6E1', sheet: '#FAF9F5', surface: '#F2F0EA', ink: '#161618', muted: '#57575E',
+    line: '#18181B', accent: '#D93829', soft: '#FCE8E6', mark: '#FFE17D', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'memo', label: '原生备忘录', hint: 'iOS 备忘录顶栏 + 横线纸 + 荧光笔涂抹', variant: 'memo',
+    bg: '#ECECEE', sheet: '#FFFDF8', surface: '#FAF6EB', ink: '#1C1C1E', muted: '#636366',
+    line: '#E6E2D6', accent: '#D4940A', soft: '#FEF3C7', mark: '#FDE047', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'bento', label: '现代窗口', hint: '产品界面窗口 + Bento 模块磁贴，利落有科技感', variant: 'bento',
+    bg: '#E6E9EF', sheet: '#FFFFFF', surface: '#F6F8FA', ink: '#18181B', muted: '#52525B',
+    line: '#E4E4E7', accent: '#EA580C', soft: '#FFEDD5', mark: '#FED7AA', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'fresh', label: '森系知识卡', hint: '清爽白绿 + Notion 提示块，适合科普与清单', variant: 'notion',
+    bg: '#E3F1EB', sheet: '#FCFDFC', surface: '#F2F9F5', ink: '#142922', muted: '#4A665C',
+    line: '#CFE6DA', accent: '#15805D', soft: '#D6F3E6', mark: '#B8F0D6', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'cream', label: '人文书摘', hint: '燕麦书页 + 宋体大标题，温和耐读不刺眼', variant: 'editorial',
+    bg: '#EAE1D2', sheet: '#FAF5EB', surface: '#F3EBDD', ink: '#2C2219', muted: '#6B5A49',
+    line: '#DCD0BD', accent: '#8F562E', soft: '#EFE1CE', mark: '#F5D9B4', font: SANS_STACK, headingFont: SERIF_STACK
+  },
+  {
+    key: 'tech', label: '蓝紫参数卡', hint: 'SaaS 仪表盘质感，适合工具测评与步骤流', variant: 'bento',
+    bg: '#E5E9F8', sheet: '#FFFFFF', surface: '#F5F7FF', ink: '#181C32', muted: '#545B78',
+    line: '#DCE1F5', accent: '#4F46E5', soft: '#E0E7FF', mark: '#C7D2FE', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'mono', label: '黑白画报', hint: '高反差黑白编辑风 + 绯红角标，买手干货感', variant: 'swiss',
+    bg: '#E4E4E7', sheet: '#FFFFFF', surface: '#F6F6F7', ink: '#111111', muted: '#52525B',
+    line: '#27272A', accent: '#E0313B', soft: '#FFE4E6', mark: '#FECDD3', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'dark', label: '暗夜黑金', hint: '深曜石底 + 琥珀金高亮，复盘与搞钱干货吸睛', variant: 'dark',
+    bg: '#090B10', sheet: '#12161F', surface: '#1A202C', ink: '#F3F4F6', muted: '#9CA3AF',
+    line: '#2B3445', accent: '#F59E0B', soft: '#33260F', mark: '#78350F', font: SANS_STACK, headingFont: SANS_STACK
+  }
 ];
 
-export function xhsCardStyle(key: string) {
+export function xhsCardStyle(key: string): XhsCardStyleSpec {
   return XHS_CARD_STYLES.find(item => item.key === key) ?? XHS_CARD_STYLES[0];
 }
 
-export const XHS_PAGE_COUNTS = [6, 7, 8, 9];
+/** 8 种语义分镜母版：按每页承载的信息关系选用不同模块排布。 */
+export const XHS_CARD_LAYOUTS: Array<{ key: XhsCardLayout; label: string; hint: string }> = [
+  { key: 'roadmap', label: '总览矩阵', hint: '开篇直接给核心分类结论或路线图，不写空话预告' },
+  { key: 'keypoints', label: '结构要点', hint: '每条「小标题结论 + 展开细节/数字 + 角标」双层结构' },
+  { key: 'steps', label: '步骤链路', hint: '01 → 02 → 03 纵向流程轨，讲清操作入口与顺序' },
+  { key: 'compare', label: '正反避坑', hint: '❌ 常见误区/踩坑 vs ✅ 正确做法/标准，反差鲜明' },
+  { key: 'bento', label: '2×2 宫格', hint: '四宫格紧凑磁贴，适合多路径对比、工具/货盘盘点' },
+  { key: 'metrics', label: '数据看板', hint: '顶部大号核心门槛/指标块 + 下方细则拆解' },
+  { key: 'checklist', label: '自查清单', hint: '☑ 实操核对项 + 判断标准，天然促收藏' },
+  { key: 'summary', label: '一页速查', hint: '条件 → 动作/方案高密度速查表（适合尾页或单张一图流）' }
+];
+
+export function xhsCardLayoutLabel(layout?: string): string {
+  return XHS_CARD_LAYOUTS.find(item => item.key === layout)?.label ?? '结构要点';
+}
+
+/** 1 张为高密度一图流速查卡；4–9 张为多页干货图组。 */
+export const XHS_PAGE_COUNTS = [1, 4, 5, 6, 7, 8, 9];
+
+/** 小红书六条正规变现路径（按手头资源对号入座，杜绝私下导流封号）。 */
+export const XHS_MONETIZATION_PATHS: Array<{
+  key: XhsMonetizationPathKey;
+  label: string;
+  fit: string;
+  threshold: string;
+  starter: string;
+  caution: string;
+}> = [
+  {
+    key: 'pugongying', label: '蒲公英内容合作（商单）',
+    fit: '能持续产出垂直/专业/高审美内容，暂时没有自有货源',
+    threshold: '粉丝 ≥1000、满 18 岁实名、无违规、非企业/机构专业号（pgy.xiaohongshu.com）',
+    starter: '低粉期先报众测、探店或官方话题活动拿反馈；满千粉后图文/视频分开填报价并补齐人设标签',
+    caution: '合作笔记必须在蒲公英报备；严禁水下私接硬广或挂站外链接'
+  },
+  {
+    key: 'buyer', label: '买手带货（橱窗 / 挂车 / 直播）',
+    fit: '有选品审美与判断力、愿意维护货盘，靠信任与复购分佣',
+    threshold: '专业号 + 满 18 岁实名可 0 粉开橱窗/笔记挂车；粉丝 ≥1000 解锁全场域直播带货',
+    starter: '不出镜/时间碎优先做橱窗+挂车，等评论区有人主动问链接时切入最自然',
+    caution: '企业直播禁入教育、医械、口腔、医疗机构、医美、保健品、金融等行业；忌盲目跟风选品伤号'
+  },
+  {
+    key: 'personal_sale', label: '个人售卖（闲置 / 搞副业）',
+    fit: '轻量技能服务、手作/闲置、未达开店门槛想先在站内闭环收款',
+    threshold: '注册 >30 天、近期无违规、免保证金（搜「个人售卖」或「设置-新功能体验」）',
+    starter: '用「搞副业」上架标准化技能/小服务，私信谈妥直接在站内完成支付收款',
+    caution: '开放类目比正式店铺少，适合验证首单需求，长期规模化仍需升级店铺'
+  },
+  {
+    key: 'qianfan_shop', label: '千帆开店 + 商品笔记',
+    fit: '有自有产品/供应链、具备独立发货与售后履约能力',
+    threshold: '入驻 >180 天、笔记 >30 篇、粉丝 >1000、无违规 + 专业号认证（个体店目前需企业蓝V；ark.xiaohongshu.com）',
+    starter: '看商机中心「机会类目 / 潜力商品」发商品笔记拿流量激励，群聊右侧挂进店入口',
+    caution: '电子资源需近 12 个月单自然月流水 >6000 元证明 + 90 天清单；新办个体户建议满 14 天工商同步后再提审'
+  },
+  {
+    key: 'expert_service', label: '专业咨询与知识服务',
+    fit: '咨询、设计、教学、职场、技术、法律等高客单专业能力者',
+    threshold: '不依赖大粉量，核心门槛是真实案例储备与站内合规承接（个人售卖副业 / 专业号）',
+    starter: '用拆解具体案例与诊断过程的干货立专业信任，有读者提问求购后再顺势承接',
+    caution: '纯搬运空洞方法论极易被投诉且不可持续；严禁在正文/评论留微信号导私域'
+  },
+  {
+    key: 'local_lead', label: '同城门店 / 本地获客',
+    fit: '有线下门店、工作室或固定城市半径内的同城服务',
+    threshold: '专业号认证 + 明确同城地理位置锚点',
+    starter: '持续发真实服务过程、前后对比案例与到店探店体验，承接预约到店成交',
+    caution: '没有本地履约半径不必硬蹭同城流量'
+  }
+];
+
+export const XHS_PILLAR_ROLES: Record<XhsPillarRole, { label: string; hint: string }> = {
+  traffic: { label: '流量拉新', hint: '抓高频痛点扩曝光，吸引潜在人群进场' },
+  trust: { label: '专业立信', hint: '硬核干货教程与案例复盘，促收藏与涨粉' },
+  convert: { label: '种草转化', hint: '选品测评、服务拆解或蒲公英样片，激发问链接与求购' }
+};
+
+export function xhsMonetizationLabel(key?: string): string {
+  return XHS_MONETIZATION_PATHS.find(item => item.key === key)?.label ?? '';
+}
+
+export function xhsPillarRoleLabel(role?: string): string {
+  return role && role in XHS_PILLAR_ROLES ? XHS_PILLAR_ROLES[role as XhsPillarRole].label : '';
+}
+
+/** 账号变现阶段解锁罗盘（对照平台真实硬门槛）。 */
+export const XHS_MONETIZATION_MILESTONES: Array<{
+  key: string;
+  stage: string;
+  gate: string;
+  unlocks: string;
+  minNotes: number;
+  minFans: number;
+}> = [
+  { key: 'm1', stage: '阶段 1 · 冷启动测需求', gate: '注册 >30 天、无违规', unlocks: '开通「个人售卖（搞副业/出闲置）」免保证金站内收款；报名蒲公英众测/探店练手', minNotes: 1, minFans: 0 },
+  { key: 'm2', stage: '阶段 2 · 0 粉选品带货', gate: '专业号 + 满 18 岁实名 + 评论区出现问链接', unlocks: '开通「买手橱窗」与「笔记挂车」分佣（无需开播、0 粉可申）', minNotes: 5, minFans: 0 },
+  { key: 'm3', stage: '阶段 3 · 千粉商业接单', gate: '粉丝 ≥1000 + 实名无违规', unlocks: '开通「蒲公英博主合作」（图文/视频分开填报价 + 补人设标签）与「买手直播带货」', minNotes: 10, minFans: 1000 },
+  { key: 'm4', stage: '阶段 4 · 自营店铺闭环', gate: '入驻 >180 天 + 笔记 >30 篇 + 粉丝 ≥1000 + 企业蓝V', unlocks: '开通「千帆店铺 + 商品笔记」，看商机中心拿潜力商品曝光激励', minNotes: 30, minFans: 1000 }
+];
 
 /** 网页版创作者中心的图文发布页：应用只负责打开它，上传、填写、点发布都由你自己在页面里完成。 */
 export const XHS_PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish?source=official';
@@ -144,14 +376,136 @@ export const XHS_PUBLISH_URL = 'https://creator.xiaohongshu.com/publish/publish?
  */
 export const XHS_SAFE_AREA = '构图要完整：标题、文字、主体与所有卡片都完整地放在画面内，离四边至少留出画面宽度 8% 的空白；任何文字不要贴边、不要被画面边缘截断，宁可少写一条也不要挤出画面。';
 
-/** 封面的通用画风：不预设读者群体，读者与调性来自定位档案，画面内容来自笔记本身。 */
+export const XHS_IMAGE_NEGATIVE_RULES = '严禁出现水印、平台 UI 边框、二维码、真实品牌标识（Logo）、畸形手部或多余肢体、文字贴边截断、背景随机乱码假字、廉价赛博霓虹光污染、夸张失真表情或令人不适的画面。';
+
+export type XhsCoverPresetSpec = {
+  key: XhsCoverPresetKey;
+  label: string;
+  hint: string;
+  medium: string;
+  composition: string;
+  paletteLighting: string;
+  typography: string;
+};
+
+/** 封面结构化视觉预设：把笼统的“清爽小红书风”拆成明确的媒介、构图留白、光影色板与文字排版规范。 */
+export const XHS_COVER_PRESETS: XhsCoverPresetSpec[] = [
+  {
+    key: 'editorial_photo',
+    label: '质感生活实拍',
+    hint: '自然窗光实景摄影 + 上方干净留白压标题，真实种草感强',
+    medium: '高质感生活方式编辑摄影（35mm/50mm 定焦浅景深，真实自然肌理，杜绝塑料感 AI 磨皮）',
+    composition: '三分法或桌面俯拍/平视近景，核心器物或人物动作置于中下视觉焦点，画面上半部预留 30%–35% 干净低纹理留白区承载标题',
+    paletteLighting: '柔和晴天侧逆窗光或温暖室内漫射光，主色调克制在 2–3 个低饱和协调色系内，阴影干净通透',
+    typography: '上半部醒目现代粗黑体主标题 + 胶囊小标签分层排布，与背景形成高明度反差'
+  },
+  {
+    key: 'magazine_poster',
+    label: '高定杂志海报',
+    hint: '瑞士编辑平面排版 + 强视觉主体居中，适合干货盘点与认知复盘',
+    medium: '现代商业杂志封面级平面视觉设计，干净纸张肌理结合单一高精度静物或几何构成',
+    composition: '严谨网格对称或左对齐编辑构图，顶部大字号标题统治视觉第一层级，下方主体利落独立、四周留白充裕',
+    paletteLighting: '米白/暖灰高级纸感底色 + 深炭黑主字 + 单一高饱和强调色（朱红/克莱因蓝/焦糖橙），均匀无杂乱投影',
+    typography: '超大字重无衬线主标题配细线分割或色块高亮条，层级极度清晰，缩略图一眼识别'
+  },
+  {
+    key: 'handdrawn_board',
+    label: '温暖手绘白板',
+    hint: '粗马克笔白板手绘生活漫画 + 重点色圈画，亲切好懂适合科普教程',
+    medium: '手绘白板图解插画（粗黑/深灰马克笔手绘轮廓，温暖极简生活漫画质感，2D 平面高对比）',
+    composition: '暖白白板底（#FFFDF9），画面中下部画与主题直接相关的具体人物日常动作或步骤对比，上方留足 35% 干净标题区',
+    paletteLighting: '光线均匀明亮无暗角；除黑白灰轮廓外重点色不超过 2 种（暖阳橙 #E67E22、健康绿 #27AE60）',
+    typography: '醒目手写感粗黑标题配荧光笔下划线强调，字大清晰、零拥挤'
+  },
+  {
+    key: 'studio_3d',
+    label: '轻拟物 3D 静物',
+    hint: '磨砂亚克力/柔和黏土微缩桌面道具，适合效率工具、数码与副业工作流',
+    medium: '高品质现代工业风 3D 轻拟物静物渲染（柔和哑光黏土与磨砂半透明材质结合，边缘精致圆润）',
+    composition: '45 度微距等轴或正面悬浮构图，1 个核心主题微缩模型居中偏下，周围点缀 1–2 个轻量关联小图标道具',
+    paletteLighting: '柔和全局光照（Global Illumination）棚拍漫射光，浅灰蓝或奶油白纯净渐变背景，色调轻盈现代',
+    typography: '顶部居中或左对齐圆润粗体大标题，搭配精致圆角副标题胶囊'
+  },
+  {
+    key: 'minimal_flat',
+    label: '人文纸感插画',
+    hint: '柔和扁平肌理插画 + 燕麦暖底，适合故事复盘、阅读与身心疗愈',
+    medium: '当代编辑风肌理扁平插画（带有微妙版画颗粒与温暖纸张触感，线条舒展克制）',
+    composition: '大面积留白呼吸感构图，人物或生活角落置于一侧，与文字区形成平衡对话关系',
+    paletteLighting: '燕麦米、鼠尾草绿、暖陶土棕等柔和自然大地色系，午后温暖柔光氛围',
+    typography: '温润人文衬线或中粗黑体主标题，字距舒展清晰'
+  }
+];
+
+export function xhsCoverPreset(key?: string): XhsCoverPresetSpec {
+  return XHS_COVER_PRESETS.find(item => item.key === key) ?? XHS_COVER_PRESETS[0];
+}
+
+export type XhsInfoPresetSpec = {
+  key: XhsInfoPresetKey;
+  label: string;
+  hint: string;
+  layoutSpec: string;
+  palette: string;
+  iconography: string;
+};
+
+/** 生图信息图的结构化视觉预设（不再只有单一紫蓝风格）。 */
+export const XHS_INFO_PRESETS: XhsInfoPresetSpec[] = [
+  {
+    key: 'light_bento',
+    label: '轻盈科技 Bento',
+    hint: '白底 + 紫蓝主色与青柠绿点缀 + 圆角卡片分区（经典信息图）',
+    layoutSpec: '现代 Bento 模块化圆角卡片网格分区，顶部标题栏 + 中部等距信息卡 + 底部重点提示条，留白充足',
+    palette: '纯净白底（#FFFFFF）配浅灰蓝卡片底，紫蓝色（#5B5BF0）为主色、青柠绿做重点高亮',
+    iconography: '极简线性矢量小图标配合清晰数字序号徽章'
+  },
+  {
+    key: 'swiss_chart',
+    label: '苏黎世杂志网格',
+    hint: '米白纸底 + 炭黑细线分栏 + 朱红角标，高密度商业杂志知识感',
+    layoutSpec: '瑞士国际主义平面网格排版，用 1.5px 实线边框严格划分标题区与要点模块，对齐精准',
+    palette: '暖米白纸底（#FAF8F4），深炭黑文字与分割线，朱砂红（#D93829）与暖黄荧光笔做视觉锚点',
+    iconography: '几何编号角标（01 / 02 / 03）、对比箭头与结构化标签胶囊'
+  },
+  {
+    key: 'marker_sketchnote',
+    label: '马克笔视觉笔记',
+    hint: '暖白纸底 + 手绘方框箭头 + 荧光笔圈重点，真人学霸手账感',
+    layoutSpec: '清晰结构化视觉笔记（Sketchnote）分区，手绘圆角方框串联各要点，逻辑箭头引导视线',
+    palette: '暖白纸张底（#FFFDF9），深灰黑马克笔字迹，柠檬黄与薄荷绿荧光笔涂抹重点词',
+    iconography: '简洁手绘小图标（灯泡、对勾、警示三角、星标）点缀条目旁'
+  },
+  {
+    key: 'warm_guide',
+    label: '暖调生活图鉴',
+    hint: '燕麦暖底 + 森绿与焦糖棕卡片，温和耐看适合健康/居家/清单',
+    layoutSpec: '柔和圆角分栏知识图鉴，大字号小标题配合清爽图文行，阅读毫无压迫感',
+    palette: '燕麦米暖底（#F8F3E8），深棕墨色正文，森林绿（#2A6F57）与暖橙做分类强调',
+    iconography: '温和扁平生活小插画图标与圆润数字标号'
+  },
+  {
+    key: 'dark_dashboard',
+    label: '暗夜黑金看板',
+    hint: '深曜石底 + 暗色微光卡片 + 琥珀金指标，适合数据拆解与搞钱复盘',
+    layoutSpec: '高对比暗色数据仪表盘卡片布局，细微亮边分割各模块，重点数字放大突出',
+    palette: '深石墨黑底（#12161F）配暗蓝灰卡片（#1B212E），纯白正文，琥珀金（#F59E0B）与翠绿高亮',
+    iconography: '发光质感线性指标图标、进度条与胶囊徽章'
+  }
+];
+
+export function xhsInfoPreset(key?: string): XhsInfoPresetSpec {
+  return XHS_INFO_PRESETS.find(item => item.key === key) ?? XHS_INFO_PRESETS[0];
+}
+
+/** 封面的通用画风兜底常量（保持导出兼容）。 */
 export const XHS_COVER_STYLE = [
   '画风：小红书常见的清爽质感，主体突出、构图干净、色彩协调，避免拥挤和强刺激色彩。',
   '画面里的中文标题要写对、写清楚、字号够大；不要水印或 logo，不要真实品牌标识，不要夸张或令人不适的画面。',
   XHS_SAFE_AREA
 ].join('\n');
 
-/** 生图信息图的固定风格（推文 space-xhs-image 的「轻盈 AI 产品信息图」）。 */
+/** 生图信息图的默认风格兜底常量（保持导出兼容）。 */
 export const XHS_INFO_IMAGE_STYLE = [
   '小红书竖版信息图，竖构图。',
   '风格：白底，紫蓝色为主色、青柠绿做点缀强调，圆角卡片分区，线性图标，留白充足，信息层级清楚。',

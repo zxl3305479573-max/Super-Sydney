@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { XhsBasis, XhsCandidateView, XhsCardPlan, XhsIpCoverInput, XhsNote, XhsNoteAssets, XhsNoteType } from '../../shared';
+import type {
+  XhsBasis, XhsCandidateView, XhsCardLayout, XhsCardPage, XhsCardPlan, XhsCoverGenerateInput, XhsCoverPresetKey, XhsInfoGenerateInput, XhsInfoPresetKey,
+  XhsIpCoverInput, XhsMascotMode, XhsNote, XhsNoteAssets, XhsNoteIntent, XhsNoteType, XhsPositioning, XhsStructuredCoverPlan
+} from '../../shared';
 import {
-  XHS_BODY_LIMIT, XHS_CARD_STYLES, XHS_CHECKS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS, XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES
+  XHS_BODY_LIMIT, XHS_CARD_LAYOUTS, XHS_CARD_STYLES, XHS_CHECKS, XHS_COVER_PRESETS, XHS_INFO_PRESETS, XHS_NOTE_INTENTS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS,
+  XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES, xhsCardLayoutLabel, xhsNoteIntentSpec
 } from '../../services/xhs-catalog';
-import { renderCardsPreview } from '../../services/xhs-cards';
+import { cardPageLines, linesToCardItems, renderCardsPreview, resolveCardLayout } from '../../services/xhs-cards';
 import {
-  countChars, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, type XhsStep
+  countChars, findAiCliches, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, type XhsStep
 } from '../../services/xhs-pipeline';
-import { ConfirmButton, Icon, TagEditor } from '../ui';
+import { xhsCoverPrompt, xhsInfoImagePrompt } from '../../services/xhs-workflow';
+import { ConfirmButton, Icon, TagEditor, readableError } from '../ui';
 import { ScoreBar, sourceOf } from './common';
 import { IpCoverPanel } from './IpCoverPanel';
 import { IpPicker, useIpKit, useIpLibrary } from '../IpLibrary';
@@ -41,12 +46,15 @@ function ConfirmStale({ text, onConfirm, locked }: { text: string; onConfirm: ()
 export function TopicStep({ note, locked, onEdit }: Common & { onEdit: (patch: Partial<XhsNote>) => void }) {
   const source = sourceOf(note);
   const type = XHS_NOTE_TYPES.find(item => item.value === note.noteType);
+  const intent = xhsNoteIntentSpec(note.intent);
   return <div className="flow-body">
     <div className="native-task-fields">
       <label className="native-field-wide"><span>选题</span><input disabled={locked} value={note.topic} onChange={event => onEdit({ topic: event.target.value })} placeholder="这篇笔记要解决读者的什么问题" /></label>
       <label><span>笔记类型</span><select disabled={locked} value={note.noteType} onChange={event => onEdit({ noteType: event.target.value as XhsNoteType })}>{XHS_NOTE_TYPES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-      <div className="xhs-type-hint"><span>结构</span><p>{type?.structure}</p></div>
+      <label><span>本篇商业角色</span><select disabled={locked} value={note.intent ?? 'organic'} onChange={event => onEdit({ intent: event.target.value as XhsNoteIntent })}>{XHS_NOTE_INTENTS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <div className="xhs-type-hint"><span>结构与商业侧重</span><p>{type?.structure}{intent.hint ? ` ｜ ${intent.hint}` : ''}</p></div>
     </div>
+    {intent.complianceNotice && <p className="xhs-hint">{intent.complianceNotice}</p>}
     <label className="xhs-field"><span>你的经验与素材（推荐填写）</span>
       <textarea className="input xhs-textarea" rows={6} disabled={locked} value={note.material} onChange={event => onEdit({ material: event.target.value })}
         placeholder="写下你自己的经历、做法、踩过的坑、具体数字。正文只会基于这里写「亲身经历」；不填就按科普 / 整理的口吻写，不会编造亲测。" />
@@ -56,22 +64,39 @@ export function TopicStep({ note, locked, onEdit }: Common & { onEdit: (patch: P
   </div>;
 }
 
-export function BodyStep({ note, locked, busy, stale, onEdit, onRun, onConfirm }: Common & { stale: boolean; onEdit: (patch: Partial<XhsNote>) => void; onRun: () => void; onConfirm: (key: keyof XhsBasis) => void }) {
+export function BodyStep({ note, locked, busy, stale, onEdit, onRun, onPolish, onConfirm }: Common & {
+  stale: boolean;
+  onEdit: (patch: Partial<XhsNote>) => void;
+  onRun: () => void;
+  onPolish: () => void;
+  onConfirm: (key: keyof XhsBasis) => void;
+}) {
   const meta = readWriterMeta(note);
   const tags = readTags(note);
   const length = countChars(note.body);
+  const cliches = useMemo(() => findAiCliches(note.body), [note.body]);
   return <div className="flow-body">
-    {stale && <ConfirmStale text="笔记类型改过，正文还是按旧类型的结构写的。" locked={locked} onConfirm={() => onConfirm('body')} />}
+    {stale && <ConfirmStale text="笔记类型或商业角色改过，正文还是按旧结构写的。" locked={locked} onConfirm={() => onConfirm('body')} />}
+    {cliches.length > 0 && <p className="xhs-hint xhs-hint-warn">
+      <Icon name="alert" size={14} />检测到套话痕迹：{cliches.join('；')}
+      <button className="button button-quiet button-small" type="button" disabled={locked} onClick={onPolish}>一键去 AI 味精修 →</button>
+    </p>}
     <div className="flow-sub-head">
       <h4>正文<small>{length} 字 · 小红书上限 {XHS_BODY_LIMIT} 字</small><Counter value={length} limit={XHS_BODY_LIMIT} /></h4>
-      <button className="button button-secondary" disabled={locked} onClick={onRun}>{busy === 'body' ? '写作中…' : note.body.trim() ? '重新写正文' : 'AI 写正文'}</button>
+      <div className="btn-group">
+        {note.body.trim() && <button className="button button-secondary" disabled={locked} onClick={onPolish} title="保留核心事实，清理报幕套话与黑话，强化前 3 行钩子和具体判断标准">
+          {busy === 'polish' ? '精修提纯中…' : '去 AI 味 · 精修提纯'}
+        </button>}
+        <button className="button button-primary" disabled={locked} onClick={onRun}>{busy === 'body' ? '写作中…' : note.body.trim() ? '重写初稿' : 'AI 写高质量正文'}</button>
+      </div>
     </div>
     <textarea className="flow-draft xhs-body" disabled={locked} value={note.body} onChange={event => onEdit({ body: event.target.value })}
-      placeholder="生成后在这里改；也可以直接写。前 3 行是开头，要让人想继续看；结尾留一个好回答的互动问题。" />
+      placeholder="生成后在这里改；也可以先手写草稿，再点「去 AI 味 · 精修提纯」。前 3 行直接进具体场景或反常识结论，结尾留一个读者 2 秒就能选的二选一互动题。" />
     <div className="xhs-field"><span>标签（{tags.length} 个，建议 3–10 个，不带 #）</span>
       <TagEditor values={tags} onChange={values => onEdit({ tagsJson: JSON.stringify(values) })} placeholder="输入标签后回车" />
     </div>
-    {meta && (meta.opening.length > 0 || meta.outline.length > 0) && <dl className="flow-fields">
+    {meta && (meta.coreTakeaway || meta.opening.length > 0 || meta.outline.length > 0) && <dl className="flow-fields">
+      {meta.coreTakeaway && <div><dt>核心结论</dt><dd><strong>{meta.coreTakeaway}</strong></dd></div>}
       {meta.opening.length > 0 && <div><dt>开头 3 行</dt><dd><ol>{meta.opening.map(line => <li key={line}>{line}</li>)}</ol></dd></div>}
       {meta.outline.length > 0 && <div><dt>分段骨架</dt><dd><ol>{meta.outline.map(line => <li key={line}>{line}</li>)}</ol></dd></div>}
       {meta.interaction && <div><dt>结尾互动</dt><dd>{meta.interaction}</dd></div>}
@@ -124,16 +149,25 @@ function CoverPreview({ assets, title }: { assets: XhsNoteAssets | null; title: 
   </div>;
 }
 
-export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale, ipId, onSelectIp, onEdit, onCover, onChooseCover, onIpCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onUseCover, onRemoveCandidate, onConfirm }: Common & {
+export function VisualStep({ note, positioning, locked, busy, assets, coverStale, cardsStale, ipId, onSelectIp, notify, onEdit, onCover, onDraftCoverBrief, onChooseCover, onIpCover, onCards, onRenderCards, onInfo, onCancel, onAddLocal, onArrange, onUseCover, onRemoveCandidate, onConfirm }: Common & {
+  positioning: XhsPositioning | null;
   assets: XhsNoteAssets | null; coverStale: boolean; cardsStale: boolean;
   /** 账号选用的 IP；空串表示不使用 IP（不显示 IP 模板）。 */
-  ipId: string; onSelectIp: (id: string) => void;
-  onEdit: (patch: Partial<XhsNote>) => void; onCover: (brief: string) => void; onChooseCover: () => void; onIpCover: (input: XhsIpCoverInput) => void;
-  onCards: (pageCount: number, style: string) => void; onRenderCards: () => void; onInfo: (mode: 'single' | 'pages') => void; onCancel: () => void;
+  ipId: string; onSelectIp: (id: string) => void; notify: (message: string) => void;
+  onEdit: (patch: Partial<XhsNote>) => void; onCover: (input: XhsCoverGenerateInput) => void;
+  onDraftCoverBrief: (preset: string, hint: string) => Promise<XhsStructuredCoverPlan>;
+  onChooseCover: () => void; onIpCover: (input: XhsIpCoverInput) => void;
+  onCards: (pageCount: number, style: string, focus: string) => void; onRenderCards: () => void; onInfo: (input: XhsInfoGenerateInput) => void; onCancel: () => void;
   onAddLocal: () => void; onArrange: (paths: string[]) => void; onUseCover: (path: string) => void; onRemoveCandidate: (path: string) => void;
   onConfirm: (key: keyof XhsBasis) => void;
 }) {
   const [brief, setBrief] = useState('');
+  const [coverPreset, setCoverPreset] = useState<XhsCoverPresetKey>(XHS_COVER_PRESETS[0].key);
+  const [infoPreset, setInfoPreset] = useState<XhsInfoPresetKey>(XHS_INFO_PRESETS[0].key);
+  const [customCoverPrompt, setCustomCoverPrompt] = useState('');
+  const [briefBusy, setBriefBusy] = useState(false);
+  const [cardFocus, setCardFocus] = useState('');
+  const [focusPage, setFocusPage] = useState<number | null>(null);
   const { view: ipLibrary } = useIpLibrary();
   const { kit, error: kitError } = useIpKit(ipId);
   const [ipOpen, setIpOpen] = useState(true);
@@ -141,9 +175,29 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
   const [pageCount, setPageCount] = useState(plan?.pages.length && XHS_PAGE_COUNTS.includes(plan.pages.length) ? plan.pages.length : 6);
   const [style, setStyle] = useState(plan?.style ?? XHS_CARD_STYLES[0].key);
   useEffect(() => { if (plan?.style) setStyle(plan.style); }, [plan?.style]);
+  useEffect(() => { if (focusPage !== null && (!plan || focusPage >= plan.pages.length)) setFocusPage(null); }, [plan, focusPage]);
   const images = readImages(note);
-  const preview = useMemo(() => plan ? renderCardsPreview({ ...plan, style }, note.title || note.topic, undefined, kit) : '', [plan, style, note.title, note.topic, kit]);
+  const preview = useMemo(() => plan ? renderCardsPreview({ ...plan, style }, note.title || note.topic, undefined, kit, focusPage) : '', [plan, style, note.title, note.topic, kit, focusPage]);
+  const autoCoverPrompt = useMemo(() => xhsCoverPrompt(note, positioning, brief, coverPreset), [note, positioning, brief, coverPreset]);
+  const infoSamplePrompt = useMemo(() => plan?.pages.length ? xhsInfoImagePrompt(note, plan.pages, 0, infoPreset) : '', [note, plan, infoPreset]);
   const editPlan = (next: XhsCardPlan) => onEdit({ cardsJson: JSON.stringify(next) });
+  const updatePage = (index: number, patch: Partial<XhsCardPage>) => {
+    if (!plan) return;
+    editPlan({ ...plan, style, pages: plan.pages.map((item, position) => position === index ? { ...item, ...patch } : item) });
+  };
+  const draftScene = async () => {
+    setBriefBusy(true);
+    try {
+      const drafted = await onDraftCoverBrief(coverPreset, brief);
+      setBrief(drafted.brief);
+      setCustomCoverPrompt('');
+      notify('已生成结构化封面画面方案');
+    } catch (error) {
+      notify(readableError(error));
+    } finally {
+      setBriefBusy(false);
+    }
+  };
   const imageBusy = busy === 'cover' || busy === 'info-single' || busy === 'info-pages';
   const move = (index: number, delta: number) => {
     const order = images.map(item => item.path);
@@ -153,59 +207,126 @@ export function VisualStep({ note, locked, busy, assets, coverStale, cardsStale,
   };
 
   return <div className="flow-body">
-    <h4 className="xhs-step-sub">① 封面（3:4）</h4>
+    <h4 className="xhs-step-sub">① 封面（3:4 · 六模块结构化生图提示词）</h4>
     {coverStale && <ConfirmStale text="标题改过，封面上的标题字可能和新标题不一致。" locked={locked} onConfirm={() => onConfirm('cover')} />}
     <div className="xhs-cover-row">
       <CoverPreview assets={assets} title={note.title} />
       <div className="xhs-cover-actions">
-        <label className="xhs-field"><span>画面主体与素材（可选）</span><textarea className="input xhs-textarea" rows={3} disabled={locked} value={brief} onChange={event => setBrief(event.target.value)} placeholder="例如：桌面上摆着收纳盒和整理好的杂物；暖色调；背景简单。不填就按选题和正文自动构图" /></label>
+        <label className="xhs-field"><span>封面视觉预设</span>
+          <select className="input" disabled={locked || briefBusy} value={coverPreset} onChange={event => { setCoverPreset(event.target.value as XhsCoverPresetKey); setCustomCoverPrompt(''); }}>
+            {XHS_COVER_PRESETS.map(preset => <option key={preset.key} value={preset.key}>{preset.label} — {preset.hint}</option>)}
+          </select>
+        </label>
+        <label className="xhs-field"><span>画面主体与分镜要求（可手填，或点下方让 AI 把正文转成具象道具与光影方案）</span>
+          <textarea className="input xhs-textarea" rows={3} disabled={locked || briefBusy} value={brief} onChange={event => { setBrief(event.target.value); setCustomCoverPrompt(''); }}
+            placeholder="例如：主体与道具：原木书桌上摆着收纳盒与分类标签贴；构图：俯拍近景，上方留 35% 干净墙面放标题；光影：温暖晨光" />
+        </label>
         <div className="btn-group">
-          <button className="button button-primary" disabled={locked} onClick={() => onCover(brief)}>{busy === 'cover' ? '生成中…' : note.coverPath ? '重新生成封面' : 'AI 生成封面'}</button>
-          <button className="button button-secondary" disabled={locked} onClick={onChooseCover}>用本地图片</button>
+          <button className="button button-secondary" type="button" disabled={locked || briefBusy} onClick={() => void draftScene()}>
+            <Icon name="spark" />{briefBusy ? '提炼画面中…' : 'AI 提炼具象画面方案'}
+          </button>
+          <button className="button button-primary" disabled={locked || briefBusy} onClick={() => onCover({ brief, preset: coverPreset, customPrompt: customCoverPrompt })}>
+            {busy === 'cover' ? '生成中…' : note.coverPath ? '重新生成封面' : 'AI 生成封面'}
+          </button>
+          <button className="button button-secondary" disabled={locked || briefBusy} onClick={onChooseCover}>用本地图片</button>
           {imageBusy && <button className="button button-quiet" onClick={onCancel}>取消生成</button>}
         </div>
-        <small className="ww-muted">封面会把标题做成大字放在上半部分，画风按笔记内容与定位档案里的视觉建议。生成后在左右补边成 3:4，不裁切画面；换下来的旧封面留在下面的候选图库里。</small>
+        <details className="native-json">
+          <summary>查看 / 微调最终 6 模块结构化封面提示词{customCoverPrompt.trim() ? '（已手动定制）' : ''}</summary>
+          <textarea className="input xhs-textarea" rows={9} disabled={locked} value={customCoverPrompt || autoCoverPrompt}
+            onChange={event => setCustomCoverPrompt(event.target.value)} />
+          {customCoverPrompt.trim() && <button className="button button-quiet button-small" type="button" onClick={() => setCustomCoverPrompt('')}>恢复自动组装的结构化提示词</button>}
+        </details>
+        <small className="ww-muted">结构化提示词已锁定「画布安全区 → 媒介画风 → 具象主体 → 精确标题禁乱码 → 光影色板 → 负面禁忌」，生成后自动左右补边成 3:4 不裁字。</small>
       </div>
     </div>
     <div className="xhs-ip-head">
       <IpPicker label="这个账号的 IP" value={ipId} ips={ipLibrary.ips} disabled={locked} onChange={onSelectIp} />
-      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面；图文卡片每页右下角也会放 IP 角色（不加品牌名和头像）。</small>}
+      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面；图文卡片底部与总结栏并排展示 IP 角色（不挖空正文高度、不加品牌名和头像）。</small>}
       {ipId && <button className={`button ${ipOpen ? 'button-quiet' : 'button-secondary'}`} onClick={() => setIpOpen(open => !open)}>{ipOpen ? '收起 IP 模板' : '用 IP 模板出封面'}</button>}
     </div>
     {ipId && ipOpen && <IpCoverPanel note={note} kit={kit} kitError={kitError} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />}
 
-    <h4 className="xhs-step-sub">② 图文卡片（本地模板，免费）</h4>
-    {cardsStale && <ConfirmStale text="正文改过，卡片 / 信息图里的内容可能过时了。" locked={locked} onConfirm={() => onConfirm('cards')} />}
+    <h4 className="xhs-step-sub">② 图文卡片（高密度多母版，本地免费渲染）</h4>
+    {cardsStale && <ConfirmStale text="正文或素材改过，卡片 / 信息图里的内容可能过时了。" locked={locked} onConfirm={() => onConfirm('cards')} />}
     <div className="xhs-style-picks">{XHS_CARD_STYLES.map(item => <button key={item.key} className={`xhs-style ${style === item.key ? 'is-active' : ''}`} disabled={locked}
       onClick={() => { setStyle(item.key); if (plan) editPlan({ ...plan, style: item.key }); }}>
-      <i style={{ background: item.bg, borderColor: item.accent }}><b style={{ background: item.accent }} /></i><strong>{item.label}</strong><small>{item.hint}</small>
+      <i style={{ background: item.sheet, borderColor: item.line, boxShadow: `inset 0 0 0 3px ${item.bg}` }}><b style={{ background: item.accent }} /></i><strong>{item.label}</strong><small>{item.hint}</small>
     </button>)}</div>
+    <label className="xhs-field">
+      <span>卡片提炼重点 / 补充干货源（可选：拆卡会同时提取「你的经验与素材 + 正文」里的具体数字、门槛、步骤和避坑点）</span>
+      <textarea className="input xhs-textarea" rows={2} disabled={locked} value={cardFocus} onChange={event => setCardFocus(event.target.value)}
+        placeholder="例如：必须保留五种变现途径的所有粉丝/月流水门槛数字和避坑提醒；也可直接在这里粘贴长文资料供拆卡提炼" />
+    </label>
     <div className="flow-inline-actions">
-      <label className="xhs-inline-select"><span>页数</span><select className="input" disabled={locked} value={pageCount} onChange={event => setPageCount(Number(event.target.value))}>{XHS_PAGE_COUNTS.map(value => <option key={value} value={value}>{value} 张</option>)}</select></label>
-      <button className="button button-secondary" disabled={locked} onClick={() => onCards(pageCount, style)}>{busy === 'cards' ? '拆分中…' : plan ? '重新拆分页' : 'AI 拆分页'}</button>
+      <label className="xhs-inline-select"><span>页数</span><select className="input" disabled={locked} value={pageCount} onChange={event => setPageCount(Number(event.target.value))}>{XHS_PAGE_COUNTS.map(value => <option key={value} value={value}>{value === 1 ? '1 张（一图流速查）' : `${value} 张`}</option>)}</select></label>
+      {ipId && plan && <>
+        <label className="xhs-inline-select"><span>IP 角色</span>
+          <select className="input" disabled={locked} value={plan.mascotMode ?? 'all'} onChange={event => editPlan({ ...plan, style, mascotMode: event.target.value as XhsMascotMode })}>
+            <option value="all">每页并排展示</option>
+            <option value="bookends">仅首尾页展示</option>
+            <option value="none">卡片不放角色</option>
+          </select>
+        </label>
+        <label className="xhs-inline-select" style={{ cursor: 'pointer' }}>
+          <input type="checkbox" disabled={locked} checked={Boolean(plan.useIpPalette)} onChange={event => editPlan({ ...plan, style, useIpPalette: event.target.checked })} />
+          <span>联动 IP 强调色</span>
+        </label>
+      </>}
+      <button className="button button-secondary" disabled={locked} onClick={() => onCards(pageCount, style, cardFocus)}>{busy === 'cards' ? '提炼拆页中…' : plan ? '重新提炼拆页' : 'AI 提炼干货并拆页'}</button>
       <button className="button button-primary" disabled={locked || !plan} onClick={onRenderCards}>{busy === 'render' ? '渲染中…' : '导出为卡片图'}</button>
     </div>
     {plan && <>
-      <iframe className="xhs-cards-frame" title="图文卡片预览" sandbox="allow-same-origin" srcDoc={preview} />
-      <details className="native-json"><summary>逐页修改卡片文字</summary>
-        <div className="xhs-page-editor">{plan.pages.map((page, index) => <fieldset key={index} disabled={locked}>
-          <legend>第 {index + 1} 页</legend>
-          <input className="input" value={page.heading} placeholder="标题（≤14 字）" onChange={event => editPlan({ ...plan, pages: plan.pages.map((item, position) => position === index ? { ...item, heading: event.target.value } : item) })} />
-          <textarea className="input" rows={4} value={page.points.join('\n')} placeholder="要点，一行一条" onChange={event => editPlan({ ...plan, pages: plan.pages.map((item, position) => position === index ? { ...item, points: event.target.value.split('\n') } : item) })} />
-          <input className="input" value={page.emphasis} placeholder="强调语（可选）" onChange={event => editPlan({ ...plan, pages: plan.pages.map((item, position) => position === index ? { ...item, emphasis: event.target.value } : item) })} />
-        </fieldset>)}</div>
-        <p className="ww-muted">改完先点右上角「保存」，再「导出为卡片图」。</p>
+      {plan.keyFacts && plan.keyFacts.length > 0 && <details className="native-json">
+        <summary>已提取核心事实库（{plan.keyFacts.length} 条硬核干货已分配进卡片）</summary>
+        <ul className="xhs-keyfacts">{plan.keyFacts.map(fact => <li key={fact}>{fact}</li>)}</ul>
+      </details>}
+      <div className="xhs-chip-row">
+        <span className="xhs-chip-label">预览视图</span>
+        <button className={`chip ${focusPage === null ? 'chip-accent' : ''}`} type="button" onClick={() => setFocusPage(null)}>整组总览（{plan.pages.length} 张）</button>
+        {plan.pages.map((page, index) => <button key={index} className={`chip ${focusPage === index ? 'chip-accent' : ''}`} type="button" onClick={() => setFocusPage(index)}>
+          第 {index + 1} 页 · {xhsCardLayoutLabel(resolveCardLayout(page, index, plan.pages.length))}
+        </button>)}
+      </div>
+      <iframe className={`xhs-cards-frame ${focusPage !== null ? 'is-focused' : ''}`} title="图文卡片预览" sandbox="allow-same-origin" srcDoc={preview} />
+      <details className="native-json"><summary>逐页修改卡片版式与文字（支持【荧光高亮】与「[角标] 小标题：具体细节」语法）</summary>
+        <div className="xhs-page-editor">{plan.pages.map((page, index) => {
+          const activeLayout = resolveCardLayout(page, index, plan.pages.length);
+          return <fieldset key={index} disabled={locked}>
+            <legend>第 {index + 1} 页 · {xhsCardLayoutLabel(activeLayout)}</legend>
+            <div className="xhs-page-meta-row">
+              <select className="input" aria-label={`第 ${index + 1} 页版式`} value={page.layout ?? activeLayout} onChange={event => updatePage(index, { layout: event.target.value as XhsCardLayout })}>
+                {XHS_CARD_LAYOUTS.map(layout => <option key={layout.key} value={layout.key}>{layout.label}</option>)}
+              </select>
+              <input className="input" value={page.kicker ?? ''} placeholder="页眉角标（如：路径 01）" onChange={event => updatePage(index, { kicker: event.target.value })} />
+            </div>
+            <input className="input" value={page.heading} placeholder="主标题（支持【关键词】高亮）" onChange={event => updatePage(index, { heading: event.target.value })} />
+            <input className="input" value={page.lead ?? ''} placeholder="一句话核心判断 / 适用前提（可选）" onChange={event => updatePage(index, { lead: event.target.value })} />
+            <textarea className="input" rows={5} value={cardPageLines(page).join('\n')} placeholder="[角标] 小标题：具体展开细节（支持【高亮】），一行一条" onChange={event => updatePage(index, linesToCardItems(event.target.value.split('\n')))} />
+            <input className="input" value={page.emphasis} placeholder="底部实操底线 / 避坑口诀（可选）" onChange={event => updatePage(index, { emphasis: event.target.value })} />
+          </fieldset>;
+        })}</div>
+        <p className="ww-muted">改完先点右上角「保存」，再「导出为卡片图」。切换版式与改字都会在上方预览框实时生效。</p>
       </details>
     </>}
 
     <details className="flow-secondary-tools">
-      <summary>更多图片生成<small>生图信息图按张计费；历史候选图库也在这里</small></summary>
-      <h4 className="xhs-step-sub">③ 生图信息图（图片接口，按张计费）</h4>
+      <summary>更多图片生成<small>结构化生图信息图（5 套视觉预设，按张计费）；历史候选图库也在这里</small></summary>
+      <h4 className="xhs-step-sub">③ 生图信息图（结构化提示词 · 图片接口按张计费）</h4>
       <div className="flow-inline-actions">
-        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('single')}>{busy === 'info-single' ? '生成中…' : '出 1 张总览信息图'}</button>
-        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo('pages')}>{busy === 'info-pages' ? '生成中…' : `按分页出 ${plan?.pages.length ?? 6} 张`}</button>
-        <small className="ww-muted">{plan ? '固定「轻盈信息图」风格：白底、紫蓝 + 青柠绿、圆角卡片、线性图标。' : '先拆好分页：信息图按卡片分页逐页出图。'}</small>
+        <label className="xhs-inline-select"><span>信息图预设</span>
+          <select className="input" disabled={locked} value={infoPreset} onChange={event => setInfoPreset(event.target.value as XhsInfoPresetKey)}>
+            {XHS_INFO_PRESETS.map(preset => <option key={preset.key} value={preset.key}>{preset.label}</option>)}
+          </select>
+        </label>
+        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo({ mode: 'single', preset: infoPreset })}>{busy === 'info-single' ? '生成中…' : '出 1 张总览信息图'}</button>
+        <button className="button button-secondary" disabled={locked || !plan} onClick={() => onInfo({ mode: 'pages', preset: infoPreset })}>{busy === 'info-pages' ? '生成中…' : `按分页出 ${plan?.pages.length ?? 6} 张`}</button>
+        <small className="ww-muted">{plan ? XHS_INFO_PRESETS.find(item => item.key === infoPreset)?.hint : '先拆好分页：信息图会直接复用卡片提炼出的硬核指标与结构化要点。'}</small>
       </div>
+      {infoSamplePrompt && <details className="native-json">
+        <summary>预览信息图结构化提示词（第 1 张示例）</summary>
+        <pre className="xhs-prompt-preview">{infoSamplePrompt}</pre>
+      </details>}
       <CandidateLibrary candidates={assets?.candidates ?? []} order={images.map(item => item.path)} locked={locked} onArrange={onArrange} onUseCover={onUseCover} onRemove={onRemoveCandidate} />
     </details>
 
@@ -276,8 +397,10 @@ function CandidateLibrary({ candidates, order, locked, onArrange, onUseCover, on
 export function ChecksStep({ note, locked, busy, stale, onRun, onRevise }: Common & { stale: boolean; onRun: () => void; onRevise: () => void }) {
   const report = readCheckReport(note);
   const failed = report?.items.filter(item => item.ok === false) ?? [];
+  const intent = xhsNoteIntentSpec(note.intent);
   return <div className="flow-body">
     {stale && <p className="flow-attention-note">检测之后标题、正文或标签又改过，结果可能过时，请重新检测。</p>}
+    {intent.complianceNotice && <p className="xhs-hint">{intent.complianceNotice}</p>}
     <div className="flow-sub-head">
       <h4>发布前 14 项检测<small>{XHS_CHECKS.filter(item => item.source === 'local').length} 项本地规则 + {XHS_CHECKS.filter(item => item.source === 'model').length} 项模型判断</small></h4>
       <div className="btn-group">
@@ -299,7 +422,9 @@ export function PackageStep({ note, locked, busy, assets, onEdit, onExport, onOp
 }) {
   const checklist = xhsExportChecklist(note);
   const ready = checklist.filter(item => !item.optional).every(item => item.ok);
+  const intent = xhsNoteIntentSpec(note.intent);
   return <div className="flow-body">
+    {intent.complianceNotice && <p className="xhs-hint">{intent.complianceNotice}</p>}
     <ul className="flow-checklist">{checklist.map(item => <li key={item.label} className={item.ok ? 'is-ok' : 'is-missing'}>
       <span aria-hidden="true">{item.ok ? '✓' : '○'}</span>
       <div><strong>{item.label}{item.optional && '（建议）'}</strong><small>{item.detail}</small></div>

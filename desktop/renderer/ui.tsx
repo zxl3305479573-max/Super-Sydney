@@ -52,6 +52,8 @@ const paths: Record<string, ReactNode> = {
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   sidebar: <><rect x="3" y="4.5" width="18" height="15" rx="2.5" /><path d="M9 4.5v15" /></>,
   upload: <><path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9" /><path d="M4.5 15v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V15" /></>,
+  cloud: <path d="M6.5 18.5h11a4 4 0 0 0 .6-7.95A5.5 5.5 0 0 0 7.3 9.2 4.2 4.2 0 0 0 6.5 18.5z" />,
+  send: <><path d="m21 3-9.2 18-2.6-7.2L2 11.2z" /><path d="M21 3 9.2 13.8" /></>,
   image: <><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m20.5 16-4.8-4.8L6 19.5" /></>,
   pulse: <path d="M3 12h4l2.5-6 5 12 2.5-6h4" />
 };
@@ -183,7 +185,7 @@ export function visibleStageBounds(element: HTMLElement | null): { x: number; y:
   const scroller = element.closest<HTMLElement>('.main-scroll');
   const box = scroller?.getBoundingClientRect();
   // 流式网页视图浮在 DOM 之上：内容模块的吸顶导航挡住页面时，也要把它从视图可视区里裁掉。
-  const stickyNav = element.closest<HTMLElement>('.wewrite, .xhs-panel')?.querySelector<HTMLElement>('.ww-nav-dock');
+  const stickyNav = element.closest<HTMLElement>('.wewrite, .xhs-panel, .ops-panel, .video-studio')?.querySelector<HTMLElement>('.ww-nav-dock');
   const stickyBox = stickyNav?.getBoundingClientRect();
   const view = box && scroller
     ? {

@@ -28,7 +28,9 @@ export async function renderHtmlPages(documents: string[], width: number, height
       await cdp.sendCommand('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false });
       for (let index = 0; index < documents.length; index += 1) {
         await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(documents[index])}`);
-        await wait(150);
+        // 触发一次 CDP 布局度量同步，确保复杂网格与多字重排版在离屏合成器里完全就绪再截图。
+        await cdp.sendCommand('Page.getLayoutMetrics').catch(() => undefined);
+        await wait(160);
         const shot = await cdp.sendCommand('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width, height, scale: 1 }, captureBeyondViewport: true }) as { data: string };
         fs.writeFileSync(targets[index], Buffer.from(shot.data, 'base64'));
       }

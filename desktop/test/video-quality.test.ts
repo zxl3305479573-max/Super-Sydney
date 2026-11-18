@@ -149,3 +149,9 @@ test('只有质量错误阻止交付，警告保留给用户判断', () => {
   }));
   assert.match(qualityBlockingIssues({ ...rendered, assets: { ...rendered.assets, quality: error } }).join(), /黑帧/);
 });
+
+test('外部 MP4 缺少 faststart 时触发硬错误阻止交付', () => {
+  const report = evaluateVideoQuality(project(), probe(), 'external.mp4', extras({ faststart: false }));
+  assert.equal(report.ok, false);
+  assert.equal(report.checks.find(check => check.key === 'faststart')?.status, 'error');
+});

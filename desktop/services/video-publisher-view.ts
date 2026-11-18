@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { WebContentsView, type BrowserWindow, type WebContents } from 'electron';
+import { session, WebContentsView, type BrowserWindow, type WebContents } from 'electron';
 import type { AppContext } from '../app-context';
 import type {
   SiteViewBounds,
@@ -12,6 +12,8 @@ import type {
 import { openUrl } from './browser';
 import { keepLoginAcrossRestarts } from './session-cookies';
 import { clampSiteBounds } from './site-config';
+import { listXhsAccounts } from './xhs-store';
+import { xhsPartitionName } from './xhs-view';
 
 type VideoPublisherConfig = {
   platform: VideoPublishPlatform;
@@ -110,6 +112,7 @@ export type VideoPublisherPageResult = {
   videoPath: string;
   url: string;
   message: string;
+  coverUploaded?: boolean;
 };
 
 /**
@@ -204,7 +207,7 @@ export class VideoPublisherView {
    */
   async fillAndPublish(
     platform: unknown,
-    input: { title: string; body: string; videoPath: string },
+    input: { title: string; body: string; videoPath: string; coverPath?: string },
     mode: VideoPublishMode,
     report: (status: Extract<VideoPublishItemStatus, 'uploading' | 'filling' | 'publishing'>, message: string) => void
   ): Promise<VideoPublisherPageResult> {
@@ -258,6 +261,11 @@ export class VideoPublisherView {
     if (input.body.trim() && !Number(filled.bodyChars)) throw new Error(`${config.label}发布页没有接受填入的描述`);
 
     if (mode === 'draft') {
+      let coverUploaded = false;
+      if (input.coverPath && fs.existsSync(input.coverPath)) {
+        report('filling', `正在尝试为${config.label}注入专属比例封面…`);
+        coverUploaded = await this.tryUploadCover(contents, path.resolve(input.coverPath));
+      }
       // 给页面自己的自动草稿一点落盘时间；这里不会点击发布。
       await wait(1800);
       this.assertCurrent(key);
@@ -267,7 +275,12 @@ export class VideoPublisherView {
         bodyChars: Number(filled.bodyChars ?? 0),
         videoPath,
         url: contents.getURL(),
-        message: `已上传并填入${config.label}草稿`
+        coverUploaded,
+        message: coverUploaded
+          ? `已上传视频与专属封面并填入${config.label}草稿，请检查后手动点发布`
+          : input.coverPath
+            ? `已上传视频并填入${config.label}草稿（封面需在页面内手动确认），请检查后点发布`
+            : `已上传并填入${config.label}草稿`
       };
     }
 
@@ -377,6 +390,8 @@ export class VideoPublisherView {
     const current: PlatformView = { view, loading: false, error: '', started: false };
     const changed = () => { if (this.currentPlatform === platform) this.notify(platform); };
     const contents = view.webContents;
+    // 允许未挂载到可视区时正常完成创作者中心 SPA 渲染，供用户点击「同步后台数据」时读取已渲染 DOM。
+    contents.setBackgroundThrottling(false);
     contents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     contents.session.setPermissionCheckHandler(() => false);
     keepLoginAcrossRestarts(contents.session, () => config.hosts);
@@ -417,6 +432,9 @@ export class VideoPublisherView {
   private async load(current: PlatformView, url: string): Promise<void> {
     current.started = true;
     try {
+      if (url.includes('xiaohongshu.com')) {
+        await this.syncXhsModuleCookiesIfNeeded(current.view.webContents.session);
+      }
       await current.view.webContents.loadURL(url);
     } catch (error) {
       if (isAborted(error)) return;
@@ -424,6 +442,40 @@ export class VideoPublisherView {
       if (!current.error) current.error = `页面打不开：${error instanceof Error ? error.message : String(error)}`;
       this.notify();
     }
+  }
+
+  /**
+   * 若视频发布器的小红书分区尚未登录，而小红书模块的第一个账号已扫码登录，
+   * 自动同步其 xiaohongshu.com 会话 Cookie，免去同一应用内重复扫码；已有登录态时绝不覆盖。
+   */
+  private async syncXhsModuleCookiesIfNeeded(targetSession: Electron.Session): Promise<void> {
+    try {
+      const existing = await targetSession.cookies.get({ domain: 'xiaohongshu.com' });
+      if (existing.some(cookie => cookie.name === 'web_session' && cookie.value)) return;
+      const accounts = listXhsAccounts(this.ctx.db);
+      for (const account of accounts) {
+        const srcSession = session.fromPartition(`persist:${xhsPartitionName(account.id)}`);
+        const cookies = await srcSession.cookies.get({ domain: 'xiaohongshu.com' });
+        if (!cookies.some(cookie => cookie.name === 'web_session' && cookie.value)) continue;
+        for (const cookie of cookies) {
+          const cleanDomain = (cookie.domain || 'www.xiaohongshu.com').replace(/^\./, '');
+          const scheme = cookie.secure ? 'https' : 'http';
+          await targetSession.cookies.set({
+            url: `${scheme}://${cleanDomain}${cookie.path || '/'}`,
+            name: cookie.name,
+            value: cookie.value,
+            domain: cookie.domain,
+            path: cookie.path,
+            secure: cookie.secure,
+            httpOnly: cookie.httpOnly,
+            sameSite: cookie.sameSite,
+            expirationDate: cookie.expirationDate
+          }).catch(() => undefined);
+        }
+        await targetSession.cookies.flushStore().catch(() => undefined);
+        break;
+      }
+    } catch { /* 同步失败不影响手动扫码登录 */ }
   }
 
   private requireCurrent(value: unknown): VideoPublishPlatform {
@@ -505,6 +557,66 @@ export class VideoPublisherView {
         try { cdp.detach(); } catch { /* 页面已跳转 */ }
       }
     }
+  }
+
+  /**
+   * 尝试注入封面图片文件；各平台封面弹层形态经常微调，未定位到图片文件框时不抛错阻断草稿保存。
+   */
+  private async tryUploadCover(contents: WebContents, coverFile: string): Promise<boolean> {
+    const coverSelectors = [
+      'input[type="file"][accept*="image"]',
+      'input[type="file"][accept*=".jpg"]',
+      'input[type="file"][accept*=".png"]',
+      'input[type="file"][accept*=".jpeg"]'
+    ];
+    try {
+      await contents.executeJavaScript(clickVisibleTextScript(['设置封面', '修改封面', '上传封面', '更换封面']), true).catch(() => false);
+      await wait(600);
+      await this.setFileInput(contents, coverFile, coverSelectors);
+      await wait(900);
+      await contents.executeJavaScript(clickVisibleTextScript(['完成', '确定', '确认']), true).catch(() => false);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * 在对应平台的持久化会话里打开创作者中心页面并只读已渲染的 DOM：
+   * 只在用户点击同步/回抓链接按钮时调用，不自动滚屏翻页、不调站点私有接口。
+   */
+  async inspectCreatorDom<T>(
+    platform: VideoPublishPlatform,
+    url: string,
+    readyScript: string,
+    extractScript: string,
+    timeoutMs = 22_000
+  ): Promise<{ finalUrl: string; data: T }> {
+    const key = requirePlatform(platform);
+    const config = VIDEO_PUBLISHER_CONFIGS[key];
+    if (!isPublisherUrl(config, url)) throw new Error(`不允许在${config.label}分区打开非官方域名：${url}`);
+
+    const current = this.ensureView(key);
+    const contents = current.view.webContents;
+    current.started = true;
+    try {
+      await contents.loadURL(url);
+    } catch (error) {
+      if (!isAborted(error)) throw error;
+    }
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (contents.isDestroyed()) throw new Error(`${config.label}视图已关闭`);
+      try {
+        const ready = await contents.executeJavaScript(readyScript, true);
+        if (ready) break;
+      } catch { /* 页面切换中，继续轮询已渲染状态 */ }
+      await wait(600);
+    }
+
+    const data = await contents.executeJavaScript(extractScript, true) as T;
+    return { finalUrl: contents.getURL(), data };
   }
 }
 

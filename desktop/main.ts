@@ -1,6 +1,7 @@
-import { app, BrowserWindow, nativeTheme, net, safeStorage, screen } from 'electron';
+import { app, BrowserWindow, nativeTheme, net, protocol, safeStorage, screen } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import type { AppContext } from './app-context';
 import { CaptureRuntime, migrateScreenFrameTable } from './capture-runtime';
@@ -44,7 +45,20 @@ import { SiteView } from './services/site-view';
 import { XhsView } from './services/xhs-view';
 import { VideoPublisherView } from './services/video-publisher-view';
 import { registerVideoPublisherIpc } from './ipc/video-publisher';
+import { registerOpsIpc } from './ipc/ops';
+import { migrateOpsTables } from './services/ops-store';
+import { useFeishuFetch } from './services/feishu-notify';
+import { useVideoTtsFetch } from './services/video-tts';
+import { getVideoProject } from './services/video-store';
 import { registerAppUpdateIpc } from './ipc/app-update';
+
+// 允许工作台内嵌 <video> 通过 sydney-video://project/{id} 安全预览本地成片（支持 Range 拖动进度条，兼容开发态与打包态）。
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'sydney-video',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+  }
+]);
 
 const projectPath = path.resolve(__dirname, '../..');
 const defaultVaultPath = String.raw`D:\33054\Documents\persornal\Sydney`;
@@ -84,6 +98,7 @@ function openDatabase(file: string): DatabaseSync {
   migrateXhsTables(db);
   migrateLinkTables(db);
   migrateArticleStatTables(db);
+  migrateOpsTables(db);
   migrateCodexEventColumns(db);
   migrateAiDraftColumns(db);
   migrateRuleTables(db);
@@ -114,6 +129,8 @@ function createContext(): AppContext {
     redfoxKeyStore,
     videoTtsKeyStore: new SecretStore(dataDir, safeStorage, 'video-tts-api-key.bin'),
     heroSmsKeyStore,
+    feishuWebhookStore: new SecretStore(dataDir, safeStorage, 'feishu-webhook.bin'),
+    feishuSecretStore: new SecretStore(dataDir, safeStorage, 'feishu-secret.bin'),
     heroSmsActivations: new HeroSmsActivationStore(dataDir),
     lastPages: new LastPages(dataDir),
     ipLibrary: new IpLibrary(dataDir),
@@ -126,6 +143,7 @@ function createContext(): AppContext {
     broadcast: () => windowRef?.webContents.send('state:changed'),
     notifyWeWriteChanged: () => windowRef?.webContents.send('wewrite:changed'),
     notifySiteChanged: () => windowRef?.webContents.send('site:changed'),
+    notifyOpsChanged: () => windowRef?.webContents.send('ops:changed'),
     notifyIpChanged: () => windowRef?.webContents.send('ip:changed'),
     window: () => windowRef
   };
@@ -195,10 +213,28 @@ app.on('second-instance', () => {
 if (process.platform === 'win32') app.setAppUserModelId('com.sydney.workos');
 
 if (primaryInstance) app.whenReady().then(() => {
-  // 生图请求走 Electron 的网络栈：跟随系统代理（Node 自带的 fetch 不读代理，国内直连图片网关会超时）。
+  // 生图、配音与飞书通知请求统一走 Electron 的网络栈：自动跟随系统代理。
   useImageFetch((input, init) => net.fetch(input as string, init));
+  useFeishuFetch((input, init) => net.fetch(input as string, init));
+  useVideoTtsFetch((input, init) => net.fetch(input as string, init));
   installApplicationMenu();
   const ctx = createContext();
+  protocol.handle('sydney-video', request => {
+    try {
+      const url = new URL(request.url);
+      const id = Number(url.pathname.replace(/^\/+/, ''));
+      if (url.hostname !== 'project' || !Number.isFinite(id) || id <= 0) {
+        return new Response('Not Found', { status: 404 });
+      }
+      const video = getVideoProject(ctx.db, id).assets.video;
+      if (!video?.path || !fs.existsSync(video.path)) {
+        return new Response('Not Found', { status: 404 });
+      }
+      return net.fetch(pathToFileURL(video.path).href, { headers: request.headers });
+    } catch {
+      return new Response('Not Found', { status: 404 });
+    }
+  });
   // 前台采样每次启动都从关闭状态开始，必须由用户在界面上重新开启。
   ctx.settings.write({ ...ctx.settings.read(), captureEnabled: false, capturePaused: false });
   capture = new CaptureRuntime(ctx);
@@ -213,6 +249,7 @@ if (primaryInstance) app.whenReady().then(() => {
   registerIpIpc(ctx);
   registerXhsIpc(ctx, xhsView);
   registerVideoPublisherIpc(ctx, videoPublisherView);
+  registerOpsIpc(ctx, videoPublisherView);
   registerWeWriteIpc(ctx);
   registerModelIpc(ctx);
   registerArticleStatsIpc(ctx);

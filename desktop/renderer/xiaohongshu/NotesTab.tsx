@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { XhsBasis, XhsGenerateStage, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
+import type { XhsBasis, XhsCoverGenerateInput, XhsGenerateStage, XhsInfoGenerateInput, XhsIpCoverInput, XhsNote, XhsStepKey } from '../../shared';
 import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
 import {
-  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readTags, readTitleWorkshop, xhsExportChecklist, xhsPipelineProgress, xhsStale
+  XHS_STEPS, autoXhsPlan, buildXhsPipeline, checksPassed, currentXhsStepKey, pickAutoXhsTitle, readPositioning, readTags, readTitleWorkshop, xhsExportChecklist, xhsPipelineProgress, xhsStale
 } from '../../services/xhs-pipeline';
 import { EmptyState, shortTime, useWorkflowStepScroll } from '../ui';
 import { useBusy, type XhsContext } from './common';
@@ -13,10 +13,18 @@ import { BodyStep, ChecksStep, PackageStep, Stepper, TitleStep, TopicStep, Visua
  * 编辑先落在本地草稿上，生成、导出之前自动保存；上游改动让下游「需处理」靠内容指纹判断（见 xhs-pipeline）。
  */
 
-const EDITABLE: Array<keyof XhsNote> = ['topic', 'noteType', 'material', 'title', 'body', 'tagsJson', 'cardsJson'];
-const STAGE_DONE: Record<XhsGenerateStage, string> = { body: '正文已生成', revise: '已按检测意见回改正文', titles: '标题候选已生成', checks: '检测完成', cards: '图文卡片已拆好分页' };
+const EDITABLE: Array<keyof XhsNote> = ['topic', 'noteType', 'intent', 'material', 'title', 'body', 'tagsJson', 'cardsJson'];
+const STAGE_DONE: Record<XhsGenerateStage, string> = {
+  body: '正文已生成',
+  polish: '已完成去 AI 味精修提纯',
+  revise: '已按检测意见回改正文',
+  titles: '标题候选已生成',
+  checks: '检测完成',
+  cards: '图文卡片已拆好分页'
+};
 const AUTO_STAGE_LABEL: Record<XhsGenerateStage, string> = {
   body: '正在写正文',
+  polish: '正在去 AI 味精修',
   titles: '正在生成并选定标题',
   checks: '正在做发布前检测',
   revise: '正在按检测意见回改',
@@ -100,7 +108,7 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
     setDirty(false);
   });
   const save = () => run('save', async () => { await persist(); notify('已保存'); });
-  const generate = (stage: XhsGenerateStage, options?: { pageCount?: number; style?: string }, next?: XhsStepKey) => run(stage, async () => {
+  const generate = (stage: XhsGenerateStage, options?: { pageCount?: number; style?: string; focus?: string }, next?: XhsStepKey) => run(stage, async () => {
     if (!note) return;
     await persist();
     apply(await window.sydney.generateXhsNote(note.id, stage, options));
@@ -152,17 +160,25 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
     });
   };
   const confirmBasis = (key: keyof XhsBasis) => run('confirm', async () => { if (note) { await persist(); apply(await window.sydney.confirmXhsBasis(note.id, key)); } });
-  const cover = (brief: string) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(note.id, brief)); notify('封面已生成'); } });
+  const cover = (input: XhsCoverGenerateInput) => run('cover', async () => { if (note) { await persist(); apply(await window.sydney.generateXhsCover(note.id, input)); notify('封面已生成'); } });
+  const draftCoverBrief = async (preset: string, hint: string) => {
+    if (!note) throw new Error('请先选择笔记');
+    await persist();
+    return window.sydney.draftXhsCoverBrief(note.id, preset, hint);
+  };
   const selectIp = (ipId: string) => run('ip-select', async () => { await window.sydney.updateXhsAccount(account.id, { ipId }); });
   const ipCover = (input: XhsIpCoverInput) => run('ip-cover', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsIpCover(note.id, input)); notify('IP 模板封面已生成'); } });
   const chooseCover = () => run('cover-choose', async () => { if (note) { await persist(); const saved = await window.sydney.chooseXhsCover(note.id); if (saved) apply(saved); } });
   const renderCards = () => run('render', async () => { if (note) { await persist(); apply(await window.sydney.renderXhsCards(note.id)); notify('卡片图已导出到图组'); } });
-  const info = (mode: 'single' | 'pages') => run(`info-${mode}`, async () => {
-    if (!note) return;
-    await persist();
-    try { apply(await window.sydney.generateXhsInfoImages(note.id, mode)); notify('信息图已加入图组'); }
-    finally { await ctx.refresh(); }
-  });
+  const info = (input: XhsInfoGenerateInput) => {
+    const mode = typeof input === 'object' ? input.mode : input;
+    return run(`info-${mode}`, async () => {
+      if (!note) return;
+      await persist();
+      try { apply(await window.sydney.generateXhsInfoImages(note.id, input)); notify('信息图已加入图组'); }
+      finally { await ctx.refresh(); }
+    });
+  };
   const cancel = () => void window.sydney.cancelXhsImages(note?.id ?? 0).then(stopped => notify(stopped ? '已取消生成' : '没有进行中的生图'));
   const addLocal = () => run('add-local', async () => { if (note) { await persist(); const saved = await window.sydney.addXhsLocalImages(note.id); if (saved) apply(saved); } });
   const arrange = (paths: string[]) => run('arrange', async () => { if (note) { await persist(); apply(await window.sydney.arrangeXhsImages(note.id, paths)); } });
@@ -247,12 +263,12 @@ export function NotesTab({ ctx, target, onDirtyChange }: {
           {locked && <p className="flow-locked-note">正在处理中；完成前这一页的按钮会保持禁用。</p>}
 
           {step === 'topic' && <TopicStep note={note} locked={locked} busy={busy} onEdit={edit} />}
-          {step === 'body' && <BodyStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'body')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('body', undefined)} />}
+          {step === 'body' && <BodyStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'body')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('body', undefined)} onPolish={() => void generate('polish', undefined)} />}
           {step === 'title' && <TitleStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'title')} onEdit={edit} onConfirm={confirmBasis} onRun={() => void generate('titles')} />}
-          {step === 'visual' && <VisualStep note={note} locked={locked} busy={busy} assets={assets} coverStale={xhsStale(note, 'cover')} cardsStale={xhsStale(note, 'cards')}
-            ipId={account.ipId} onSelectIp={ipId => void selectIp(ipId)}
-            onEdit={edit} onCover={brief => void cover(brief)} onChooseCover={() => void chooseCover()} onIpCover={input => void ipCover(input)} onCards={(pageCount, style) => void generate('cards', { pageCount, style })}
-            onRenderCards={() => void renderCards()} onInfo={mode => void info(mode)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
+          {step === 'visual' && <VisualStep note={note} positioning={readPositioning(account)} locked={locked} busy={busy} assets={assets} coverStale={xhsStale(note, 'cover')} cardsStale={xhsStale(note, 'cards')}
+            ipId={account.ipId} onSelectIp={ipId => void selectIp(ipId)} notify={notify}
+            onEdit={edit} onCover={input => void cover(input)} onDraftCoverBrief={draftCoverBrief} onChooseCover={() => void chooseCover()} onIpCover={input => void ipCover(input)} onCards={(pageCount, style, focus) => void generate('cards', { pageCount, style, focus })}
+            onRenderCards={() => void renderCards()} onInfo={input => void info(input)} onCancel={cancel} onAddLocal={() => void addLocal()} onArrange={paths => void arrange(paths)} onUseCover={file => void pickCover(file)} onRemoveCandidate={file => void removeCandidate(file)} onConfirm={confirmBasis} />}
           {step === 'checks' && <ChecksStep note={note} locked={locked} busy={busy} stale={xhsStale(note, 'checks')} onRun={() => void generate('checks')} onRevise={() => void generate('revise', undefined, 'body')} />}
           {step === 'package' && <PackageStep note={note} locked={locked} busy={busy} assets={assets} onEdit={() => setStep('visual')} onExport={() => void exportPackage()} onOpen={() => void openPackage()} onCopy={kind => void copy(kind)} onFillDraft={() => void fillDraft()} onPublishPage={ctx.openPublish} />}
 

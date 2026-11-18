@@ -71,7 +71,12 @@ export type ImageReference = { bytes: Buffer; filename: string; contentType: str
  * 选了 IP 时追加在原提示词后面的一段：只要求把参考图里的角色融进画面，
  * 画面内容仍由原来的提示词决定；不写品牌名、不加头像和水印。
  */
-export const IP_IMAGE_INSTRUCTION = '画面中要出现参考图里的角色：保持角色的长相、发型、服装和配色一致，让角色自然地融入这个场景（可以是主角，也可以在一旁配合画面内容）；只参考角色形象，不要照搬参考图的构图和背景；不要在画面里写任何品牌名或账号名，不要加头像框、角标或水印。';
+export const IP_IMAGE_INSTRUCTION = [
+  '【IP 角色参考图融合规范 | Character Reference】',
+  '- 角色一致性：画面中要出现参考图里的角色，严格保持角色的长相、五官比例、发型、代表性服装和主辅配色一致。',
+  '- 场景互动：让角色自然地融入当前主题场景与道具互动（可以是画面主角，也可以在旁侧配合讲解动作），只参考角色形象本身，不要照搬参考图原有的构图和背景。',
+  '- 纯净约束：不要在画面里写任何品牌名或账号名，不要加头像框、角标或水印。'
+].join('\n');
 
 export function withIpInstruction(prompt: string): string {
   return `${prompt.trim()}\n\n${IP_IMAGE_INSTRUCTION}`;

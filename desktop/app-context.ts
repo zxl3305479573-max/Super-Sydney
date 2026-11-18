@@ -25,6 +25,9 @@ export interface AppContext {
   videoTtsKeyStore: SecretStore;
   /** HeroSMS 开放 API 的 key，与内容模型、红狐、视频配音分开存储。 */
   heroSmsKeyStore: SecretStore;
+  /** 飞书自定义机器人 Webhook 地址与可选加签密钥。 */
+  feishuWebhookStore: SecretStore;
+  feishuSecretStore: SecretStore;
   /** HeroSMS 最近购号明细：补全活跃列表里被打码的号码。 */
   heroSmsActivations: HeroSmsActivationStore;
   /** 模型预设（多套内容 / 图片模型配置，在「设置 → 模型」下拉切换）。 */
@@ -48,6 +51,8 @@ export interface AppContext {
   notifyIpChanged(): void;
   /** 通知渲染进程变现模块里那个站点的状态变了（导航、标题、载入失败）。 */
   notifySiteChanged(): void;
+  /** 通知渲染进程运营中控的分发计划、粉丝或作品数据变了。 */
+  notifyOpsChanged(): void;
   /** 对话框需要父窗口；窗口未创建时为 null。 */
   window(): BrowserWindow | null;
 }

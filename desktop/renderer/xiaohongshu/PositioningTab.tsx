@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { XhsAccount } from '../../shared';
-import { xhsNoteTypeLabel } from '../../services/xhs-catalog';
+import { xhsMonetizationLabel, xhsNoteTypeLabel, xhsPillarRoleLabel } from '../../services/xhs-catalog';
 import { readPositioning, readPositioningChat } from '../../services/xhs-pipeline';
 import { Icon } from '../ui';
 import { Section, useBusy, type XhsContext } from './common';
@@ -76,7 +76,13 @@ export function PositioningTab({ ctx, onAccount }: { ctx: XhsContext; onAccount:
           <div><dt>账号名</dt><dd>{profile.persona.name || '—'}</dd></div>
           <div><dt>简介</dt><dd>{profile.persona.bio || '—'}</dd></div>
           <div><dt>视觉</dt><dd>{profile.persona.visual || '—'}</dd></div>
-          <div><dt>内容支柱</dt><dd><ul>{profile.pillars.map(item => <li key={item.name}><strong>{item.name}</strong>{item.description && `：${item.description}`}</li>)}</ul></dd></div>
+          <div><dt>内容支柱</dt><dd><ul>{profile.pillars.map(item => <li key={item.name}><strong>{item.name}</strong>{item.role && <span className="chip chip-soft" style={{ marginLeft: 6 }}>{xhsPillarRoleLabel(item.role)}</span>}{item.description && `：${item.description}`}</li>)}</ul></dd></div>
+          {profile.monetization && <div><dt>变现路径</dt><dd>
+            <strong>{xhsMonetizationLabel(profile.monetization.primaryPath)}</strong>
+            {profile.monetization.reason && <p>{profile.monetization.reason}</p>}
+            {profile.monetization.starterMove && <p><strong>起步动作：</strong>{profile.monetization.starterMove}</p>}
+            {profile.monetization.warnings.length > 0 && <small>避坑提醒：{profile.monetization.warnings.join('；')}</small>}
+          </dd></div>}
           <div><dt>冷启动</dt><dd><ul>{profile.coldStart.map(item => <li key={item.phase}><strong>{item.phase}</strong>：{item.actions.join('；')}</li>)}</ul></dd></div>
         </dl>
         <div className="flow-sub-head"><h4>前 20 篇选题<small>勾选后转成笔记任务</small></h4>
@@ -91,7 +97,7 @@ export function PositioningTab({ ctx, onAccount }: { ctx: XhsContext; onAccount:
             <label className={done ? 'is-done' : ''}>
               <input type="checkbox" disabled={done} checked={picked.has(index)} onChange={event => setPicked(current => { const next = new Set(current); if (event.target.checked) next.add(index); else next.delete(index); return next; })} />
               <span>{index + 1}. {topic.title}</span>
-              <small>{topic.pillar} · {xhsNoteTypeLabel(topic.noteType)}{done ? ' · 已转' : ''}</small>
+              <small>{[topic.pillar, xhsNoteTypeLabel(topic.noteType), xhsPillarRoleLabel(topic.role), done ? '已转' : ''].filter(Boolean).join(' · ')}</small>
             </label>
           </li>;
         })}</ul>

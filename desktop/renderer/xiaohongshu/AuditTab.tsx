@@ -111,6 +111,7 @@ export function AuditTab({ ctx, prefill, onPrefillUsed }: { ctx: XhsContext; pre
           </li>;
         })}</ul>
         {result.actions.length > 0 && <><h4>可执行改动</h4><ol className="xhs-actions">{result.actions.map(item => <li key={item.action}><strong>{item.action}</strong>{item.why && <small>{item.why}</small>}</li>)}</ol></>}
+        {result.monetizationReadiness && <p className="xhs-hint"><strong>{isSelf ? '商业接单 / 转化就绪度：' : '竞品变现模式拆解：'}</strong>{result.monetizationReadiness}</p>}
         {result.positioningAdvice && <p className="xhs-hint">{isSelf ? '定位修订建议：' : '可以借鉴：'}{result.positioningAdvice}</p>}
         <div className="flow-inline-actions">
           {isSelf && <button className="button button-quiet" onClick={() => goTo('positioning')}>去调整定位 →</button>}
