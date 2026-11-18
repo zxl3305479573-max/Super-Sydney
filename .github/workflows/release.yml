@@ -13,6 +13,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -26,12 +28,18 @@ jobs:
           }
       - run: npm ci
       - run: npm run typecheck
-      - name: 验证应用更新流程
-        run: node --experimental-strip-types --test desktop/test/app-updater.test.ts
+      - name: 验证应用更新与发布说明流程
+        run: node --experimental-strip-types --test desktop/test/app-updater.test.ts desktop/test/release-notes.test.ts
       - name: 生成安装包与更新清单
         run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: 提取中文版本更新说明
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          node --experimental-strip-types scripts/release-notes.mjs $version --out release/release-notes.md
+          Get-Content -LiteralPath release/release-notes.md
       - name: 保存构建产物
         uses: actions/upload-artifact@v4
         with:
@@ -41,6 +49,7 @@ jobs:
             release/Sydney-Setup-*.exe.blockmap
             release/Sydney-Portable-*.exe
             release/latest.yml
+            release/release-notes.md
           if-no-files-found: error
       - name: 发布版本及应用更新文件
         shell: pwsh
@@ -52,8 +61,15 @@ jobs:
           $portable = "release/Sydney-Portable-$version-x64.exe"
           $blockmap = "$installer.blockmap"
           $manifest = "release/latest.yml"
-          foreach ($file in @($installer, $portable, $blockmap, $manifest)) {
+          $notesFile = "release/release-notes.md"
+          foreach ($file in @($installer, $portable, $blockmap, $manifest, $notesFile)) {
             if (-not (Test-Path -LiteralPath $file)) { throw "缺少发布文件：$file" }
           }
-          gh release create $env:GITHUB_REF_NAME $installer $portable $blockmap $manifest --verify-tag --title "Sydney v$version" --generate-notes
+          gh release create $env:GITHUB_REF_NAME $installer $portable $blockmap $manifest --verify-tag --title "Sydney v$version" --notes-file $notesFile
           if ($LASTEXITCODE -ne 0) { throw "发布失败，退出码：$LASTEXITCODE" }
+          # 同步补齐 v0.1.6 历史发布页说明（幂等，不影响主发版）
+          if ($env:GITHUB_REF_NAME -ne "v0.1.6") {
+            node --experimental-strip-types scripts/release-notes.mjs 0.1.6 --out release/notes-0.1.6.md
+            gh release edit v0.1.6 --notes-file release/notes-0.1.6.md
+            $global:LASTEXITCODE = 0
+          }

@@ -70,6 +70,44 @@ function bytes(value: number): string {
   return value >= 1024 * 1024 ? `${(value / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`;
 }
 
+function ReleaseNotesBody({ text }: { text: string }) {
+  const lines = text.split(/\r?\n/);
+  const blocks: Array<{ kind: 'heading'; text: string } | { kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string }> = [];
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const headingMatch = line.match(/^#{1,4}\s+(.+)$/);
+    if (headingMatch) {
+      blocks.push({ kind: 'heading', text: headingMatch[1].trim() });
+      continue;
+    }
+    const bulletMatch = line.match(/^(?:[•\-*])\s+(.+)$/);
+    if (bulletMatch) {
+      const item = bulletMatch[1].trim();
+      const prev = blocks[blocks.length - 1];
+      if (prev?.kind === 'list') prev.items.push(item);
+      else blocks.push({ kind: 'list', items: [item] });
+      continue;
+    }
+    blocks.push({ kind: 'paragraph', text: line });
+  }
+  return (
+    <div className="app-update-notes-body">
+      {blocks.map((block, index) => {
+        if (block.kind === 'heading') return <h4 key={index}>{block.text}</h4>;
+        if (block.kind === 'list') {
+          return (
+            <ul key={index}>
+              {block.items.map((item, itemIdx) => <li key={itemIdx}>{item}</li>)}
+            </ul>
+          );
+        }
+        return <p key={index}>{block.text}</p>;
+      })}
+    </div>
+  );
+}
+
 export function AppUpdateDialog({ update }: { update: UpdateController }) {
   const { state, pending } = update;
   const downloading = state?.status === 'downloading';
@@ -107,7 +145,7 @@ export function AppUpdateDialog({ update }: { update: UpdateController }) {
       {state?.status === 'idle' && <p>应用启动后会自动检查更新，运行期间每 4 小时检查一次，也可以手动检查。</p>}
       {unsupportedTitle && <p>你的安装版还没有应用内更新功能。下载并安装 v0.1.5 一次后，新版本即可直接在应用内安装与重启。</p>}
       {checking && <p>正在检查新版本…</p>}
-      {state?.releaseNotes && <div className="app-update-notes"><h3>本次更新</h3><div>{state.releaseNotes}</div></div>}
+      {state?.releaseNotes && <div className="app-update-notes"><h3>本次更新</h3><ReleaseNotesBody text={state.releaseNotes} /></div>}
       {error && <p className={state?.supported === false ? '' : 'app-update-error'} role={state?.supported === false ? undefined : 'alert'}>{error}</p>}
       {state?.checkedAt && <small className="app-update-checked">上次检查：{new Date(state.checkedAt).toLocaleString('zh-CN')}</small>}
     </div>

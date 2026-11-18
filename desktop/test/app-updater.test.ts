@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { UpdateInfo } from 'electron-updater';
-import { AppUpdateService, type UpdateBackend } from '../services/app-updater.ts';
+import { AppUpdateService, formatReleaseNotes, type UpdateBackend } from '../services/app-updater.ts';
 import type { AppUpdateState } from '../shared.ts';
 
 const release: UpdateInfo = { version: '0.1.6', files: [], path: 'Sydney-Setup.exe', sha512: 'test-checksum', releaseDate: '2026-11-02T00:00:00Z', releaseNotes: '修复设置页面\n新增应用更新' };
@@ -245,4 +245,25 @@ test('只返回状态副本，退出后解除事件监听', async () => {
   service.dispose();
   assert.equal(backend.listenerCount('update-available'), 0);
   assert.equal(backend.listenerCount('error'), 0);
+});
+
+test('GitHub Atom HTML 发布说明被清洗为可读的标题与列表，不残留原始 HTML 标签', async () => {
+  const atomHtml = `<h2>Sydney v0.1.7 更新内容</h2>
+<h3>视频工作台 2.0</h3>
+<ul>
+<li>新增 <code>sydney-video://</code> 流式预览 &amp; 本地封面</li>
+<li>支持 &lt;14 字字幕切分</li>
+</ul>
+<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/zxl3305479573-max/Super-Sydney/compare/v0.1.6...v0.1.7"><tt>v0.1.6...v0.1.7</tt></a></p>`;
+
+  const formatted = formatReleaseNotes(atomHtml);
+  assert.doesNotMatch(formatted, /<\/?(p|h2|h3|ul|li|strong|a|tt|code)\b/i);
+  assert.match(formatted, /### Sydney v0\.1\.7 更新内容/);
+  assert.match(formatted, /### 视频工作台 2\.0/);
+  assert.match(formatted, /• 新增 sydney-video:\/\/ 流式预览 & 本地封面/);
+  assert.match(formatted, /• 支持 <14 字字幕切分/);
+  assert.doesNotMatch(formatted, /Full Changelog/);
+
+  const onlyCompareHtml = `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/zxl3305479573-max/Super-Sydney/compare/v0.1.5...v0.1.6"><tt>v0.1.5...v0.1.6</tt></a></p>`;
+  assert.equal(formatReleaseNotes(onlyCompareHtml), '完整变更对比：v0.1.5...v0.1.6');
 });

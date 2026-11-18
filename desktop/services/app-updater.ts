@@ -1,6 +1,74 @@
 import type { AppUpdater, ProgressInfo, UpdateInfo } from 'electron-updater';
 import type { AppUpdateState } from '../shared.ts';
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' '
+};
+
+function decodeHtmlEntities(input: string): string {
+  return input.replace(/&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z]+);/g, (full, entity: string) => {
+    if (entity.startsWith('#x') || entity.startsWith('#X')) {
+      const code = Number.parseInt(entity.slice(2), 16);
+      return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : full;
+    }
+    if (entity.startsWith('#')) {
+      const code = Number.parseInt(entity.slice(1), 10);
+      return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : full;
+    }
+    return NAMED_ENTITIES[entity.toLowerCase()] ?? full;
+  });
+}
+
+function htmlToReadableText(raw: string): string {
+  if (!/<[a-zA-Z!/][^>]*>/.test(raw)) {
+    return raw.replace(/\r\n?/g, '\n').trim();
+  }
+  const structured = raw
+    .replace(/\r\n?/g, '\n')
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner: string) => `\n### ${inner.replace(/<[^>]+>/g, '').trim()}\n`)
+    .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner: string) => `\n• ${inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`)
+    .replace(/<\/(p|div|ul|ol|blockquote|section|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, '');
+
+  const decoded = decodeHtmlEntities(structured);
+  const lines = decoded
+    .split('\n')
+    .map(line => line.replace(/[ \t]+$/g, '').trim())
+    .map(line => line.replace(/^Full Changelog\s*:\s*/i, '完整变更对比：'));
+
+  // 如果已有实质性中文更新条目，去掉 GitHub 默认附带的 Full Changelog 对比尾行，避免喧宾夺主
+  const hasDetailedItems = lines.some(line => line && !/^完整变更对比：/.test(line));
+  const filtered = hasDetailedItems
+    ? lines.filter(line => !/^完整变更对比：/.test(line))
+    : lines;
+
+  return filtered
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function formatReleaseNotes(notes: UpdateInfo['releaseNotes']): string {
+  if (!notes) return '';
+  if (Array.isArray(notes)) {
+    return notes
+      .map(item => {
+        const body = htmlToReadableText(item.note ?? '');
+        return body ? `### v${item.version.replace(/^v/i, '')}\n${body}` : `### v${item.version.replace(/^v/i, '')}`;
+      })
+      .join('\n\n')
+      .trim();
+  }
+  return htmlToReadableText(notes);
+}
+
 export type UpdateBackend = Pick<AppUpdater, 'autoDownload' | 'autoInstallOnAppQuit' | 'autoRunAppAfterInstall' | 'allowDowngrade' | 'allowPrerelease' | 'on' | 'removeListener' | 'checkForUpdates' | 'downloadUpdate' | 'quitAndInstall'>;
 
 export class AppUpdateService {
@@ -115,9 +183,7 @@ export class AppUpdateService {
   }
 
   private available = (info: UpdateInfo): void => {
-    const notes = Array.isArray(info.releaseNotes)
-      ? info.releaseNotes.map(item => `${item.version}\n${item.note ?? ''}`).join('\n\n')
-      : info.releaseNotes ?? '';
+    const notes = formatReleaseNotes(info.releaseNotes);
     this.patch({
       status: 'available', latestVersion: info.version, releaseNotes: notes.slice(0, 12_000),
       releaseDate: info.releaseDate ?? '', checkedAt: new Date().toISOString(),

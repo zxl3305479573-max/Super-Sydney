@@ -3613,3 +3613,12 @@ body, .app-shell, .workspace, .main-scroll, .titlebar { background: var(--bg); }
 .publish-result-failed { border-color: oklch(0.76 0.1 25); background: var(--danger-soft); }
 .publish-result-needs-review { border-color: oklch(0.78 0.1 75); background: var(--warning-soft); }
 .site-stage.publisher-stage { height: clamp(500px, 70vh, 840px); }
+
+/* ── 应用更新说明卡片排版（过滤 GitHub Atom HTML 后按标题与列表展示） ── */
+.app-update-notes { background: var(--surface-soft); }
+.app-update-notes > div { max-height: 260px; font-size: 12.5px; line-height: 1.75; }
+.app-update-notes-body { display: grid; gap: 8px; white-space: normal !important; }
+.app-update-notes-body h4 { margin: 4px 0 0; color: var(--ink); font-size: 12.5px; font-weight: 650; }
+.app-update-notes-body h4:first-child { margin-top: 0; }
+.app-update-notes-body ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
+.app-update-notes-body p { margin: 0; }
