@@ -3622,3 +3622,13 @@ body, .app-shell, .workspace, .main-scroll, .titlebar { background: var(--bg); }
 .app-update-notes-body h4:first-child { margin-top: 0; }
 .app-update-notes-body ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .app-update-notes-body p { margin: 0; }
+
+.app-update-cat { display: flex; align-items: center; margin: 6px 0 2px !important; }
+.app-update-cat:first-child { margin-top: 0 !important; }
+.app-update-cat > span {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 650; background: var(--surface-raised); color: var(--ink);
+}
+.app-update-cat.tone-add > span { background: var(--success-soft); color: var(--success-ink); }
+.app-update-cat.tone-opt > span { background: var(--primary-soft); color: var(--primary); }
+.app-update-cat.tone-fix > span { background: var(--warning-soft); color: var(--warning-ink); }

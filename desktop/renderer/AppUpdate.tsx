@@ -70,15 +70,28 @@ function bytes(value: number): string {
   return value >= 1024 * 1024 ? `${(value / (1024 * 1024)).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`;
 }
 
+function categoryTone(title: string): 'add' | 'opt' | 'fix' | 'neutral' {
+  if (/新增/.test(title)) return 'add';
+  if (/修复|bug/i.test(title)) return 'fix';
+  if (/优化|改进|升级/.test(title)) return 'opt';
+  return 'neutral';
+}
+
 function ReleaseNotesBody({ text }: { text: string }) {
-  const lines = text.split(/\r?\n/);
+  const safeText = text.replace(/[<>]/g, '');
+  const lines = safeText.split(/\r?\n/);
   const blocks: Array<{ kind: 'heading'; text: string } | { kind: 'list'; items: string[] } | { kind: 'paragraph'; text: string }> = [];
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    const headingMatch = line.match(/^#{1,4}\s+(.+)$/);
-    if (headingMatch) {
-      blocks.push({ kind: 'heading', text: headingMatch[1].trim() });
+    const bracketHeading = line.match(/^【(.+)】$/);
+    if (bracketHeading) {
+      blocks.push({ kind: 'heading', text: bracketHeading[1].trim() });
+      continue;
+    }
+    const mdHeading = line.match(/^#{1,6}\s+(.+)$/);
+    if (mdHeading) {
+      blocks.push({ kind: 'heading', text: mdHeading[1].replace(/^【|】$/g, '').trim() });
       continue;
     }
     const bulletMatch = line.match(/^(?:[•\-*])\s+(.+)$/);
@@ -94,7 +107,14 @@ function ReleaseNotesBody({ text }: { text: string }) {
   return (
     <div className="app-update-notes-body">
       {blocks.map((block, index) => {
-        if (block.kind === 'heading') return <h4 key={index}>{block.text}</h4>;
+        if (block.kind === 'heading') {
+          const tone = categoryTone(block.text);
+          return (
+            <h4 key={index} className={`app-update-cat tone-${tone}`}>
+              <span>{block.text}</span>
+            </h4>
+          );
+        }
         if (block.kind === 'list') {
           return (
             <ul key={index}>

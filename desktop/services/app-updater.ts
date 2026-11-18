@@ -26,24 +26,26 @@ function decodeHtmlEntities(input: string): string {
 
 function htmlToReadableText(raw: string): string {
   if (!/<[a-zA-Z!/][^>]*>/.test(raw)) {
-    return raw.replace(/\r\n?/g, '\n').trim();
+    return raw.replace(/\r\n?/g, '\n').replace(/[<>]/g, '').trim();
   }
   const structured = raw
     .replace(/\r\n?/g, '\n')
     .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner: string) => `\n### ${inner.replace(/<[^>]+>/g, '').trim()}\n`)
+    .replace(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_m, inner: string) => {
+      const title = inner.replace(/<[^>]+>/g, '').replace(/^【|】$/g, '').trim();
+      return title ? `\n【${title}】\n` : '\n';
+    })
     .replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, inner: string) => `\n• ${inner.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`)
     .replace(/<\/(p|div|ul|ol|blockquote|section|tr)>/gi, '\n')
     .replace(/<[^>]+>/g, '');
 
-  const decoded = decodeHtmlEntities(structured);
+  const decoded = decodeHtmlEntities(structured).replace(/[<>]/g, '');
   const lines = decoded
     .split('\n')
     .map(line => line.replace(/[ \t]+$/g, '').trim())
     .map(line => line.replace(/^Full Changelog\s*:\s*/i, '完整变更对比：'));
 
-  // 如果已有实质性中文更新条目，去掉 GitHub 默认附带的 Full Changelog 对比尾行，避免喧宾夺主
   const hasDetailedItems = lines.some(line => line && !/^完整变更对比：/.test(line));
   const filtered = hasDetailedItems
     ? lines.filter(line => !/^完整变更对比：/.test(line))
@@ -61,7 +63,7 @@ export function formatReleaseNotes(notes: UpdateInfo['releaseNotes']): string {
     return notes
       .map(item => {
         const body = htmlToReadableText(item.note ?? '');
-        return body ? `### v${item.version.replace(/^v/i, '')}\n${body}` : `### v${item.version.replace(/^v/i, '')}`;
+        return body ? `【v${item.version.replace(/^v/i, '')}】\n${body}` : `【v${item.version.replace(/^v/i, '')}】`;
       })
       .join('\n\n')
       .trim();
