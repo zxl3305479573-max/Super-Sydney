@@ -76,15 +76,17 @@ export type UpdateBackend = Pick<AppUpdater, 'autoDownload' | 'autoInstallOnAppQ
 export class AppUpdateService {
   private readonly updater: UpdateBackend;
   private readonly broadcast: (state: AppUpdateState) => void;
+  private readonly beforeInstall: (() => void) | undefined;
   private state: AppUpdateState;
   private pendingCheck: Promise<AppUpdateState> | null = null;
   private pendingDownload: Promise<AppUpdateState> | null = null;
   private initialTimer: ReturnType<typeof setTimeout> | undefined;
   private interval: ReturnType<typeof setInterval> | undefined;
 
-  constructor(updater: UpdateBackend, options: { currentVersion: string; unsupportedReason?: string; broadcast: (state: AppUpdateState) => void }) {
+  constructor(updater: UpdateBackend, options: { currentVersion: string; unsupportedReason?: string; broadcast: (state: AppUpdateState) => void; beforeInstall?: () => void }) {
     this.updater = updater;
     this.broadcast = options.broadcast;
+    this.beforeInstall = options.beforeInstall;
     this.state = {
       status: options.unsupportedReason ? 'unsupported' : 'idle',
       supported: !options.unsupportedReason,
@@ -151,7 +153,12 @@ export class AppUpdateService {
   install(): AppUpdateState {
     if (!this.state.supported || !this.state.downloaded || this.state.status === 'installing') return this.getState();
     this.patch({ status: 'installing', error: '' });
-    try { this.updater.quitAndInstall(true, true); } catch (error) { this.failed(error); }
+    try {
+      this.beforeInstall?.();
+      this.updater.quitAndInstall(true, true);
+    } catch (error) {
+      this.failed(error);
+    }
     return this.getState();
   }
 

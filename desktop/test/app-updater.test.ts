@@ -268,3 +268,18 @@ test('GitHub Atom HTML 发布说明被清洗为可读的标题与列表，不残
   const onlyCompareHtml = `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/zxl3305479573-max/Super-Sydney/compare/v0.1.5...v0.1.6"><tt>v0.1.5...v0.1.6</tt></a></p>`;
   assert.equal(formatReleaseNotes(onlyCompareHtml), '完整变更对比：v0.1.5...v0.1.6');
 });
+
+test('执行重启安装前先触发 beforeInstall 清理常驻视图与原生句柄', async () => {
+  const backend = new FakeUpdater();
+  const order: string[] = [];
+  backend.installAction = () => order.push('quitAndInstall');
+  const service = new AppUpdateService(backend as unknown as UpdateBackend, {
+    currentVersion: '0.1.8',
+    broadcast: () => {},
+    beforeInstall: () => order.push('beforeInstall')
+  });
+  await service.check();
+  await service.download();
+  service.install();
+  assert.deepEqual(order, ['beforeInstall', 'quitAndInstall']);
+});

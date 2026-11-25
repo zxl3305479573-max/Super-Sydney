@@ -2,7 +2,7 @@ import { app, ipcMain, session, type BrowserWindow, type IpcMainInvokeEvent } fr
 import { autoUpdater } from 'electron-updater';
 import { AppUpdateService } from '../services/app-updater';
 
-export function registerAppUpdateIpc(getWindow: () => BrowserWindow | null): AppUpdateService {
+export function registerAppUpdateIpc(getWindow: () => BrowserWindow | null, beforeInstall?: () => void): AppUpdateService {
   const unsupportedReason = !app.isPackaged
     ? '开发模式不安装更新，请使用正式安装版体验应用内更新。'
     : process.platform !== 'win32'
@@ -13,6 +13,7 @@ export function registerAppUpdateIpc(getWindow: () => BrowserWindow | null): App
   const service = new AppUpdateService(autoUpdater, {
     currentVersion: app.getVersion(),
     unsupportedReason,
+    beforeInstall,
     broadcast: state => {
       const win = getWindow();
       if (!win || win.isDestroyed() || win.webContents.isDestroyed() || win.webContents.isCrashed()) return;

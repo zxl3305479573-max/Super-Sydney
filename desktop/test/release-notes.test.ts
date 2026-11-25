@@ -16,6 +16,15 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 test('从 CHANGELOG.md 精确提取对应版本的中文更新说明，按三大类组织且无尖括号', () => {
   const changelog = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8');
 
+  const v0110 = extractChangelogSection(changelog, '0.1.10');
+  assert.ok(v0110.length > 80);
+  assert.match(v0110, /### 新增功能/);
+  assert.match(v0110, /### 优化内容/);
+  assert.match(v0110, /### 修复 Bug/);
+  assert.match(v0110, /Failed to uninstall old application files/);
+  assert.doesNotMatch(v0110, /[<>]/);
+  assert.doesNotMatch(v0110, /^## \[0\.1\.9\]/m);
+
   const v019 = extractChangelogSection(changelog, '0.1.9');
   assert.ok(v019.length > 100);
   assert.match(v019, /### 新增功能/);

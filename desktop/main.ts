@@ -258,10 +258,31 @@ if (primaryInstance) app.whenReady().then(() => {
   registerHeroSmsIpc(ctx);
   // 变现分组里固定嵌入的站点（闲鱼、16688）：每个站点一个独立会话的视图。
   embeddedViews = registerEmbeddedIpc(ctx);
-  // 网页地址的记录是攒一会儿再落盘的，退出前补写一次。
-  app.on('will-quit', () => ctx.lastPages.flush());
+  let installingUpdate = false;
+  const disposeRuntimeViews = () => {
+    capture?.dispose();
+    siteView?.dispose();
+    xhsView?.dispose();
+    videoPublisherView?.dispose();
+    embeddedViews?.dispose();
+  };
+  // 网页地址的记录是攒一会儿再落盘的，退出前补写一次；若正在执行热更新替换，立即销毁常驻视图与数据库连接以释放文件锁。
+  app.on('before-quit', () => {
+    ctx.lastPages.flush();
+    disposeRuntimeViews();
+    try { ctx.db.close(); } catch { /* 已关闭时忽略 */ }
+    if (installingUpdate) {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.destroy();
+      }
+    }
+  });
   registerWindowIpc(() => windowRef, themeFile());
-  registerAppUpdateIpc(() => windowRef);
+  registerAppUpdateIpc(() => windowRef, () => {
+    installingUpdate = true;
+    ctx.lastPages.flush();
+    disposeRuntimeViews();
+  });
   createWindow();
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
 });

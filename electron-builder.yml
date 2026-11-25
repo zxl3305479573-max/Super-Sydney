@@ -31,6 +31,7 @@ win:
         - x64
 
 nsis:
+  include: build/installer.nsh
   artifactName: Sydney-Setup-${version}-${arch}.${ext}
   oneClick: false
   perMachine: false
