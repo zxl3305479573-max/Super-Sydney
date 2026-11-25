@@ -341,12 +341,12 @@ export function parseCardPlan(value: Record<string, unknown>, style: string, pag
     const heading = str(record.heading, 30);
     const items: XhsCardItem[] = list(record.items).flatMap(entry => {
       const row = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
-      const title = str(row.title, 22);
-      const detail = str(row.detail, 110);
+      const title = str(row.title, 24);
+      const detail = str(row.detail, 140);
       const badge = str(row.badge, 14);
       return title || detail ? [{ title, detail, ...(badge ? { badge } : {}) }] : [];
     }).slice(0, 6);
-    const rawPoints = strings(record.points, 140).slice(0, 6);
+    const rawPoints = strings(record.points, 160).slice(0, 6);
     const points = items.length ? items.map(formatCardItemLine) : rawPoints;
     const stats: XhsCardStat[] = list(record.stats).flatMap(entry => {
       const row = (entry && typeof entry === 'object' ? entry : {}) as Record<string, unknown>;
@@ -356,12 +356,12 @@ export function parseCardPlan(value: Record<string, unknown>, style: string, pag
     }).slice(0, 3);
     if (!heading && !points.length && !items.length && !stats.length) return [];
     const layout = CARD_LAYOUT_SET.has(String(record.layout ?? '')) ? String(record.layout) as XhsCardLayout : undefined;
-    const kicker = str(record.kicker, 22);
-    const lead = str(record.lead, 64);
+    const kicker = str(record.kicker, 24);
+    const lead = str(record.lead, 80);
     return [{
       heading,
       points,
-      emphasis: str(record.emphasis, 60),
+      emphasis: str(record.emphasis, 80),
       ...(layout ? { layout } : {}),
       ...(kicker ? { kicker } : {}),
       ...(lead ? { lead } : {}),
@@ -396,26 +396,26 @@ export async function requestXhsCardPlan(
   ].filter(Boolean).join('\n\n');
 
   const slideRoleRule = count === 1
-    ? '本次只做 1 张「高密度一图流速查卡」（layout 优先选 summary、bento 或 checklist）：把全篇核心门槛、步骤或选路对照浓缩进这一张卡（4-6 个结构化 items + 可选顶部 stats），让读者单张截图就能拿走全部关键信息。'
-    : `拆成正好 ${count} 张 3:4 高信息密度干货卡片：\n`
-      + `- 第 1 张：${hasCover ? '当前笔记已有独立封面图，这张卡片是读者右滑看到的第 2 张图，严禁再做空洞封面或“本文看点预告”，直接给全篇核心选路矩阵、核心结论或总框架（layout 选 roadmap、bento 或 metrics）！' : '总览框架卡（layout 选 roadmap 或 bento），直接给出核心分类结论、适用人群对照或关键数据，禁止写“今天分享几个要点”式无信息量预告！'}\n`
-      + `- 中间第 2 至 ${count - 1} 张：每张深挖一个独立模块，按信息关系灵活选用 keypoints / steps / compare / bento / metrics / checklist，相邻两页尽量变换版式避免审美疲劳。\n`
-      + `- 第 ${count} 张（尾页）：必须是「一页纸决策/执行速查表」（layout 选 summary 或 checklist），把全文判断条件与对应动作做成对照速查行，严禁只写“觉得有用记得点赞收藏”凑页数！`;
+    ? '本次只做 1 张「高密度一图流速查卡」（layout 优先选 summary、bento 或 checklist）：把全篇核心门槛、步骤或选路对照浓缩进这一张卡（4-6 个结构化 items + 可选顶部 stats + 底部 emphasis），让读者单张截图就能拿走全部关键信息。'
+    : `拆成正好 ${count} 张 3:4 满版高信息密度干货卡片（严禁任何一页只写寥寥两三条短句导致版面空旷）：\n`
+      + `- 第 1 张：${hasCover ? '当前笔记已有独立封面图，这张卡片是读者右滑看到的第 2 张图，严禁再做空洞封面或“本文看点预告”，直接给全篇核心选路矩阵、核心结论或 4 宫格总框架（layout 选 bento、roadmap 或 metrics）！' : '总览框架卡（layout 选 bento 或 roadmap），直接给出 4 条核心分类结论、适用人群对照或关键数据，禁止写“今天分享几个要点”式无信息量预告！'}\n`
+      + `- 中间第 2 至 ${count - 1} 张：每张深挖一个独立子主题，按信息关系灵活混搭 keypoints / steps / compare / bento / metrics / checklist / qa（高频疑问解答） / quote（核心认知金句+论据），相邻两页必须变换版式避免同质化。\n`
+      + `- 第 ${count} 张（尾页）：必须是「一页纸决策/执行速查表」（layout 选 summary 或 checklist，4-5 行对照），把全文判断条件与对应动作做成满版速查行，严禁只写“觉得有用记得点赞收藏”凑页数！`;
 
-  const prompt = `你是小红书高收藏知识卡片主编。你的核心任务是解决「卡片字少空洞、抓不到重点」的问题，把下面的内容提炼成信息集中、细节硬核、单张值得截图保存的结构化卡片。\n\n`
+  const prompt = `你是小红书高收藏知识卡片主编。你的核心任务是彻底解决「卡片字少松散、版面空洞、抓不住重点」的问题，把下面的内容提炼成信息饱满、结构紧凑、单张值得截图保存的高密度卡片。\n\n`
     + `【第一步：先抽硬核事实库 keyFacts】\n`
-    + `动笔拆页前，先从原始素材和正文中穷举提取 6-12 条最具实操价值的硬核信息放进 keyFacts 数组：凡是原文出现过的具体数字、金额、天数、粉丝/流水门槛、功能入口路径（如“创作中心→博主合作”）、准入/禁入条件、正反案例、踩坑原因，必须原原本本保留，严禁模糊概括成“满足一定条件”“提前准备材料”“注意避开误区”这类正确的废话！如果原文没有数字，也必须提取具体的判断标准、动作步骤与因果依据。\n\n`
-    + `【第二步：映射分镜与高密度排版 pages】\n`
+    + `动笔拆页前，先从原始素材和正文中穷举提取 8-14 条最具实操价值的硬核信息放进 keyFacts 数组：凡是原文出现过的具体数字、金额、天数、粉丝/流水门槛、功能入口路径（如“创作中心→博主合作”）、准入/禁入条件、正反案例、踩坑原因，必须原原本本保留，严禁模糊概括成“满足一定条件”“提前准备材料”“注意避开误区”这类正确的废话！如果原文没有数字，也必须提取具体的判断信号、动作步骤与因果依据。\n\n`
+    + `【第二步：映射 10 种语义版式与满版内容 pages】\n`
     + `${slideRoleRule}\n`
     + `可选版式 layout：\n${layouts}\n\n`
-    + `每张卡片字段规范（目标单卡有效干货 130-210 字）：\n`
-    + `- layout：上面 8 个 key 之一；\n`
+    + `每张卡片字段规范（目标单卡有效干货 160-240 字，保证画面充实不空旷）：\n`
+    + `- layout：上面 10 个 key 之一；\n`
     + `- kicker：页眉栏目短标（≤12 字，如“路径 01 · 千帆开店”“五类资源对号入座”）；\n`
     + `- heading：本页核心结论式主标题（≤18 字，可用【关键词】加荧光笔高亮 1 处）；\n`
-    + `- lead：一句话点明本页适用前提或核心判断（18-42 字）；\n`
-    + `- stats（仅当本页有明确数字/门槛/周期时填写，最多 3 个，没有就空数组 []）：[{value:"≥1000粉",label:"蒲公英开通门槛"}]；\n`
-    + `- items（每页 3-5 条结构化干货块，bento 推荐 4 条，summary/checklist 可 4-6 条）：每条含 title（4-12 字核心锚点/正反标签，compare 版式以“❌ 误区”或“✅ 正解”开头）、detail（24-62 字具体条件、操作入口、数据细节或避坑原因，用【】高亮 1-2 个最关键的数字或词，用 \`路径名\` 标操作入口）、badge（可选，2-8 字关键角标如“免保证金”“必看”“限蓝V”）；\n`
-    + `- emphasis：底部一句实操底线或避坑口诀（12-30 字）。\n\n`
+    + `- lead：必填！一句话点明本页适用前提、核心判断或场景痛点（22-46 字）；\n`
+    + `- stats（当本页涉及数字/门槛/周期/比例时优先填写 2-3 个，没有就空数组 []）：[{value:"≥1000粉",label:"蒲公英开通门槛"}]；\n`
+    + `- items（每页必须给足 4-5 条结构化干货块；仅 quote 版式为 1 条核心金句 + 2-3 条拆解论据）：每条都必须同时包含 title（4-12 字核心结论锚点；compare 版式以“❌ 误区”或“✅ 正解”开头；qa 版式写读者具体疑问）和 detail（34-72 字具体判断标准、操作入口、数据细节或避坑原因，用【】高亮 1-2 个关键数字或词，用 \`路径名\` 标操作入口），可选 badge（2-6 字角标如“免保证金”“必看”“高频坑”）；\n`
+    + `- emphasis：必填！底部一句实操底线、执行口诀或避坑铁律（16-36 字）。\n\n`
     + `待提炼材料：\n${materials}\n\n`
     + `只输出 JSON：{"keyFacts":["..."],"pages":[{"layout":"roadmap","kicker":"","heading":"","lead":"","stats":[],"items":[{"title":"","detail":"","badge":""}],"emphasis":""}]}`;
   return parseCardPlan(await ask(config, system(config, '你是小红书高密度图文卡片主编，只输出高浓度结构化事实，拒绝空话大字报。'), prompt, 0.3, fetchImpl), style, count);

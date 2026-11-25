@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import type { IpRenderKit } from '../shared.ts';
 import {
-  XHS_IP_COVER_TEMPLATES, defaultIpCoverTemplate, emptyIpCoverInput, ipCoverPose, normalizeIpCoverInput, renderIpCoverDocument
+  XHS_COVER_THEMES, XHS_IP_COVER_TEMPLATES, defaultIpCoverTemplate, emptyIpCoverInput, ipCoverPose, normalizeIpCoverInput, renderIpCoverDocument, seedIpCoverFromNote
 } from '../services/xhs-ip-cover.ts';
 import { listXhsAccounts, migrateXhsTables, updateXhsAccount } from '../services/xhs-store.ts';
 
@@ -101,4 +101,35 @@ test('图文卡片：选了 IP 时每页右下角放角色、各页轮流换动�
   const busy = { heading: '标题', points: Array.from({ length: 3 }, () => '一'.repeat(16)), emphasis: '' };
   assert.equal(cardDensity(busy, false), '');
   assert.equal(cardDensity(busy, false, true), 'dense');
+});
+
+test('无 IP 纯文字封面、8 套模板、配色切换与从笔记自动同步要点', () => {
+  assert.ok(XHS_IP_COVER_TEMPLATES.length >= 8, '至少 8 套封面模板');
+  assert.ok(XHS_COVER_THEMES.length >= 6, '提供多套精选封面配色');
+  for (const { key } of XHS_IP_COVER_TEMPLATES) {
+    const pureTextHtml = renderIpCoverDocument({
+      ...emptyIpCoverInput(key, '不靠IP角色|纯文字也能做【高点击封面】'),
+      theme: 'swiss',
+      sub: '缩略图清晰醒目不乱码',
+      steps: ['核心搜索词放前8字', '荧光笔标出一个反差词', '下方补3条浓缩看点']
+    }, null);
+    assert.match(pureTextHtml, /width:1080px;height:1440px/);
+    assert.ok(!pureTextHtml.includes('class="hero"'), '无 IP 时不渲染角色节点');
+    assert.ok(pureTextHtml.includes('<mark>高点击封面</mark>'));
+  }
+  assert.equal(ipCoverPose({ ...emptyIpCoverInput('tutorial'), pose: 'none' }, KIT), null, 'pose=none 显式关闭角色');
+
+  const seeded = seedIpCoverFromNote({
+    title: '下班 3 个习惯告别颈椎酸痛',
+    topic: '',
+    noteType: 'avoid',
+    body: '每天盯屏幕 8 小时脖子僵硬。\n1. 显示器垫高 12cm 平视屏幕\n2. 每 45 分钟起身活动肩胛\n3. 枕头高度贴合颈曲不悬空',
+    writerJson: JSON.stringify({ coreTakeaway: '先调屏幕高度再换枕头' }),
+    cardsJson: ''
+  });
+  assert.equal(seeded.template, 'versus');
+  assert.equal(seeded.number, '3');
+  assert.equal(seeded.unit, '个');
+  assert.equal(seeded.sub, '先调屏幕高度再换枕头');
+  assert.ok(seeded.steps.length >= 3);
 });

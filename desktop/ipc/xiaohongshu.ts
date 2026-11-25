@@ -299,20 +299,23 @@ export function registerXhsIpc(ctx: AppContext, view: XhsView): void {
   });
 
   /**
-   * 用账号当前 IP 的封面模板本地排版出封面，不调图片接口；和其他封面一样进候选图库、盖封面指纹。
-   * 品牌名、头像、配色、角色图都取自 IP 库（见 ipc/ip.ts）。
+   * 用本地文字 / IP 封面模板排版出 3:4 封面，不调图片接口；和其他封面一样进候选图库、盖封面指纹。
+   * 选了 IP 时默认取 IP 配色与透明底角色；未选 IP（或选了「不放角色」）时直接渲染高对比纯文字大字封面。
    */
   ipcMain.handle('xhs:ip-cover:render', async (_event, id: number, raw: unknown) => noteLock.run(id, async () => {
     const note = getXhsNote(db, id);
     const account = getXhsAccount(db, note.accountId);
-    if (!account.ipId) throw new Error('这个账号还没有选用 IP（在封面区或「账号定位」里选）');
-    const kit = ipRenderKit(ctx.ipLibrary, account.ipId);
+    let kit = null;
+    if (account.ipId) {
+      try { kit = ipRenderKit(ctx.ipLibrary, account.ipId); } catch { kit = null; }
+    }
     const input = normalizeIpCoverInput(raw);
     if (!input.title) throw new Error('封面标题不能为空');
     const target = path.join(assetDir(id), `cover-ip-${Date.now()}.png`);
     await renderHtmlPages([renderIpCoverDocument(input, kit)], XHS_CARD_WIDTH, XHS_CARD_HEIGHT, [target]);
     const next = { ...note, coverPath: target };
-    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption: `IP 模板 · ${kit.name}` }]), basisJson: stampBasis(next, 'cover') });
+    const caption = kit && input.pose !== 'none' ? `IP 模板 · ${kit.name}` : '本地文字封面';
+    return save(id, { coverPath: target, candidatesJson: addCandidates(note, [{ path: target, source: 'cover', caption }]), basisJson: stampBasis(next, 'cover') });
   }));
 
   /**

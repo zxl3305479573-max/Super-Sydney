@@ -7,7 +7,7 @@ import {
   XHS_BODY_LIMIT, XHS_CARD_LAYOUTS, XHS_CARD_STYLES, XHS_CHECKS, XHS_COVER_PRESETS, XHS_INFO_PRESETS, XHS_NOTE_INTENTS, XHS_NOTE_TYPES, XHS_PAGE_COUNTS,
   XHS_PUBLISH_URL, XHS_TITLE_LIMIT, XHS_TITLE_METHODS, XHS_TITLE_ROLES, xhsCardLayoutLabel, xhsNoteIntentSpec
 } from '../../services/xhs-catalog';
-import { cardPageLines, linesToCardItems, renderCardsPreview, resolveCardLayout } from '../../services/xhs-cards';
+import { buildQuickCardPlan, cardPageLines, linesToCardItems, renderCardsPreview, resolveCardLayout } from '../../services/xhs-cards';
 import {
   countChars, findAiCliches, readCardPlan, readCheckReport, readImages, readTags, readTitleWorkshop, readWriterMeta, xhsExportChecklist, type XhsStep
 } from '../../services/xhs-pipeline';
@@ -177,10 +177,21 @@ export function VisualStep({ note, positioning, locked, busy, assets, coverStale
   useEffect(() => { if (plan?.style) setStyle(plan.style); }, [plan?.style]);
   useEffect(() => { if (focusPage !== null && (!plan || focusPage >= plan.pages.length)) setFocusPage(null); }, [plan, focusPage]);
   const images = readImages(note);
-  const preview = useMemo(() => plan ? renderCardsPreview({ ...plan, style }, note.title || note.topic, undefined, kit, focusPage) : '', [plan, style, note.title, note.topic, kit, focusPage]);
+  const samplePlan = useMemo(() => plan ? null : buildQuickCardPlan(note, style, pageCount), [plan, note.title, note.topic, note.body, note.material, note.writerJson, style, pageCount]);
+  const activePreviewPlan = plan ? { ...plan, style } : samplePlan;
+  const preview = useMemo(
+    () => activePreviewPlan ? renderCardsPreview(activePreviewPlan, note.title || note.topic, undefined, kit, focusPage) : '',
+    [activePreviewPlan, note.title, note.topic, kit, focusPage]
+  );
   const autoCoverPrompt = useMemo(() => xhsCoverPrompt(note, positioning, brief, coverPreset), [note, positioning, brief, coverPreset]);
   const infoSamplePrompt = useMemo(() => plan?.pages.length ? xhsInfoImagePrompt(note, plan.pages, 0, infoPreset) : '', [note, plan, infoPreset]);
   const editPlan = (next: XhsCardPlan) => onEdit({ cardsJson: JSON.stringify(next) });
+  const applyQuickCards = () => {
+    const quick = buildQuickCardPlan(note, style, pageCount);
+    setFocusPage(null);
+    editPlan(quick);
+    notify(`已按「${XHS_CARD_STYLES.find(item => item.key === style)?.label ?? style}」快速套出 ${quick.pages.length} 张文字卡片，可直接微调或导出`);
+  };
   const updatePage = (index: number, patch: Partial<XhsCardPage>) => {
     if (!plan) return;
     editPlan({ ...plan, style, pages: plan.pages.map((item, position) => position === index ? { ...item, ...patch } : item) });
@@ -241,15 +252,15 @@ export function VisualStep({ note, positioning, locked, busy, assets, coverStale
       </div>
     </div>
     <div className="xhs-ip-head">
-      <IpPicker label="这个账号的 IP" value={ipId} ips={ipLibrary.ips} disabled={locked} onChange={onSelectIp} />
-      {ipId && <small className="ww-muted">AI 生成封面、信息图时会把 IP 角色融进画面；图文卡片底部与总结栏并排展示 IP 角色（不挖空正文高度、不加品牌名和头像）。</small>}
-      {ipId && <button className={`button ${ipOpen ? 'button-quiet' : 'button-secondary'}`} onClick={() => setIpOpen(open => !open)}>{ipOpen ? '收起 IP 模板' : '用 IP 模板出封面'}</button>}
+      <IpPicker label="账号关联 IP（可选）" value={ipId} ips={ipLibrary.ips} disabled={locked} onChange={onSelectIp} />
+      <small className="ww-muted">{ipId ? '本地封面与图文卡片可融合 IP 角色（也可切回纯文字）；AI 生图也会参考角色形象。' : '支持 8 套本地爆款大字封面模板（免费秒出、中文零乱码）；关联 IP 后可额外叠加透明底角色。'}</small>
+      <button className={`button ${ipOpen ? 'button-quiet' : 'button-secondary'}`} type="button" onClick={() => setIpOpen(open => !open)}>{ipOpen ? '收起本地文字/IP封面模板' : '展开本地文字/IP封面模板（8套）'}</button>
     </div>
-    {ipId && ipOpen && <IpCoverPanel note={note} kit={kit} kitError={kitError} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />}
+    {ipOpen && <IpCoverPanel note={note} ipId={ipId} kit={kit} kitError={kitError} locked={locked} busy={busy === 'ip-cover'} onRender={onIpCover} />}
 
-    <h4 className="xhs-step-sub">② 图文卡片（高密度多母版，本地免费渲染）</h4>
+    <h4 className="xhs-step-sub">② 图文卡片（13 套多骨架文字模板 · 10 种满版分镜 · 免费高清渲染）</h4>
     {cardsStale && <ConfirmStale text="正文或素材改过，卡片 / 信息图里的内容可能过时了。" locked={locked} onConfirm={() => onConfirm('cards')} />}
-    <div className="xhs-style-picks">{XHS_CARD_STYLES.map(item => <button key={item.key} className={`xhs-style ${style === item.key ? 'is-active' : ''}`} disabled={locked}
+    <div className="xhs-style-picks">{XHS_CARD_STYLES.map(item => <button key={item.key} type="button" className={`xhs-style ${style === item.key ? 'is-active' : ''}`} disabled={locked}
       onClick={() => { setStyle(item.key); if (plan) editPlan({ ...plan, style: item.key }); }}>
       <i style={{ background: item.sheet, borderColor: item.line, boxShadow: `inset 0 0 0 3px ${item.bg}` }}><b style={{ background: item.accent }} /></i><strong>{item.label}</strong><small>{item.hint}</small>
     </button>)}</div>
@@ -273,9 +284,14 @@ export function VisualStep({ note, positioning, locked, busy, assets, coverStale
           <span>联动 IP 强调色</span>
         </label>
       </>}
-      <button className="button button-secondary" disabled={locked} onClick={() => onCards(pageCount, style, cardFocus)}>{busy === 'cards' ? '提炼拆页中…' : plan ? '重新提炼拆页' : 'AI 提炼干货并拆页'}</button>
-      <button className="button button-primary" disabled={locked || !plan} onClick={onRenderCards}>{busy === 'render' ? '渲染中…' : '导出为卡片图'}</button>
+      <button className="button button-secondary" type="button" disabled={locked} onClick={() => onCards(pageCount, style, cardFocus)}>{busy === 'cards' ? '提炼拆页中…' : plan ? 'AI 重新提炼拆页' : 'AI 提炼干货并拆页'}</button>
+      <button className="button button-secondary" type="button" disabled={locked} onClick={applyQuickCards} title="不调大模型，直接按当前正文与素材秒级切分套入所选文字模板">{plan ? '按正文快速重排（免AI）' : '从正文快速套版（免AI）'}</button>
+      <button className="button button-primary" type="button" disabled={locked || !plan} onClick={onRenderCards}>{busy === 'render' ? '渲染中…' : '导出为卡片图'}</button>
     </div>
+    {!plan && activePreviewPlan && <>
+      <p className="xhs-hint">实时模板样张预览（点击上方 13 套模板可实时切换视觉骨架；点「AI 提炼干货并拆页」或「从正文快速套版」即可生成可编辑卡片并导出）。</p>
+      <iframe className="xhs-cards-frame" title="图文卡片样张预览" sandbox="allow-same-origin" srcDoc={preview} />
+    </>}
     {plan && <>
       {plan.keyFacts && plan.keyFacts.length > 0 && <details className="native-json">
         <summary>已提取核心事实库（{plan.keyFacts.length} 条硬核干货已分配进卡片）</summary>

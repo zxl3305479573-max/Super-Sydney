@@ -184,7 +184,7 @@ export function xhsFunnelLabel(layer: string): string {
   return XHS_FUNNEL_LAYERS.find(item => item.key === layer)?.label ?? '';
 }
 
-export type XhsCardVariant = 'swiss' | 'memo' | 'bento' | 'editorial' | 'notion' | 'dark';
+export type XhsCardVariant = 'swiss' | 'memo' | 'bento' | 'editorial' | 'notion' | 'dark' | 'poster' | 'grid' | 'redblack';
 
 export type XhsCardStyleSpec = {
   key: string;
@@ -208,57 +208,82 @@ const SANS_STACK = '"Segoe UI Variable Text","PingFang SC","HarmonyOS Sans SC","
 const SERIF_STACK = '"Source Han Serif SC","Songti SC","STSong","Noto Serif CJK SC","SimSun",serif';
 
 /**
- * 图文卡片风格（本地 HTML 模板 2.0）。
- *
- * 借鉴 XHS-TextCard（苏黎世网格 / 苹果备忘录）、ian-xhs-carousel（现代产品窗口 Bento）与 md2card：
- * 每套主题不仅换配色，还决定主画框骨架（variant：网格实线 / 备忘录横线纸 / 桌面窗口 / 衬线书摘 / 暗夜黑金）。
- * 保留 warm 作为首项默认键以兼容历史笔记数据，整体升级为内聚高密度版式。
+ * 图文卡片风格（本地 HTML 模板 3.0）：
+ * 每套主题对应真实差异化的视觉骨架（variant），彻底告别所有模板共用同一套圆角灰框的廉价同质化：
+ * - swiss：杂志实线分栏 + 大号几何序号，无多余内层气泡框；
+ * - memo：真实备忘录横线纸文档流 + 荧光笔涂抹，不盖灰底框；
+ * - poster：黑黄高反差爆款大字报，粗黑框线 + 反转色条幅；
+ * - grid：28px 方格学霸手账纸 + 荧光绿/柠檬黄批注；
+ * - redblack：红黑避坑测评榜，深色刊头 + 鲜明结论对比；
+ * - editorial：燕麦/杏粉人文书页 + 宋体大标题，温和耐读；
+ * - notion / bento / dark：知识库提示块、紧凑模块磁贴与暗夜黑金商业内参。
+ * 保留 warm 作为首项默认键以兼容历史笔记数据。
  */
 export const XHS_CARD_STYLES: XhsCardStyleSpec[] = [
   {
-    key: 'warm', label: '暖调杂志', hint: '暖纸内聚画框 + 焦橙重点，清晰高密度', variant: 'swiss',
-    bg: '#F2EAE0', sheet: '#FFFDF9', surface: '#FBF5EC', ink: '#231B15', muted: '#69584B',
-    line: '#DFD2C3', accent: '#D95D24', soft: '#FCE7D8', mark: '#FFD8B5', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'warm', label: '暖调杂志', hint: '暖纸实线分栏 + 焦橙序号，干货清晰饱满', variant: 'swiss',
+    bg: '#EFE6DA', sheet: '#FFFDF9', surface: '#F9F2E7', ink: '#221A14', muted: '#655447',
+    line: '#D8C8B6', accent: '#D95D24', soft: '#FCE7D8', mark: '#FFD8B5', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'swiss', label: '苏黎世网格', hint: '瑞士杂志实线分栏 + 朱红序号，秩序感极强', variant: 'swiss',
-    bg: '#E8E6E1', sheet: '#FAF9F5', surface: '#F2F0EA', ink: '#161618', muted: '#57575E',
+    key: 'poster', label: '黑黄大字报', hint: '高反差粗黑条幅 + 明黄重点，信息流一眼抓人', variant: 'poster',
+    bg: '#F2EFE6', sheet: '#FFFDF6', surface: '#FFF9E2', ink: '#141413', muted: '#4A473E',
+    line: '#141413', accent: '#D9480F', soft: '#FEF08A', mark: '#FDE047', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'memo', label: '原生备忘录', hint: '苹果备忘录横线纸 + 荧光笔批注，天然高收藏', variant: 'memo',
+    bg: '#E8E7E3', sheet: '#FFFDF7', surface: '#FAF5E6', ink: '#1C1C1E', muted: '#5C5C60',
+    line: '#E5DEC9', accent: '#C88406', soft: '#FEF3C7', mark: '#FDE047', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'swiss', label: '苏黎世网格', hint: '瑞士国际主义实线网格 + 朱红大序号，极强秩序感', variant: 'swiss',
+    bg: '#E4E1DA', sheet: '#FAF8F4', surface: '#F1EEE7', ink: '#161618', muted: '#525259',
     line: '#18181B', accent: '#D93829', soft: '#FCE8E6', mark: '#FFE17D', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'memo', label: '原生备忘录', hint: 'iOS 备忘录顶栏 + 横线纸 + 荧光笔涂抹', variant: 'memo',
-    bg: '#ECECEE', sheet: '#FFFDF8', surface: '#FAF6EB', ink: '#1C1C1E', muted: '#636366',
-    line: '#E6E2D6', accent: '#D4940A', soft: '#FEF3C7', mark: '#FDE047', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'grid', label: '方格手账卡', hint: '28px 学霸方格纸 + 薄荷荧光笔，教程清单超好读', variant: 'grid',
+    bg: '#DCE8E1', sheet: '#FCFDFB', surface: '#F2F7F4', ink: '#16261F', muted: '#4B6358',
+    line: '#C9DDD1', accent: '#127853', soft: '#D5F4E6', mark: '#BEF264', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'bento', label: '现代窗口', hint: '产品界面窗口 + Bento 模块磁贴，利落有科技感', variant: 'bento',
-    bg: '#E6E9EF', sheet: '#FFFFFF', surface: '#F6F8FA', ink: '#18181B', muted: '#52525B',
-    line: '#E4E4E7', accent: '#EA580C', soft: '#FFEDD5', mark: '#FED7AA', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'redblack', label: '红黑避坑榜', hint: '深炭刊头 + 红绿正反强对比，测评拔草专用', variant: 'redblack',
+    bg: '#EAE5E5', sheet: '#FFFFFF', surface: '#F8F6F6', ink: '#18181B', muted: '#52525B',
+    line: '#D4D4D8', accent: '#DC2626', soft: '#FEE2E2', mark: '#FECACA', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'fresh', label: '森系知识卡', hint: '清爽白绿 + Notion 提示块，适合科普与清单', variant: 'notion',
-    bg: '#E3F1EB', sheet: '#FCFDFC', surface: '#F2F9F5', ink: '#142922', muted: '#4A665C',
-    line: '#CFE6DA', accent: '#15805D', soft: '#D6F3E6', mark: '#B8F0D6', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'bento', label: '现代窗口', hint: '桌面窗口顶栏 + 满版 Bento 磁贴，利落科技感', variant: 'bento',
+    bg: '#E3E7EE', sheet: '#FFFFFF', surface: '#F5F7FA', ink: '#18181B', muted: '#52525B',
+    line: '#DFE3EA', accent: '#EA580C', soft: '#FFEDD5', mark: '#FED7AA', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'cream', label: '人文书摘', hint: '燕麦书页 + 宋体大标题，温和耐读不刺眼', variant: 'editorial',
-    bg: '#EAE1D2', sheet: '#FAF5EB', surface: '#F3EBDD', ink: '#2C2219', muted: '#6B5A49',
-    line: '#DCD0BD', accent: '#8F562E', soft: '#EFE1CE', mark: '#F5D9B4', font: SANS_STACK, headingFont: SERIF_STACK
+    key: 'fresh', label: '森系知识卡', hint: '清爽松绿 + Notion 属性栏与提示块，适合科普养护', variant: 'notion',
+    bg: '#DFEFE8', sheet: '#FCFDFC', surface: '#F1F8F4', ink: '#142922', muted: '#48655B',
+    line: '#CBE3D7', accent: '#15805D', soft: '#D6F3E6', mark: '#A7F3D0', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'tech', label: '蓝紫参数卡', hint: 'SaaS 仪表盘质感，适合工具测评与步骤流', variant: 'bento',
-    bg: '#E5E9F8', sheet: '#FFFFFF', surface: '#F5F7FF', ink: '#181C32', muted: '#545B78',
-    line: '#DCE1F5', accent: '#4F46E5', soft: '#E0E7FF', mark: '#C7D2FE', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'cream', label: '人文书摘', hint: '燕麦棉纸 + 宋体大标题，适合个人故事与认知复盘', variant: 'editorial',
+    bg: '#E7DDD0', sheet: '#FAF5EC', surface: '#F2EAE0', ink: '#2A2018', muted: '#685747',
+    line: '#D6C9B6', accent: '#8F5128', soft: '#EFE1CE', mark: '#F5D6AD', font: SANS_STACK, headingFont: SERIF_STACK
   },
   {
-    key: 'mono', label: '黑白画报', hint: '高反差黑白编辑风 + 绯红角标，买手干货感', variant: 'swiss',
+    key: 'morandi', label: '温柔杏粉卡', hint: '低饱和玫瑰杏白 + 衬线标题，居家/身心/好物种草耐看', variant: 'editorial',
+    bg: '#EFE3E2', sheet: '#FFFDFC', surface: '#FAF2F1', ink: '#2C1F22', muted: '#6E565B',
+    line: '#E6D2D4', accent: '#B84A58', soft: '#FCE7EA', mark: '#FBCFE8', font: SANS_STACK, headingFont: SERIF_STACK
+  },
+  {
+    key: 'tech', label: '蓝紫参数卡', hint: '克莱因蓝紫指标卡，适合 AI 工具、数码与副业拆解', variant: 'bento',
+    bg: '#E2E7F7', sheet: '#FFFFFF', surface: '#F4F6FF', ink: '#161B33', muted: '#505878',
+    line: '#D6DDF4', accent: '#4338CA', soft: '#E0E7FF', mark: '#C7D2FE', font: SANS_STACK, headingFont: SANS_STACK
+  },
+  {
+    key: 'mono', label: '黑白画报', hint: '极简黑白社论风 + 绯红角标，买手选品高级感', variant: 'swiss',
     bg: '#E4E4E7', sheet: '#FFFFFF', surface: '#F6F6F7', ink: '#111111', muted: '#52525B',
     line: '#27272A', accent: '#E0313B', soft: '#FFE4E6', mark: '#FECDD3', font: SANS_STACK, headingFont: SANS_STACK
   },
   {
-    key: 'dark', label: '暗夜黑金', hint: '深曜石底 + 琥珀金高亮，复盘与搞钱干货吸睛', variant: 'dark',
-    bg: '#090B10', sheet: '#12161F', surface: '#1A202C', ink: '#F3F4F6', muted: '#9CA3AF',
-    line: '#2B3445', accent: '#F59E0B', soft: '#33260F', mark: '#78350F', font: SANS_STACK, headingFont: SANS_STACK
+    key: 'dark', label: '暗夜黑金', hint: '深曜石底 + 琥珀金高亮，商业拆解与月度复盘吸睛', variant: 'dark',
+    bg: '#0B0E14', sheet: '#131822', surface: '#1B2230', ink: '#F3F4F6', muted: '#9CA3AF',
+    line: '#2C364A', accent: '#F59E0B', soft: '#36270E', mark: '#78350F', font: SANS_STACK, headingFont: SANS_STACK
   }
 ];
 
@@ -266,15 +291,17 @@ export function xhsCardStyle(key: string): XhsCardStyleSpec {
   return XHS_CARD_STYLES.find(item => item.key === key) ?? XHS_CARD_STYLES[0];
 }
 
-/** 8 种语义分镜母版：按每页承载的信息关系选用不同模块排布。 */
+/** 10 种语义分镜母版：按每页承载的信息关系选用不同模块排布。 */
 export const XHS_CARD_LAYOUTS: Array<{ key: XhsCardLayout; label: string; hint: string }> = [
   { key: 'roadmap', label: '总览矩阵', hint: '开篇直接给核心分类结论或路线图，不写空话预告' },
   { key: 'keypoints', label: '结构要点', hint: '每条「小标题结论 + 展开细节/数字 + 角标」双层结构' },
-  { key: 'steps', label: '步骤链路', hint: '01 → 02 → 03 纵向流程轨，讲清操作入口与顺序' },
+  { key: 'steps', label: '步骤链路', hint: 'STEP 1 → 2 → 3 纵向流程轨，讲清操作入口与顺序' },
   { key: 'compare', label: '正反避坑', hint: '❌ 常见误区/踩坑 vs ✅ 正确做法/标准，反差鲜明' },
-  { key: 'bento', label: '2×2 宫格', hint: '四宫格紧凑磁贴，适合多路径对比、工具/货盘盘点' },
+  { key: 'bento', label: '2×2 宫格', hint: '四宫格满版磁贴，适合多路径对比、工具/货盘盘点' },
   { key: 'metrics', label: '数据看板', hint: '顶部大号核心门槛/指标块 + 下方细则拆解' },
   { key: 'checklist', label: '自查清单', hint: '☑ 实操核对项 + 判断标准，天然促收藏' },
+  { key: 'qa', label: '痛点问答', hint: 'Q 高频疑问/卡点 → A 直接给判断标准与解法' },
+  { key: 'quote', label: '金句洞察', hint: '大字核心认知金句 + 2–3 条拆解论据，适合故事与观点页' },
   { key: 'summary', label: '一页速查', hint: '条件 → 动作/方案高密度速查表（适合尾页或单张一图流）' }
 ];
 
@@ -434,6 +461,24 @@ export const XHS_COVER_PRESETS: XhsCoverPresetSpec[] = [
     composition: '大面积留白呼吸感构图，人物或生活角落置于一侧，与文字区形成平衡对话关系',
     paletteLighting: '燕麦米、鼠尾草绿、暖陶土棕等柔和自然大地色系，午后温暖柔光氛围',
     typography: '温润人文衬线或中粗黑体主标题，字距舒展清晰'
+  },
+  {
+    key: 'desk_flatlay',
+    label: '桌面俯拍合集',
+    hint: '整齐陈列好物/工具俯拍 + 序号角标，合集清单与测评爆款',
+    medium: '高清晰度工作室俯拍静物摄影（Flat-lay 垂直 90 度俯拍，真实材质细节，干净无杂物）',
+    composition: '画面中下部按网格整齐排列 3–5 件主题相关实物道具，上方预留 32% 纯净背景区承载大字标题',
+    paletteLighting: '均匀柔和顶光配浅暖木桌面或米灰亚麻底布，色彩统一在暖米、原木与单一强调色内',
+    typography: '上方醒目粗黑主标题配数字胶囊，器物旁点缀干净简洁的序号小贴纸（①②③）'
+  },
+  {
+    key: 'bold_collage',
+    label: '波普拼贴画报',
+    hint: '高反差剪纸色块拼贴 + 粗黑标题条，避坑拔草与观点类超吸睛',
+    medium: '现代潮流杂志纸艺拼贴设计（高清实物抠图结合撕纸边缘肌理与几何色块构成）',
+    composition: '中心偏下放置高辨识度主题主体，上方醒目横幅色块承载双行大字主标题，视觉重心集中',
+    paletteLighting: '暖白纸感底配深炭黑、明黄或朱砂红高对比强调色块，边缘利落无脏污阴影',
+    typography: '高反差黑底黄字或白底粗黑框大标题，缩略图一秒抓眼球'
   }
 ];
 
@@ -491,6 +536,22 @@ export const XHS_INFO_PRESETS: XhsInfoPresetSpec[] = [
     layoutSpec: '高对比暗色数据仪表盘卡片布局，细微亮边分割各模块，重点数字放大突出',
     palette: '深石墨黑底（#12161F）配暗蓝灰卡片（#1B212E），纯白正文，琥珀金（#F59E0B）与翠绿高亮',
     iconography: '发光质感线性指标图标、进度条与胶囊徽章'
+  },
+  {
+    key: 'versus_board',
+    label: '红黑正反对比榜',
+    hint: '左右或上下分栏 ❌ 踩坑误区 vs ✅ 正确做法，避坑与测评极高收藏',
+    layoutSpec: '鲜明正反双栏对照信息图，上方大标题点明核心判断，下方红绿双色模块逐条对照错误做法与正确方案',
+    palette: '干净暖白底（#FAF9F6），误区栏浅玫红底配深红标签，正解栏浅薄荷绿底配深森绿标签，炭黑正文',
+    iconography: '醒目叉号与对勾徽章、对比箭头及结论高亮条'
+  },
+  {
+    key: 'step_roadmap',
+    label: '实操路径流程图',
+    hint: 'STEP 01 → 02 → 03 节点闯关式路线图，手把手教程一眼看懂',
+    layoutSpec: '纵向 S 型或阶梯式步骤流程图解，每个节点带清晰编号胶囊、关键动作卡片与避坑小贴士，底部附总结框',
+    palette: '清爽米灰底（#F5F7FA）配纯白步骤卡，克莱因蓝（#2563EB）与暖阳橙（#F59E0B）做节点主次强调',
+    iconography: '编号步骤徽章、串联引导箭头与极简线性操作图标'
   }
 ];
 

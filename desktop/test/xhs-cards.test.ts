@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { XHS_CARD_LAYOUTS, XHS_CARD_STYLES } from '../services/xhs-catalog.ts';
 import {
-  cardPageLines, linesToCardItems, parsePointLine, renderCardDocument, renderCardsPreview, resolveCardLayout, richCardText
+  buildQuickCardPlan, cardPageLines, linesToCardItems, parsePointLine, renderCardDocument, renderCardsPreview, resolveCardLayout, richCardText
 } from '../services/xhs-cards.ts';
 
 test('全部主题骨架与 8 种分镜母版均可稳定渲染 1080×1440 内聚画框', () => {
@@ -97,4 +97,33 @@ test('IP 角色出现频率（bookends / none）与联动 IP 品牌强调色生�
 
   const noneHtml = renderCardDocument({ ...bookendsPlan, mascotMode: 'none' }, 0, '标题', kit);
   assert.ok(!noneHtml.includes('ip-mascot'), 'none 模式下不放角色');
+});
+
+test('13 套多骨架卡片风格与新增 qa / quote 母版及免 AI 快速拆卡均可正常工作', () => {
+  assert.ok(XHS_CARD_STYLES.length >= 13, '提供至少 13 套差异化卡片风格');
+  assert.ok(XHS_CARD_LAYOUTS.some(item => item.key === 'qa') && XHS_CARD_LAYOUTS.some(item => item.key === 'quote'));
+
+  const qaPage = {
+    heading: '高频答疑',
+    points: ['Q：低粉期要不要投薯条？ :: 先把自然点击率跑到 10% 以上再测付费', 'Q：没有货源怎么起步？ :: 走专业号 0 粉买手橱窗或个人售卖副业'],
+    emphasis: '先测单点转化'
+  };
+  assert.equal(resolveCardLayout(qaPage, 1, 4), 'qa');
+  const qaHtml = renderCardDocument({ style: 'poster', pages: [qaPage] }, 0, '答疑');
+  assert.ok(qaHtml.includes('layout-qa') && qaHtml.includes('qa-pill'));
+
+  const sampleQuick = buildQuickCardPlan({ title: '护膝选购', topic: '', body: '', material: '', writerJson: '' }, 'grid', 4);
+  assert.equal(sampleQuick.style, 'grid');
+  assert.ok(sampleQuick.pages.length >= 2, '空正文也能生成实时预览样张');
+
+  const bodyQuick = buildQuickCardPlan({
+    title: '冬天护膝怎么选',
+    topic: '护膝',
+    body: '冬天买护膝最怕往下掉和勒腿。\n1. 防滑硅胶条：宽度至少 ≥1cm 走路才不滑脱\n2. 膝弯剪裁：蹲下 90 度腘窝不堆褶不卡肉\n3. 内里材质：选透气羊羔绒避免久戴闷汗起疹\n4. 尺码测量：站立量膝盖上方 10cm 腿围最准',
+    material: '',
+    writerJson: JSON.stringify({ coreTakeaway: '只看防滑条宽度与腘窝剪裁两个硬指标' })
+  }, 'memo', 4);
+  assert.equal(bodyQuick.style, 'memo');
+  assert.ok(bodyQuick.pages.length >= 2);
+  assert.ok(bodyQuick.pages[0].items && bodyQuick.pages[0].items.length >= 2);
 });

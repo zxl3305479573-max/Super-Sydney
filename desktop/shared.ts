@@ -646,23 +646,25 @@ export type XhsAccount = {
   createdAt: string;
   updatedAt: string;
 };
-/** 小红书的 IP 封面模板（见 services/xhs-ip-cover）。 */
-export type XhsIpCoverTemplate = 'tutorial' | 'list' | 'recap';
+/** 小红书本地文字 / IP 封面模板（见 services/xhs-ip-cover）。 */
+export type XhsIpCoverTemplate = 'tutorial' | 'bigtype' | 'memo' | 'list' | 'versus' | 'magazine' | 'quote' | 'recap';
 
 export type XhsIpCoverInput = {
   template: XhsIpCoverTemplate;
-  /** 用 IP 的哪个角色动作（IpPose.id）；空串表示按模板自动挑。 */
+  /** 用 IP 的哪个角色动作（IpPose.id）；'none' 表示纯文字不放角色，空串表示按模板自动挑。 */
   pose: string;
+  /** 可选配色主题键（如 warm / swiss / memo / forest / obsidian / klein / rose）；空串时优先用账号 IP 配色。 */
+  theme?: string;
   title: string;
   sub: string;
   tag: string;
-  /** 只有 tutorial 用，最多 5 步。 */
+  /** 要点 / 步骤 / 对比项（最多 5 条）。 */
   steps: string[];
-  /** 只有 list 用：巨大数字和单位、右上角贴纸。 */
+  /** 数字型模板用：巨大数字和单位、右上角印章贴纸。 */
   number: string;
   unit: string;
   sticker: string;
-  /** 只有 recap 用：角色上方的气泡台词。 */
+  /** 复盘 / 对比 / 金句补充台词。 */
   bubble: string;
 };
 
@@ -783,8 +785,8 @@ export type XhsBasis = { body?: string; title?: string; cover?: string; cards?: 
 export type XhsStepKey = 'topic' | 'body' | 'title' | 'visual' | 'checks' | 'package';
 export type XhsGenerateStage = 'body' | 'polish' | 'revise' | 'titles' | 'checks' | 'cards';
 export type XhsWriterMeta = { opening: string[]; outline: string[]; interaction: string; coreTakeaway?: string };
-export type XhsCoverPresetKey = 'editorial_photo' | 'magazine_poster' | 'handdrawn_board' | 'studio_3d' | 'minimal_flat';
-export type XhsInfoPresetKey = 'light_bento' | 'swiss_chart' | 'marker_sketchnote' | 'warm_guide' | 'dark_dashboard';
+export type XhsCoverPresetKey = 'editorial_photo' | 'magazine_poster' | 'handdrawn_board' | 'studio_3d' | 'minimal_flat' | 'desk_flatlay' | 'bold_collage';
+export type XhsInfoPresetKey = 'light_bento' | 'swiss_chart' | 'marker_sketchnote' | 'warm_guide' | 'dark_dashboard' | 'versus_board' | 'step_roadmap';
 export type XhsCoverGenerateInput = string | { brief?: string; preset?: XhsCoverPresetKey | string; customPrompt?: string };
 export type XhsInfoGenerateInput = 'single' | 'pages' | { mode: 'single' | 'pages'; preset?: XhsInfoPresetKey | string };
 export type XhsStructuredCoverPlan = {
@@ -813,7 +815,7 @@ export type XhsTitleWorkshop = {
 };
 export type XhsCheckItem = { id: string; label: string; ok: boolean | null; level: 'error' | 'warn' | 'info'; detail: string; source: 'local' | 'model' };
 export type XhsCheckReport = { items: XhsCheckItem[]; checkedAt: string; modelError: string };
-export type XhsCardLayout = 'roadmap' | 'keypoints' | 'steps' | 'compare' | 'bento' | 'metrics' | 'checklist' | 'summary';
+export type XhsCardLayout = 'roadmap' | 'keypoints' | 'steps' | 'compare' | 'bento' | 'metrics' | 'checklist' | 'qa' | 'quote' | 'summary';
 export type XhsCardItem = {
   /** 条目小标题 / 结论锚点（如「开店硬门槛」「❌ 盲目投薯条」）。 */
   title: string;

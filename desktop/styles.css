@@ -1090,8 +1090,9 @@ button.chip { cursor: pointer; }
 .xhs-feed-card small { padding: 0 7px; color: var(--faint); font-size: 10px; }
 .xhs-cover-large figcaption { color: var(--muted); font-size: 11.5px; }
 .xhs-cover-actions { display: grid; flex: 1; gap: 10px; min-width: 240px; }
-.xhs-style-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-.xhs-style { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); text-align: left; }
+.xhs-style-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 8px; }
+.xhs-style { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 2px 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); text-align: left; cursor: pointer; transition: border-color .15s ease-out, background-color .15s ease-out; }
+.xhs-style:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-hover); }
 .xhs-style.is-active { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
 .xhs-style i { grid-row: span 2; display: grid; place-items: end start; width: 30px; height: 40px; padding: 4px; border: 2px solid; border-radius: 5px; }
 .xhs-style i b { width: 14px; height: 4px; border-radius: 2px; }
@@ -1106,7 +1107,8 @@ button.chip { cursor: pointer; }
 .xhs-ip-pick { grid-template-columns: minmax(0, 1fr); }
 .xhs-ip-title-row { display: flex; gap: 8px; align-items: center; }
 .xhs-ip-title-row .input { flex: 1; }
-.xhs-ip-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.xhs-ip-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 720px) { .xhs-ip-pair { grid-template-columns: minmax(0, 1fr); } }
 .wechat-ip { display: grid; gap: 4px; margin-top: 14px; }
 .wechat-ip-previews { display: grid; gap: 10px; align-content: start; }
 .wechat-ip-share { display: flex; gap: 12px; align-items: center; }
