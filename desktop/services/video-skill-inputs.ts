@@ -63,7 +63,7 @@ export function skillInputFingerprint(sourcePath: string): string {
 }
 
 export function hasStableSkillInput(project: VideoProject): boolean {
-  if (project.options.workflow === 'script-to-video' || project.options.workflow === 'product-demo') return true;
+  if (project.options.workflow === 'script-to-video' || project.options.workflow === 'product-demo' || project.options.workflow === 'direct-upload') return true;
   if (!project.options.sourcePath.trim() || !project.options.skillInputSignature) return false;
   try {
     return skillInputFingerprint(project.options.sourcePath) === project.options.skillInputSignature;
@@ -73,7 +73,7 @@ export function hasStableSkillInput(project: VideoProject): boolean {
 }
 
 export function assertStableSkillInput(project: VideoProject): void {
-  if (project.options.workflow === 'script-to-video' || project.options.workflow === 'product-demo') return;
+  if (project.options.workflow === 'script-to-video' || project.options.workflow === 'product-demo' || project.options.workflow === 'direct-upload') return;
   if (!hasStableSkillInput(project)) {
     throw new Error('外部素材或浏览器配置已变化，请重新运行当前 Skill 工作流后再导出');
   }

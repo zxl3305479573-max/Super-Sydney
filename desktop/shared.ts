@@ -362,18 +362,37 @@ export type VideoPlatformCopy = {
   coverRatio: VideoCoverRatio;
   skip: boolean;
 };
+export type VideoPublishVideoMeta = {
+  path: string;
+  fileName: string;
+  sizeBytes: number;
+  seconds: number;
+};
 export type VideoPublishPack = {
   projectId: number;
   scheduledAt: string;
+  neutralCopy: string;
   copies: Record<VideoPublishPlatform, VideoPlatformCopy>;
   variants: Partial<Record<VideoCoverRatio, string>>;
   updatedAt: string;
 };
 export type VideoPublishPackView = {
   pack: VideoPublishPack;
+  coverThumbnail: string;
+  videoMeta: VideoPublishVideoMeta | null;
   coverVariants: VideoCoverVariantView[];
   validation: VideoPublishValidation;
   episode: OpsEpisodeWithTasks | null;
+};
+export type VideoDirectUploadAttachResult = {
+  project: VideoProject;
+  packView: VideoPublishPackView;
+  remuxed: boolean;
+  notice: string;
+};
+export type VideoDirectUploadCoverResult = {
+  project: VideoProject;
+  packView: VideoPublishPackView;
 };
 export type VideoPublishCheckIssue = {
   platform: VideoPublishPlatform | 'global';
@@ -432,8 +451,8 @@ export type VideoVoiceMode = 'tts' | 'silent';
 export type VideoTemplate = 'warm' | 'clean' | 'night';
 export type VideoImageMode = 'none' | 'ai';
 export type VideoContentStructure = 'auto' | 'problem' | 'steps' | 'list' | 'story';
-/** 视频工作台的生产路径。旧项目没有该字段时自动使用 script-to-video。 */
-export type VideoWorkflow = 'script-to-video' | 'footage-edit' | 'product-demo' | 'browser-demo' | 'localize';
+/** 视频工作台的生产路径。旧项目没有该字段时自动使用 script-to-video；direct-upload 表示本地成片直接配封面与中性文案分发。 */
+export type VideoWorkflow = 'script-to-video' | 'footage-edit' | 'product-demo' | 'browser-demo' | 'localize' | 'direct-upload';
 export type VideoBgmMode = 'none' | 'auto' | 'custom';
 export type VideoBgmStyle = 'auto' | 'tech' | 'uplifting' | 'calm' | 'cinematic';
 export type ResolvedVideoBgmStyle = Exclude<VideoBgmStyle, 'auto'>;
@@ -1278,6 +1297,7 @@ export type FeishuConfigDraft = {
 
 export type VideoPublishPackPatch = {
   scheduledAt?: string;
+  neutralCopy?: string;
   copies?: Partial<Record<VideoPublishPlatform, Partial<VideoPlatformCopy>>>;
   variants?: Partial<Record<VideoCoverRatio, string>>;
 };
@@ -1460,6 +1480,12 @@ export interface SydneyApi {
   saveVideoPublishPack(id: number, patch: VideoPublishPackPatch): Promise<VideoPublishPackView>;
   generateVideoPublishPack(id: number): Promise<VideoPublishPackView>;
   generateVideoCoverVariants(id: number): Promise<VideoPublishPackView>;
+  pickDirectUploadVideo(): Promise<string | null>;
+  pickDirectUploadCover(): Promise<string | null>;
+  importDirectUploadCopy(filePath?: string): Promise<{ path: string; text: string } | null>;
+  createDirectUploadProject(title?: string): Promise<VideoProject>;
+  attachDirectUploadVideo(projectId: number | null, filePath: string, title?: string): Promise<VideoDirectUploadAttachResult>;
+  attachDirectUploadCover(projectId: number, filePath: string): Promise<VideoDirectUploadCoverResult>;
   openVideoFile(id: number): Promise<string>;
   getVideoTtsStatus(): Promise<VideoTtsStatus>;
   /** ffmpeg / ffprobe 是否可用；不可用时 detail 是能照着做的安装提示。 */

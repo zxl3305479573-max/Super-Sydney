@@ -89,6 +89,7 @@ export function migrateOpsTables(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS ops_video_publish_packs (
       project_id INTEGER PRIMARY KEY,
       scheduled_at TEXT NOT NULL DEFAULT '',
+      neutral_copy TEXT NOT NULL DEFAULT '',
       copies_json TEXT NOT NULL DEFAULT '{}',
       variants_json TEXT NOT NULL DEFAULT '{}',
       updated_at TEXT NOT NULL
@@ -148,6 +149,13 @@ export function migrateOpsTables(db: DatabaseSync): void {
       PRIMARY KEY (episode_id, milestone_day)
     );
   `);
+  // 2026-11-28 加入：发布包的中性基础文案列，供上传本地视频直发或二次改写四平台文案使用。
+  const packColumns = new Set(
+    (db.prepare('PRAGMA table_info(ops_video_publish_packs)').all() as Array<{ name: string }>).map(column => column.name)
+  );
+  if (!packColumns.has('neutral_copy')) {
+    db.exec("ALTER TABLE ops_video_publish_packs ADD COLUMN neutral_copy TEXT NOT NULL DEFAULT ''");
+  }
 }
 
 function episodeFromRow(row: Record<string, unknown>): OpsEpisode {

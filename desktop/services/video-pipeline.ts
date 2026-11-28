@@ -321,6 +321,14 @@ export function narrationCoverage(script: string, shots: VideoShot[]): number {
 
 /** 渲染成片的签名：分镜、时长、配音键、配图键、模板和背景音乐都算进去，任何一项变了成片就过期。 */
 export function renderSignature(project: VideoProject): string {
+  // 直接上传的本地成品视频只绑定上传源文件快照；修改标题、平台、封面或中性文案不会让已上传成片失效。
+  if (project.options.workflow === 'direct-upload') {
+    return signatureOf({
+      kind: 'direct-upload',
+      sourcePath: project.options.sourcePath,
+      skillInputSignature: project.options.skillInputSignature
+    });
+  }
   const shots = parseVideoShots(project.storyboardJson);
   const timeline = buildTimeline(shots, shotDurations(project, shots).seconds);
   const bgmStyle = resolveVideoBgmStyle(

@@ -102,6 +102,7 @@ export function defaultVideoPublishPack(project: VideoProject): VideoPublishPack
   return {
     projectId: project.id,
     scheduledAt: '',
+    neutralCopy: '',
     copies,
     variants: {},
     updatedAt: ''
@@ -152,6 +153,7 @@ export function getVideoPublishPack(db: DatabaseSync, project: VideoProject): Vi
   return {
     projectId: project.id,
     scheduledAt: String(row.scheduled_at ?? ''),
+    neutralCopy: String(row.neutral_copy ?? ''),
     copies,
     variants: parsedVariants,
     updatedAt: String(row.updated_at ?? '')
@@ -160,6 +162,7 @@ export function getVideoPublishPack(db: DatabaseSync, project: VideoProject): Vi
 
 export type SaveVideoPublishPackPatch = {
   scheduledAt?: string;
+  neutralCopy?: string;
   copies?: Partial<Record<VideoPublishPlatform, Partial<VideoPlatformCopy>>>;
   variants?: Partial<Record<VideoCoverRatio, string>>;
 };
@@ -184,22 +187,26 @@ export function saveVideoPublishPack(
     ? { ...current.variants, ...patch.variants }
     : current.variants;
   const scheduledAt = patch.scheduledAt !== undefined ? String(patch.scheduledAt).trim() : current.scheduledAt;
+  const neutralCopy = patch.neutralCopy !== undefined
+    ? String(patch.neutralCopy).replace(/\r\n?/g, '\n').trim().slice(0, 20_000)
+    : current.neutralCopy;
 
   db.prepare(`
-    INSERT INTO ops_video_publish_packs (project_id, scheduled_at, copies_json, variants_json, updated_at)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO ops_video_publish_packs (project_id, scheduled_at, neutral_copy, copies_json, variants_json, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(project_id) DO UPDATE SET
       scheduled_at=excluded.scheduled_at,
+      neutral_copy=excluded.neutral_copy,
       copies_json=excluded.copies_json,
       variants_json=excluded.variants_json,
       updated_at=excluded.updated_at
-  `).run(project.id, scheduledAt, JSON.stringify(nextCopies), JSON.stringify(nextVariants), now);
+  `).run(project.id, scheduledAt, neutralCopy, JSON.stringify(nextCopies), JSON.stringify(nextVariants), now);
 
   return getVideoPublishPack(db, project);
 }
 
 const PUBLISH_PACK_SYSTEM_PROMPT = `你是一位精通国内多平台分发的资深自媒体总编。
-请根据用户提供的视频标题、目标受众、口播脚本与分镜信息，一次性为【抖音、微信视频号、小红书、B站】四个平台编写原生调性的差异化发布文案，输出严格 JSON 对象：
+请根据用户提供的中性基础文案（若有）以及视频标题、目标受众、口播脚本与分镜信息，一次性为【抖音、微信视频号、小红书、B站】四个平台编写原生调性的差异化发布文案，输出严格 JSON 对象：
 {
   "douyin": { "title": "≤28字抓停留标题", "body": "痛点切入、短句快节奏正文（不含#话题）", "tags": ["话题1", "话题2", "话题3"] },
   "shipinhao": { "title": "严格6到15个字的规范短标题（不带书名号和特殊符号）", "body": "温和清晰、适合熟人推荐转发的描述（不含#话题）", "tags": ["话题1", "话题2", "话题3"] },
@@ -207,14 +214,33 @@ const PUBLISH_PACK_SYSTEM_PROMPT = `你是一位精通国内多平台分发的�
   "bilibili": { "title": "≤60字信息量充足的完整标题", "body": "开头两三句讲清本期看点与收获（不含#话题，系统会自动在后面拼章节时间轴）", "tags": ["标签1", "标签2", "标签3", "标签4"] }
 }
 
-硬性合规要求：
-1. 严禁在抖音、视频号、小红书文案中出现任何站外引流词（如微信号、vx、+v、私信领、评论区扣、网址链接）。
-2. 在抖音、视频号、小红书里避免直写海外大模型英文品牌名（如 ChatGPT、Claude、Gemini），统一用「AI 工具」「智能体」「大模型」自然代称。
-3. 抖音 tags 最多 5 个；tags 数组里不要带 # 号。`;
+硬性合规与内容要求：
+1. 若用户提供了「中性基础文案」，必须以中性基础文案的事实、卖点和核心观点为主轴进行四平台原生改写，不得编造原文没有的数据、价格或效果承诺。
+2. 严禁在抖音、视频号、小红书文案中出现任何站外引流词（如微信号、vx、+v、私信领、评论区扣、网址链接）。
+3. 在抖音、视频号、小红书里避免直写海外大模型英文品牌名（如 ChatGPT、Claude、Gemini），统一用「AI 工具」「智能体」「大模型」自然代称。
+4. 抖音 tags 最多 5 个；tags 数组里不要带 # 号。
+5. 如果项目标题为空或像原始文件名（如 IMG_1234），请直接依据中性基础文案为每个平台拟定最合适的原生标题。`;
 
-export function parseGeneratedPublishPackJson(rawText: string, project: VideoProject): Record<VideoPublishPlatform, VideoPlatformCopy> {
-  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
-  const parsed = JSON.parse(cleaned) as Record<string, Record<string, unknown>>;
+function extractJsonObject(rawText: string): Record<string, Record<string, unknown>> {
+  const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  try {
+    return JSON.parse(cleaned) as Record<string, Record<string, unknown>>;
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      return JSON.parse(cleaned.slice(start, end + 1)) as Record<string, Record<string, unknown>>;
+    }
+    throw new Error('模型返回的四平台文案不是有效 JSON，请重试');
+  }
+}
+
+export function parseGeneratedPublishPackJson(
+  rawText: string,
+  project: VideoProject,
+  existing?: Partial<Record<VideoPublishPlatform, VideoPlatformCopy>>
+): Record<VideoPublishPlatform, VideoPlatformCopy> {
+  const parsed = extractJsonObject(rawText);
   const defaults = defaultVideoPublishPack(project).copies;
   const chapters = buildBilibiliChapters(project);
 
@@ -223,6 +249,7 @@ export function parseGeneratedPublishPackJson(rawText: string, project: VideoPro
     const p = item.value;
     const rule = PLATFORM_COPY_RULES[p];
     const block = parsed?.[p] ?? {};
+    const prev = existing?.[p];
     const rawTitle = typeof block.title === 'string' && block.title.trim() ? block.title.trim() : defaults[p].title;
     const title = p === 'shipinhao'
       ? normalizeShipinhaoTitle(rawTitle, project.topic)
@@ -238,8 +265,8 @@ export function parseGeneratedPublishPackJson(rawText: string, project: VideoPro
       title,
       body,
       tags: normalizePublishTags(block.tags, rule.maxTags),
-      coverRatio: defaults[p].coverRatio,
-      skip: false
+      coverRatio: prev?.coverRatio ?? defaults[p].coverRatio,
+      skip: prev?.skip ?? false
     };
   }
   return out;
@@ -248,15 +275,26 @@ export function parseGeneratedPublishPackJson(rawText: string, project: VideoPro
 export async function generateAiVideoPublishPack(
   project: VideoProject,
   llmConfig: LlmConfig,
-  chatOptions: ChatOptions = {}
+  options: ChatOptions & {
+    neutralCopy?: string;
+    existingCopies?: Partial<Record<VideoPublishPlatform, VideoPlatformCopy>>;
+  } = {}
 ): Promise<Record<VideoPublishPlatform, VideoPlatformCopy>> {
+  const { neutralCopy = '', existingCopies, ...chatOptions } = options;
+  const cleanNeutral = neutralCopy.trim();
+  const hasAnyBasis = Boolean(cleanNeutral || project.script.trim() || project.topic.trim() || project.title.trim());
+  if (!hasAnyBasis) {
+    throw new Error('请先输入中性文案或填写视频标题，再让 AI 生成四平台文案');
+  }
+
   const shots = parseVideoShots(project.storyboardJson);
   const shotSummary = shots.slice(0, 12).map(s => `第${s.index}镜：${s.caption || s.visual}｜${s.narration}`).join('\n');
   const userPrompt = [
-    `项目标题：${project.title || project.topic || '未命名视频'}`,
-    `选题方向：${project.topic || '无'}`,
-    `目标受众：${project.audience || '大众观众'}`,
-    `口播脚本：\n${project.script || '（暂无完整口播稿，请根据标题和分镜撰写）'}`,
+    cleanNeutral ? `中性基础文案（核心依据，请保留事实与核心价值并按四平台原生调性分别改写）：\n${cleanNeutral}` : '',
+    `项目标题：${project.title.trim() || project.topic.trim() || '（未填，请根据中性文案自动拟定各平台标题）'}`,
+    project.topic.trim() ? `选题方向：${project.topic.trim()}` : '',
+    project.audience.trim() ? `目标受众：${project.audience.trim()}` : '',
+    project.script.trim() ? `口播脚本：\n${project.script.trim()}` : '',
     shotSummary ? `分镜摘要：\n${shotSummary}` : ''
   ].filter(Boolean).join('\n\n');
 
@@ -266,5 +304,5 @@ export async function generateAiVideoPublishPack(
     timeoutMs: 90_000,
     ...chatOptions
   });
-  return parseGeneratedPublishPackJson(response, project);
+  return parseGeneratedPublishPackJson(response, project, existingCopies);
 }

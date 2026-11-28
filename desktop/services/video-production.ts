@@ -71,7 +71,7 @@ export function normalizeRenderOptions(input: unknown, base: VideoRenderOptions 
   const value = input as Partial<Record<keyof VideoRenderOptions, unknown>>;
   const next = { ...base };
   if (value.workflow !== undefined) {
-    const workflows: VideoWorkflow[] = ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize'];
+    const workflows: VideoWorkflow[] = ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize', 'direct-upload'];
     if (!workflows.includes(value.workflow as VideoWorkflow)) throw new Error('未知的视频工作流');
     next.workflow = value.workflow as VideoWorkflow;
   }
@@ -273,7 +273,7 @@ export function parseRenderAssets(json: string): VideoRenderAssets {
     video: video && text(video.path) && text(video.signature) && Number.isFinite(videoSeconds)
       ? { path: text(video.path), signature: text(video.signature), seconds: videoSeconds, renderedAt: text(video.renderedAt) }
       : null,
-    skill: skill && ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize'].includes(text(skill.workflow))
+    skill: skill && ['script-to-video', 'footage-edit', 'product-demo', 'browser-demo', 'localize', 'direct-upload'].includes(text(skill.workflow))
       && text(skill.outputPath)
       ? {
           workflow: text(skill.workflow) as VideoWorkflow,

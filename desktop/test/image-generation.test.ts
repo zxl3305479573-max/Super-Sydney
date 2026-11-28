@@ -36,6 +36,15 @@ test('b64_json 直接解码返回', async () => {
   }
 });
 
+test('接口返回网页时提示检查图片 API 地址', async () => {
+  useImageFetch(async () => new Response('<!doctype html><html></html>', { headers: { 'Content-Type': 'text/html' } }));
+  try {
+    await assert.rejects(requestGeneratedImage(config, '一杯茶'), /不是有效 JSON.*图片模型 API 地址.*\/v1/);
+  } finally {
+    useImageFetch((...args) => fetch(...args));
+  }
+});
+
 test('fetch failed 换成说得清原因的提示', () => {
   const error = new TypeError('fetch failed', { cause: { code: 'UND_ERR_CONNECT_TIMEOUT' } });
   assert.equal(imageErrorText(error), '连不上图片接口（UND_ERR_CONNECT_TIMEOUT）：检查网络或代理');

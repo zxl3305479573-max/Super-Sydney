@@ -47,6 +47,7 @@ import {
   ALL_WORK_STEPS,
   PLATFORMS,
   WORKFLOWS,
+  isDirectUploadWorkflow,
   isExternalSkillWorkflow,
   stepsForWorkflow,
   type WorkStep
@@ -61,7 +62,7 @@ type VideoTab = 'produce' | 'publish';
 
 const VIDEO_TABS: Array<{ value: VideoTab; label: string }> = [
   { value: 'produce', label: '视频制作' },
-  { value: 'publish', label: '多平台分发' }
+  { value: 'publish', label: '上传与多平台分发' }
 ];
 
 const TAB_STORAGE_KEY = 'sydney.video.tab';
@@ -591,8 +592,23 @@ export default function VideoWorkbenchPanel({
     return next;
   });
 
+  const upsertProjectInState = useCallback((next: VideoProject, select = false) => {
+    setProjects(items => {
+      const exists = items.some(item => item.id === next.id);
+      return exists ? items.map(item => (item.id === next.id ? next : item)) : [next, ...items];
+    });
+    if (select) {
+      setSelectedId(next.id);
+      hydrateEditor(next);
+      setQualityReport(isQualityFresh(next) ? next.assets.quality : null);
+    } else if (next.id === selectedId) {
+      hydrateEditor(next);
+      setQualityReport(isQualityFresh(next) ? next.assets.quality : null);
+    }
+  }, [selectedId, hydrateEditor]);
+
   const primaryWorkflows = WORKFLOWS.filter(item => item.primary);
-  const secondaryWorkflows = WORKFLOWS.filter(item => !item.primary);
+  const secondaryWorkflows = WORKFLOWS.filter(item => !item.primary && !isDirectUploadWorkflow(item.value));
   const activeProfile = WORKFLOWS.find(item => item.value === activeWorkflow) ?? WORKFLOWS[0];
   const createProfile = WORKFLOWS.find(item => item.value === createWorkflow) ?? WORKFLOWS[0];
   const readyVideosCount = projects.filter(item => item.assets.video && isRenderFresh(item)).length;
@@ -604,11 +620,16 @@ export default function VideoWorkbenchPanel({
         <div>
           <p className="eyebrow">内容工作区</p>
           <h1>视频工作台</h1>
-          <p>选题 → 口播脚本 → 分镜 → 配音字幕 → 画面模板 → 极速成片与多平台分发。只填草稿、不自动发布。</p>
+          <p>支持脚本制作成片，也支持直接上传本地视频、封面与中性文案，AI 自动按各平台调性写好文案并一键分发（只填草稿、人工确认最终发布）。</p>
         </div>
         <div className="video-header-summary">
           <span>共 <strong>{projects.length}</strong> 个视频项目</span>
           <span><strong>{readyVideosCount}</strong> 条有效成片可分发</span>
+          {activeTab === 'produce' && (
+            <button type="button" className="button button-primary button-small" onClick={() => setActiveTab('publish')}>
+              <Icon name="upload" size={14} />上传视频直发
+            </button>
+          )}
         </div>
       </header>
 
@@ -766,19 +787,22 @@ export default function VideoWorkbenchPanel({
                 <div className="video-project-items">
                   {projects.map(item => {
                     const isSelected = item.id === selectedId;
+                    const direct = isDirectUploadWorkflow(item.options.workflow);
                     const wfLabel = WORKFLOWS.find(w => w.value === item.options.workflow)?.label ?? '脚本 → 成片';
                     const freshMp4 = Boolean(item.assets.video && isRenderFresh(item));
                     const stateText = item.exportPath
                       ? '已导出制作包'
                       : freshMp4
                         ? '✓ 成片就绪'
-                        : item.assets.video
-                          ? '成片待重渲染'
-                          : item.status === 'storyboard'
-                            ? '已拆分镜'
-                            : item.status === 'script'
-                              ? '已有脚本'
-                              : '草稿';
+                        : direct
+                          ? '待上传视频'
+                          : item.assets.video
+                            ? '成片待重渲染'
+                            : item.status === 'storyboard'
+                              ? '已拆分镜'
+                              : item.status === 'script'
+                                ? '已有脚本'
+                                : '草稿';
                     return (
                       <button
                         type="button"
@@ -790,7 +814,7 @@ export default function VideoWorkbenchPanel({
                           <strong>{item.title || item.topic || '未命名视频'}</strong>
                           {isSelected && dirty && <span className="video-dirty-dot" title="有未保存修改" />}
                         </div>
-                        <span>{videoPlatformLabel(item.platform)} · {wfLabel}</span>
+                        <span>{direct ? wfLabel : `${videoPlatformLabel(item.platform)} · ${wfLabel}`}</span>
                         <small>{stateText} · {shortTime(item.updatedAt)}</small>
                       </button>
                     );
@@ -844,6 +868,44 @@ export default function VideoWorkbenchPanel({
                     </div>
                   </header>
 
+                  {isDirectUploadWorkflow(activeWorkflow) ? (
+                    <section className="flow-panel video-direct-summary-card">
+                      <header className="flow-panel-head">
+                        <div>
+                          <h3>本地成片直发任务</h3>
+                          <p>该任务来自本地上传成片，无需编写脚本与分镜。请在「上传与多平台分发」页签管理视频、封面、中性文案及四平台专属文案并一键分发。</p>
+                        </div>
+                      </header>
+                      <div className="workbench-status-grid">
+                        <div>
+                          <strong>{selected.assets.video && isRenderFresh(selected) ? '✓ 已上传视频' : '待上传视频'}</strong>
+                          <span>{selected.assets.video?.path || '尚未选择本地视频文件'}</span>
+                        </div>
+                        <div>
+                          <strong>{selected.coverPath ? '✓ 已上传封面' : '未上传封面'}</strong>
+                          <span>{selected.coverPath || '可在分发页拖入或选择封面图片'}</span>
+                        </div>
+                      </div>
+                      {assetBundle?.videoPath && selected.assets.video && (
+                        <div className="video-player-card">
+                          <div className="video-player-frame is-landscape">
+                            <video
+                              key={`${selected.assets.video.signature}-${selected.assets.video.renderedAt}`}
+                              controls
+                              preload="metadata"
+                              src={`sydney-video://project/${selected.id}?sig=${encodeURIComponent(selected.assets.video.signature)}`}
+                            />
+                          </div>
+                        </div>
+                      )}
+                      <div className="flow-inline-actions">
+                        <button type="button" className="button button-primary" onClick={() => setActiveTab('publish')}>
+                          <Icon name="send" size={14} />前往「上传与多平台分发」继续编辑与发布 →
+                        </button>
+                      </div>
+                    </section>
+                  ) : (
+                  <>
                   <Stepper
                     label="视频制作步骤"
                     active={effectiveStep}
@@ -1025,6 +1087,8 @@ export default function VideoWorkbenchPanel({
                       onJumpToPublish={() => setActiveTab('publish')}
                     />
                   )}
+                  </>
+                  )}
                 </>
               ) : (
                 <EmptyState icon="video" title="创建或选择一条视频">
@@ -1051,9 +1115,10 @@ export default function VideoWorkbenchPanel({
                   {!projects.length && <option value="">暂无视频项目</option>}
                   {projects.map(item => {
                     const fresh = Boolean(item.assets.video && isRenderFresh(item));
+                    const direct = isDirectUploadWorkflow(item.options.workflow);
                     return (
                       <option key={item.id} value={item.id}>
-                        {item.title || item.topic || `未命名 #${item.id}`} · {videoPlatformLabel(item.platform)} · {fresh ? '成片就绪' : '待合成成片'}
+                        {item.title || item.topic || `未命名 #${item.id}`} · {direct ? '上传直发' : videoPlatformLabel(item.platform)} · {fresh ? '成片就绪' : direct ? '待传视频' : '待合成成片'}
                       </option>
                     );
                   })}
@@ -1068,14 +1133,22 @@ export default function VideoWorkbenchPanel({
                     <span className={selected.coverPath ? 'badge badge-on' : 'badge badge-idle'}>
                       {selected.coverPath ? '已有主封面' : '未设主封面'}
                     </span>
-                    <button type="button" className="button button-quiet button-small" onClick={() => setActiveTab('produce')}>
-                      ← 返回视频制作编辑
-                    </button>
+                    <ConfirmButton
+                      className="button button-danger-quiet button-small"
+                      armedLabel="确认删除"
+                      disabled={Boolean(busy)}
+                      onConfirm={removeProject}
+                    >
+                      删除任务
+                    </ConfirmButton>
+                    {!isDirectUploadWorkflow(selected.options.workflow) && (
+                      <button type="button" className="button button-quiet button-small" onClick={() => setActiveTab('produce')}>
+                        ← 返回视频制作编辑
+                      </button>
+                    )}
                   </>
                 ) : (
-                  <button type="button" className="button button-secondary button-small" onClick={() => setActiveTab('produce')}>
-                    去新建第一条视频
-                  </button>
+                  <span className="badge badge-idle">在下方上传本地视频即可开始</span>
                 )}
               </div>
             </div>
@@ -1084,6 +1157,7 @@ export default function VideoWorkbenchPanel({
               project={selected}
               overlay={overlay || activeTab !== 'publish'}
               notify={notify}
+              onProjectUpserted={upsertProjectInState}
             />
           </div>
         </KeepAlive>

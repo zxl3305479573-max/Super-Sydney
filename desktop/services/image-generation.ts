@@ -119,7 +119,12 @@ export async function requestGeneratedImage(config: ImageApiConfig, prompt: stri
     throw new Error(`图片接口不支持参考图（/images/edits 返回 HTTP ${response.status}）：换一个支持参考图的模型（如 gpt-image 系列），或先选「不使用 IP」`);
   }
   if (!response.ok) throw new Error(`图片 API 请求失败（HTTP ${response.status}）${await apiErrorText(response)}`);
-  const payload = await response.json() as { data?: Array<{ url?: string; b64_json?: string }> };
+  let payload: { data?: Array<{ url?: string; b64_json?: string }> };
+  try {
+    payload = await response.json() as typeof payload;
+  } catch {
+    throw new Error('图片接口返回的不是有效 JSON，可能填成了网站地址。请检查「设置 → 模型」中的图片模型 API 地址（通常以 /v1 结尾）');
+  }
   const image = payload.data?.[0];
   let bytes: Buffer | null = image?.b64_json ? Buffer.from(image.b64_json, 'base64') : null;
   if (!bytes && image?.url) {

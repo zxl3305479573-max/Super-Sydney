@@ -51,6 +51,14 @@ export const WORKFLOWS: WorkflowCard[] = [
     engine: 'OO Fusion ASR + Subtitle Translator + FFmpeg',
     detail: '适合海外视频汉化与多语言分发（需安装并登录 OO CLI）。',
     primary: false
+  },
+  {
+    value: 'direct-upload',
+    label: '上传成片直发',
+    description: '已有剪好的本地视频，上传成片、封面与中性文案一键分发。',
+    engine: '自动 faststart 封装 + AI 四平台文案 + 多平台分发',
+    detail: '适合剪映、PR、手机实拍等外部成片直接适配四平台文案与封面比例。',
+    primary: false
   }
 ];
 
@@ -69,6 +77,10 @@ const EXTERNAL_SKILL_STEPS = new Set<WorkStep>(['brief', 'voice', 'render', 'cov
 
 export function isExternalSkillWorkflow(workflow: VideoWorkflow): boolean {
   return workflow === 'footage-edit' || workflow === 'browser-demo' || workflow === 'localize';
+}
+
+export function isDirectUploadWorkflow(workflow: VideoWorkflow): boolean {
+  return workflow === 'direct-upload';
 }
 
 export function stepsForWorkflow(workflow: VideoWorkflow): Array<{ value: WorkStep; label: string; hint: string }> {

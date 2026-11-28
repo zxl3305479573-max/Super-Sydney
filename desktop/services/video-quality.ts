@@ -99,6 +99,14 @@ function safeAreaCheck(project: VideoProject): VideoQualityCheck {
       detail: `内置画面模板已避开顶部 ${safe.top}px、底部 ${safe.bottom}px、左侧 ${safe.left}px、右侧 ${safe.right}px`
     };
   }
+  if (project.options.workflow === 'direct-upload') {
+    return {
+      key: 'safe-area',
+      label: '平台安全区',
+      status: 'warn',
+      detail: `本地上传成片沿用原视频排版；${frame.aspect} 平台建议预留顶部 ${safe.top}px、底部 ${safe.bottom}px、右侧 ${safe.right}px，请抽查画面边缘元素`
+    };
+  }
   return {
     key: 'safe-area',
     label: '平台安全区',

@@ -1,11 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { ipcMain } from 'electron';
+import { dialog, ipcMain } from 'electron';
 import type { AppContext } from '../app-context';
 import type {
   SiteViewBounds,
   VideoCoverVariantView,
+  VideoDirectUploadAttachResult,
+  VideoDirectUploadCoverResult,
+  VideoProject,
   VideoPublishItemStatus,
   VideoPublishMode,
   VideoPublishPackPatch,
@@ -34,7 +37,17 @@ import {
   upsertOpsEpisode
 } from '../services/ops-store';
 import { ALL_COVER_RATIOS, COVER_RATIO_SPECS, generateCoverVariants } from '../services/video-cover-variants';
-import { isRenderFresh } from '../services/video-pipeline';
+import {
+  DIRECT_COPY_EXTENSIONS,
+  DIRECT_COVER_EXTENSIONS,
+  DIRECT_VIDEO_EXTENSIONS,
+  cleanVideoTitleFromFilename,
+  prepareDirectUploadVideo,
+  readNeutralCopyFile,
+  validateLocalCoverPath,
+  validateLocalVideoPath
+} from '../services/video-direct-upload';
+import { isRenderFresh, renderSignature } from '../services/video-pipeline';
 import {
   generateAiVideoPublishPack,
   getVideoPublishPack,
@@ -46,16 +59,47 @@ import {
 } from '../services/video-publish-validate';
 import { inspectMp4Faststart } from '../services/mp4-faststart';
 import { VideoPublisherView } from '../services/video-publisher-view';
-import { resolveFfmpeg } from '../services/video-render';
-import { getVideoProject } from '../services/video-store';
+import { probeVideo, resolveFfmpeg, runFfmpeg } from '../services/video-render';
+import { skillInputFingerprint } from '../services/video-skill-inputs';
+import { createVideoProject, getVideoProject, updateVideoProject } from '../services/video-store';
 import { assetDirectory, videoApiConfig } from './content-support';
 
 const PUBLISH_PLATFORMS = new Set<VideoPublishPlatform>(['douyin', 'shipinhao', 'xiaohongshu', 'bilibili']);
+
+function removeInside(root: string, target: string): void {
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return;
+  fs.rmSync(target, { recursive: true, force: true });
+}
+
+function invalidateCoverVariants(ctx: AppContext, projectId: number): void {
+  const root = assetDirectory(ctx, 'video-assets', projectId);
+  removeInside(root, path.join(root, 'cover-variants'));
+  try {
+    ctx.db.prepare("UPDATE ops_video_publish_packs SET variants_json='{}', updated_at=? WHERE project_id=?")
+      .run(new Date().toISOString(), projectId);
+  } catch { /* 发布包尚未建行时忽略 */ }
+}
 
 function buildPackView(ctx: AppContext, projectId: number): VideoPublishPackView {
   const project = getVideoProject(ctx.db, Number(projectId));
   const pack = getVideoPublishPack(ctx.db, project);
   const videoPath = project.assets.video && fs.existsSync(project.assets.video.path) ? project.assets.video.path : '';
+  let videoMeta: VideoPublishPackView['videoMeta'] = null;
+  if (videoPath) {
+    try {
+      const stat = fs.statSync(videoPath);
+      videoMeta = {
+        path: videoPath,
+        fileName: path.basename(videoPath),
+        sizeBytes: stat.size,
+        seconds: project.assets.video?.seconds ?? 0
+      };
+    } catch { videoMeta = null; }
+  }
+  const coverThumbnail = project.coverPath.trim() && fs.existsSync(project.coverPath)
+    ? imageThumbnail(project.coverPath, 320)
+    : '';
   const validation = validateVideoPublishPack(pack, { faststart: videoPath ? inspectMp4Faststart(videoPath) : null });
   const coverVariants: VideoCoverVariantView[] = [];
   for (const ratio of ALL_COVER_RATIOS) {
@@ -71,7 +115,7 @@ function buildPackView(ctx: AppContext, projectId: number): VideoPublishPackView
   }
   const existingEpisode = findOpsEpisodeBySource(ctx.db, 'video', project.id);
   const episode = existingEpisode ? getOpsEpisodeWithTasks(ctx.db, existingEpisode.id) : null;
-  return { pack, coverVariants, validation, episode };
+  return { pack, coverThumbnail, videoMeta, coverVariants, validation, episode };
 }
 
 export function registerVideoPublisherIpc(ctx: AppContext, view: VideoPublisherView): void {
@@ -114,15 +158,152 @@ export function registerVideoPublisherIpc(ctx: AppContext, view: VideoPublisherV
       throw new Error('请先在「设置 → 模型」配置完整的内容模型地址、模型名与 API Key');
     }
     const project = getVideoProject(db, Number(id));
-    const copies = await generateAiVideoPublishPack(project, llm);
+    const currentPack = getVideoPublishPack(db, project);
+    const copies = await generateAiVideoPublishPack(project, llm, {
+      neutralCopy: currentPack.neutralCopy,
+      existingCopies: currentPack.copies
+    });
     saveVideoPublishPack(db, project, { copies });
+    if (project.options.workflow === 'direct-upload' && !project.title.trim()) {
+      const inferredTitle = copies.douyin.title || copies.bilibili.title || '';
+      if (inferredTitle) {
+        updateVideoProject(db, project.id, { title: inferredTitle });
+        ctx.broadcast();
+      }
+    }
     return buildPackView(ctx, project.id);
+  });
+
+  ipcMain.handle('video-publish:direct:pick-video', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog(ctx.window()!, {
+      title: '选择要上传分发的本地视频',
+      properties: ['openFile'],
+      filters: [{ name: '视频文件', extensions: [...DIRECT_VIDEO_EXTENSIONS] }]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('video-publish:direct:pick-cover', async (): Promise<string | null> => {
+    const result = await dialog.showOpenDialog(ctx.window()!, {
+      title: '选择视频封面图片',
+      properties: ['openFile'],
+      filters: [{ name: '图片文件', extensions: [...DIRECT_COVER_EXTENSIONS] }]
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+
+  ipcMain.handle('video-publish:direct:import-copy', async (_event, filePath = ''): Promise<{ path: string; text: string } | null> => {
+    let target = String(filePath ?? '').trim();
+    if (!target) {
+      const result = await dialog.showOpenDialog(ctx.window()!, {
+        title: '导入中性文案文件（TXT / Markdown）',
+        properties: ['openFile'],
+        filters: [{ name: '文本文案', extensions: [...DIRECT_COPY_EXTENSIONS] }]
+      });
+      if (result.canceled || !result.filePaths[0]) return null;
+      target = result.filePaths[0];
+    }
+    return readNeutralCopyFile(target);
+  });
+
+  ipcMain.handle('video-publish:direct:create', (_event, title = ''): VideoProject => {
+    const cleanTitle = String(title ?? '').trim().slice(0, 120);
+    const created = createVideoProject(db, 'douyin', '');
+    const saved = updateVideoProject(db, created.id, {
+      title: cleanTitle,
+      options: { ...created.options, workflow: 'direct-upload' }
+    });
+    ctx.broadcast();
+    return saved;
+  });
+
+  ipcMain.handle('video-publish:direct:attach-video', async (
+    _event,
+    projectId: number | null,
+    filePath: string,
+    title = ''
+  ): Promise<VideoDirectUploadAttachResult> => {
+    const resolvedSource = validateLocalVideoPath(filePath);
+    const cleanTitle = String(title ?? '').trim().slice(0, 120);
+
+    let targetProject: VideoProject;
+    if (projectId !== null && Number.isFinite(Number(projectId)) && Number(projectId) > 0) {
+      const existing = getVideoProject(db, Number(projectId));
+      if (existing.options.workflow !== 'direct-upload') {
+        throw new Error('当前选中的是制作流水线视频，请点「上传新视频直发」创建独立的直发任务');
+      }
+      targetProject = existing;
+    } else {
+      const created = createVideoProject(db, 'douyin', '');
+      targetProject = updateVideoProject(db, created.id, {
+        title: cleanTitle || cleanVideoTitleFromFilename(resolvedSource),
+        options: { ...created.options, workflow: 'direct-upload' }
+      });
+    }
+
+    const root = assetDirectory(ctx, 'video-assets', targetProject.id);
+    const fingerprint = skillInputFingerprint(resolvedSource);
+    const prepared = await prepareDirectUploadVideo(resolvedSource, root, {
+      resolveTools: resolveFfmpeg,
+      probe: probeVideo,
+      runFfmpeg
+    });
+
+    const previousVideoPath = targetProject.assets.video?.path ?? '';
+    const nextOptions = {
+      ...targetProject.options,
+      workflow: 'direct-upload' as const,
+      sourcePath: prepared.sourcePath,
+      skillInputSignature: fingerprint
+    };
+    const nextDuration = Math.max(1, Math.min(600, Math.round(prepared.seconds)));
+    const nextTitle = targetProject.title.trim() || cleanTitle || cleanVideoTitleFromFilename(resolvedSource);
+    const signature = renderSignature({ ...targetProject, title: nextTitle, durationSeconds: nextDuration, options: nextOptions });
+    const saved = updateVideoProject(db, targetProject.id, {
+      title: nextTitle,
+      durationSeconds: nextDuration,
+      status: 'storyboard',
+      options: nextOptions,
+      assets: {
+        ...targetProject.assets,
+        skill: null,
+        quality: null,
+        video: {
+          path: prepared.videoPath,
+          signature,
+          seconds: prepared.seconds,
+          renderedAt: new Date().toISOString()
+        }
+      }
+    });
+    if (previousVideoPath && previousVideoPath !== prepared.videoPath) {
+      removeInside(root, previousVideoPath);
+    }
+    ctx.broadcast();
+    return {
+      project: saved,
+      packView: buildPackView(ctx, saved.id),
+      remuxed: prepared.remuxed,
+      notice: prepared.notice
+    };
+  });
+
+  ipcMain.handle('video-publish:direct:attach-cover', (_event, projectId: number, filePath: string): VideoDirectUploadCoverResult => {
+    const resolvedCover = validateLocalCoverPath(filePath);
+    const project = getVideoProject(db, Number(projectId));
+    invalidateCoverVariants(ctx, project.id);
+    const saved = updateVideoProject(db, project.id, { coverPath: resolvedCover });
+    ctx.broadcast();
+    return {
+      project: saved,
+      packView: buildPackView(ctx, saved.id)
+    };
   });
 
   ipcMain.handle('video-publish:pack:variants', async (_event, id: number): Promise<VideoPublishPackView> => {
     const project = getVideoProject(db, Number(id));
     if (!project.coverPath.trim() || !fs.existsSync(project.coverPath)) {
-      throw new Error('请先在「封面」步骤生成或选择一张主封面，再生成多比例衍生封面');
+      throw new Error('请先上传或生成一张主封面，再生成多比例衍生封面');
     }
     const tools = await resolveFfmpeg();
     const outDir = path.join(assetDirectory(ctx, 'video-assets', project.id), 'cover-variants');
@@ -144,7 +325,9 @@ export function registerVideoPublisherIpc(ctx: AppContext, view: VideoPublisherV
     const project = getVideoProject(db, Number(id));
     const video = project.assets.video;
     if (!video || !isRenderFresh(project) || !fs.existsSync(video.path)) {
-      throw new Error('当前视频还没有有效成片，请先完成渲染后再发布');
+      throw new Error(project.options.workflow === 'direct-upload'
+        ? '请先上传本地视频文件，再开始多平台分发'
+        : '当前视频还没有有效成片，请先完成渲染后再发布');
     }
 
     let pack = getVideoPublishPack(db, project);
