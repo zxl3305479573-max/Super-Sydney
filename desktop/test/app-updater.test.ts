@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
+import { fileURLToPath } from 'node:url';
 import type { UpdateInfo } from 'electron-updater';
 import { AppUpdateService, formatReleaseNotes, type UpdateBackend } from '../services/app-updater.ts';
 import type { AppUpdateState } from '../shared.ts';
@@ -282,4 +285,10 @@ test('执行重启安装前先触发 beforeInstall 清理常驻视图与原生�
   await service.download();
   service.install();
   assert.deepEqual(order, ['beforeInstall', 'quitAndInstall']);
+});
+
+test('NSIS 安装脚本在 customInstall 中直接拉起主程序 exe，避免通过 Sydney.lnk 触发关联错误', () => {
+  const nshPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'build', 'installer.nsh');
+  const content = fs.readFileSync(nshPath, 'utf8');
+  assert.match(content, /!macro\s+customInstall[\s\S]*?StrCpy\s+\$launchLink\s+"\$INSTDIR\\\$\{APP_EXECUTABLE_FILENAME\}"[\s\S]*?!macroend/);
 });

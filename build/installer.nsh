@@ -163,3 +163,11 @@
 !macro customUnInstallCheckCurrentUser
   !insertmacro _sydneyRecoverOldUninstall HKCU
 !macroend
+
+; 4. 安装或 OTA 更新完成后直接启动主程序 .exe，不再经由开始菜单 Sydney.lnk 快捷方式绕行：
+;    electron-builder 默认通过 ShellExecute("open", "...\Sydney.lnk", "--updated") 启动应用，
+;    当系统安装了第三方右键/桌面壳扩展或 .lnk 未注册显式 open 动词时，会弹出
+;    「该文件没有与之关联的应用来执行该操作」导致更新完成后无法自动拉起主程序。
+!macro customInstall
+  StrCpy $launchLink "$INSTDIR\${APP_EXECUTABLE_FILENAME}"
+!macroend
